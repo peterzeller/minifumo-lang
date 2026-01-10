@@ -1,0 +1,218 @@
+grammar minifumo;
+
+// NOTE: This grammar assumes your lexer injects the tokens NL / BEGIN / END.
+// You can implement that with a custom lexer that buffers tokens and emits
+// BEGIN/END based on indentation changes after NL.
+// Here we declare them as normal lexer tokens so the parser can reference them.
+
+// -------------------- Parser --------------------
+
+program
+  : (NL | topLevel)* EOF
+  ;
+
+topLevel
+  : dataDecl
+  | funDecl
+  | exprStmt
+  ;
+
+exprStmt
+  : expr (NL+ | EOF)
+  ;
+
+// -------- ADTs --------
+
+dataDecl
+  : 'data' typeName typeParams? '=' ctorDecl ('|' ctorDecl)* (NL+ | EOF)
+  ;
+
+typeName
+  : ID
+  ;
+
+typeParams
+  : '[' ID (',' ID)* ']'
+  ;
+
+ctorDecl
+  : ID ctorFields?
+  ;
+
+ctorFields
+  : '(' ctorField (',' ctorField)* ')'
+  ;
+
+ctorField
+  : ID ':' type
+  ;
+
+// -------- Functions --------
+
+funDecl
+  : ('fun' | 'func') ID typeParams? '(' funParams? ')' type? suite
+  ;
+
+funParams
+  : funParam (',' funParam)*
+  ;
+
+funParam
+  : ID type
+  ;
+
+suite
+  : NL BEGIN block END
+  | NL expr
+  ;
+
+block
+  : (NL)* expr (NL+ expr)* (NL)*
+  ;
+
+// -------- Types --------
+
+type
+  : typeAtom typeApp*
+  ;
+
+typeAtom
+  : ID
+  | '(' type ')'
+  ;
+
+typeApp
+  : '[' type (',' type)* ']'
+  ;
+
+// -------- Expressions (ANTLR4 precedence via left recursion) --------
+// Highest precedence first, lowest last.
+
+expr
+  : literal                                   #Lit
+  | ID                                        #Var
+  | '(' expr ')'                              #Paren
+
+  // postfix
+  | expr '(' argList? ')'                     #Call
+  | expr '.' ID                               #Dot
+
+  // unary
+  | '-' expr                                  #Neg
+
+  // multiplicative / additive
+  | expr op=('*'|'/'|'%') expr                #MulDiv
+  | expr op=('+'|'-') expr                    #AddSub
+
+  // comparisons / equality
+  | expr op=('<'|'<='|'>'|'>=') expr          #Compare
+  | expr op=('=='|'!=') expr                  #EqNeq
+
+  // boolean
+  | expr '&&' expr                            #And
+  | expr '||' expr                            #Or
+
+  // ---- "statement-like" expressions (lowest precedence) ----
+
+  // let/var with "in"
+  | 'let' ID type? '=' expr 'in' expr         #LetIn
+  | 'var' ID type? '=' expr 'in' expr         #VarIn
+
+  // let/var with suite (newline + body)
+  | 'let' ID type? '=' expr suite             #LetSuite
+  | 'let' ID type? suite                      #LetSuiteNoInit
+  | 'var' ID type? '=' expr suite             #VarSuite
+  | 'var' ID type? suite                      #VarSuiteNoInit
+
+  // binder-suite: x := expr NL ...
+  | ID ':=' expr suite                        #BindSuite
+
+  // if
+  | ('if'|'IF') expr 'then' expr 'else' expr  #IfThenElse
+  | ('if'|'IF') expr suite ('else' suite)?    #IfSuite
+
+  // loops
+  | 'for' ID 'in' expr suite                  #For
+  | 'while' expr suite                        #While
+
+  // match
+  | 'match' expr NL BEGIN matchCase+ END      #Match
+  ;
+
+argList
+  : expr (',' expr)*
+  ;
+
+matchCase
+  : 'case' pattern suite
+  ;
+
+// -------- Literals & patterns --------
+
+literal
+  : INT
+  | BOOL
+  | STRING
+  ;
+
+pattern
+  : '_'                                   #PatWildcard
+  | literal                               #PatLit
+  | ID                                    #PatBinderOrCtor0
+  | ID '(' patternArgs? ')'               #PatCtor
+  | '(' pattern ')'                       #PatParen
+  ;
+
+patternArgs
+  : pattern (',' pattern)*
+  ;
+
+// -------------------- Lexer --------------------
+// Keep keyword tokens above ID so they win ties.
+
+NL      : ('\r'? '\n')+ ;
+
+BEGIN   : '<<BEGIN>>' ; // placeholder if you *don't* inject; usually injected by custom lexer
+END     : '<<END>>'   ; // placeholder if you *don't* inject; usually injected by custom lexer
+
+// Keywords (optional to keep explicit; literals in parser also work, but
+// defining them here gives you nicer tokenization + avoids surprises).
+DATA    : 'data';
+FUN     : 'fun';
+FUNC    : 'func';
+MATCH   : 'match';
+CASE    : 'case';
+IF      : 'if';
+THEN    : 'then';
+ELSE    : 'else';
+FOR     : 'for';
+IN      : 'in';
+WHILE   : 'while';
+LET     : 'let';
+VAR     : 'var';
+IF_UP   : 'IF';
+
+// Operators & punctuation
+// (You can omit most of these because the parser uses literals, but keeping
+// multi-char operators here helps ensure correct tokenization.)
+ASSIGN_COLON_EQ : ':=' ;
+EQEQ    : '==';
+NEQ     : '!=';
+LE      : '<=';
+GE      : '>=';
+ANDAND  : '&&';
+OROR    : '||';
+
+// Literals
+INT     : [0-9]+ ;
+BOOL    : 'true' | 'false' ;
+STRING  : '"' ( '\\' . | ~["\\] )* '"' ;
+
+// Identifier
+ID      : [a-zA-Z_][a-zA-Z0-9_]* ;
+
+// Whitespace/comments
+WS           : [ \t]+ -> skip ;
+LINE_COMMENT : '//' ~[\r\n]* -> skip ;
+BLOCK_COMMENT: '/*' .*? '*/' -> skip ;
+
