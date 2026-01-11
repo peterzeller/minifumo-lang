@@ -77,9 +77,10 @@ object ExtendedLexer:
     private def nextTokenIntern: Token =
       if !nextTokens.isEmpty then
         return nextTokens.poll
-      val l_eof: Option[Token] = eof
-      for eof <- l_eof do
-        return makeToken(Token.EOF, "$EOF", eof.getStartIndex, eof.getStopIndex)
+      eof match
+        case Some(eofToken) =>
+          return makeToken(Token.EOF, "$EOF", eofToken.getStartIndex, eofToken.getStopIndex)
+        case None =>
 
       def continue(): Token =
         val token1: Token = orig.nextToken
