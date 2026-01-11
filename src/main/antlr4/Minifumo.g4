@@ -1,4 +1,4 @@
-grammar minifumo;
+grammar Minifumo;
 
 // NOTE: This grammar assumes your lexer injects the tokens NL / BEGIN / END.
 // You can implement that with a custom lexer that buffers tokens and emits
@@ -109,8 +109,8 @@ expr
   | expr op=('=='|'!=') expr                  #EqNeq
 
   // boolean
-  | expr '&&' expr                            #And
-  | expr '||' expr                            #Or
+  | expr 'and' expr                            #And
+  | expr 'or' expr                            #Or
 
   // ---- "statement-like" expressions (lowest precedence) ----
 
@@ -172,8 +172,9 @@ patternArgs
 
 NL      : ('\r'? '\n')+ ;
 
-BEGIN   : '<<BEGIN>>' ; // placeholder if you *don't* inject; usually injected by custom lexer
-END     : '<<END>>'   ; // placeholder if you *don't* inject; usually injected by custom lexer
+BEGIN:[()];
+END:[()];
+INVALID:[()];
 
 // Keywords (optional to keep explicit; literals in parser also work, but
 // defining them here gives you nicer tokenization + avoids surprises).
@@ -197,11 +198,33 @@ IF_UP   : 'IF';
 // multi-char operators here helps ensure correct tokenization.)
 ASSIGN_COLON_EQ : ':=' ;
 EQEQ    : '==';
-NEQ     : '!=';
 LE      : '<=';
 GE      : '>=';
-ANDAND  : '&&';
-OROR    : '||';
+PAREN_LEFT: '(';
+PAREN_RIGHT: ')';
+BRACKET_LEFT: '[';
+BRACKET_RIGHT: ']';
+BRACE_LEFT: '{';
+BRACE_RIGHT: '}';
+DOT: '.';
+NOT: 'not';
+
+COMMA: ',';
+PLUS: '+';
+MULT: '*';
+MINUS: '-';
+DIV: 'div';
+MOD: 'mod';
+AND: 'and';
+OR: 'or';
+COLON: ':';
+COLONCOLON: '::';
+EQ: '=';
+NOTEQ: '!=';
+BAR: '|';
+IMPLIES: '==>';
+IFF: '<==>';
+
 
 // Literals
 INT     : [0-9]+ ;
@@ -212,7 +235,8 @@ STRING  : '"' ( '\\' . | ~["\\] )* '"' ;
 ID      : [a-zA-Z_][a-zA-Z0-9_]* ;
 
 // Whitespace/comments
-WS           : [ \t]+ -> skip ;
+SPACETAB:' ' ' '+;
+SPACES: ' ' -> skip;
 LINE_COMMENT : '//' ~[\r\n]* -> skip ;
 BLOCK_COMMENT: '/*' .*? '*/' -> skip ;
 

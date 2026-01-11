@@ -4,16 +4,16 @@ import org.antlr.v4.runtime._
 import org.antlr.v4.runtime.misc.Pair
 import java.util
 
-import crdtver.language.ExtendedLexer.ExtendedReplissLexer.State
-import crdtver.language.ExtendedLexer.ExtendedReplissLexer.State.{INIT, State}
-import crdtver.parser.{LangLexer, LangParser}
+
+import com.github.peterzeller.minifumo.antlr.MinifumoLexer
+import com.github.peterzeller.minifumo.antlr.MinifumoParser
 import org.antlr.v4.runtime.atn.ATNConfigSet
 import org.antlr.v4.runtime.dfa.DFA
 
 import scala.annotation.tailrec
 import scala.collection.mutable
 import scala.jdk.CollectionConverters.ListHasAsScala
-
+import com.github.peterzeller.minifumo.lexer.ExtendedLexer.ExtendedMinifumoLexer.State
 
 object ExtendedLexer {
 
@@ -27,7 +27,7 @@ object ExtendedLexer {
     }
   }
 
-  object ExtendedReplissLexer {
+  object ExtendedMinifumoLexer {
 
     object State extends Enumeration {
       type State = Value
@@ -37,13 +37,13 @@ object ExtendedLexer {
 
   }
 
-  class ExtendedReplissLexer(val input: CharStream) extends TokenSource {
-    final private val orig: LangLexer = new LangLexer(input)
+  class ExtendedMinifumoLexer(val input: CharStream) extends TokenSource {
+    final private val orig: MinifumoLexer = new MinifumoLexer(input)
     private val sourcePair: Pair[TokenSource, CharStream] = new Pair[TokenSource, CharStream](orig, input)
     private val indentationLevels: mutable.Stack[Integer] = new mutable.Stack[Integer]
     indentationLevels.push(0)
     private val nextTokens: util.Queue[Token] = new util.LinkedList[Token]
-    private var state: State = ExtendedReplissLexer.State.INIT
+    private var state: State.State = ExtendedMinifumoLexer.State.INIT
 
     private var spacesPerIndent: Int = -(1)
     private var eof: Option[Token] = None
@@ -81,7 +81,7 @@ object ExtendedLexer {
       val t: Token = nextTokenIntern
       lastToken = Some(t)
       if (debug) {
-        WLogger.trace("     new token  = " + LangParser.VOCABULARY.getSymbolicName(t.getType) + " '" + t.getText + "'")
+        WLogger.trace("     new token  = " + MinifumoParser.VOCABULARY.getSymbolicName(t.getType) + " '" + t.getText + "'")
       }
       t
     }
@@ -102,13 +102,13 @@ object ExtendedLexer {
       def continue(): Token = {
         val token1: Token = orig.nextToken
         if (debug) {
-          WLogger.info(s"$state orig token = " + LangParser.VOCABULARY.getSymbolicName(token1.getType) + " '" + token1.getText + "'")
+          WLogger.info(s"$state orig token = " + MinifumoParser.VOCABULARY.getSymbolicName(token1.getType) + " '" + token1.getText + "'")
         }
         if (token1 == null) {
           return null
         }
         val token: Token = token1
-        if (token.getType == LangParser.NL) {
+        if (token.getType == MinifumoParser.NL) {
           var line: Int = 0
           for (i <- 0 until token.getText.length) {
             val c: Char = token.getText.charAt(i)
@@ -117,27 +117,27 @@ object ExtendedLexer {
             }
           }
         } else {
-          if (token.getType == LangParser.PAREN_LEFT) {
+          if (token.getType == MinifumoParser.PAREN_LEFT) {
             parenthesesLevel += 1
-          } else if (token.getType == LangParser.PAREN_RIGHT) {
+          } else if (token.getType == MinifumoParser.PAREN_RIGHT) {
             parenthesesLevel -= 1
           } else if (token.getType == Token.EOF) { // at EOF close all blocks and return an extra newline
             handleIndent(0, token, token.getStartIndex, token.getStopIndex, Some(token))
             eof = Some(token)
-            // if inside Repliss, add a closing newline
-            nextTokens.add(makeToken(LangParser.NL, "$NL", token.getStartIndex, token.getStopIndex))
+            // if inside Minifumo, add a closing newline
+            nextTokens.add(makeToken(MinifumoParser.NL, "$NL", token.getStartIndex, token.getStopIndex))
             // add a single newline
-            return makeToken(LangParser.NL, "$NL", token.getStartIndex, token.getStopIndex)
+            return makeToken(MinifumoParser.NL, "$NL", token.getStartIndex, token.getStopIndex)
           }
         }
         state match {
-          case INIT =>
-            if (token.getType == LangParser.NL) {
+          case State.INIT =>
+            if (token.getType == MinifumoParser.NL) {
               if (lastCharWasWrap) { // ignore the newline following a wrap-character
                 return continue()
               } else {
                 firstNewline = Some(token)
-                state(ExtendedReplissLexer.State.NEWLINES)
+                state(ExtendedMinifumoLexer.State.NEWLINES)
                 return continue()
               }
             } else if (isTab(token)) {
@@ -149,20 +149,20 @@ object ExtendedLexer {
             if (isWrapCharBeginLine(token.getType)) {
               // ignore all the newlines when a wrap char comes after newlines
               lastCharWasWrap = isWrapChar(token.getType)
-              state(ExtendedReplissLexer.State.INIT)
+              state(ExtendedMinifumoLexer.State.INIT)
               return token
-            } else if (token.getType == LangParser.NL) {
+            } else if (token.getType == MinifumoParser.NL) {
               return continue() //todo: continue is not supported
             }
             else if (isTab(token)) {
-              state(ExtendedReplissLexer.State.BEGIN_LINE)
+              state(ExtendedMinifumoLexer.State.BEGIN_LINE)
               numberOfTabs = tabWidth(token)
               return continue() //todo: continue is not supported
 
             } else { // no tabs after newline
               handleIndent(0, token, token.getStartIndex, token.getStopIndex, firstNewline)
               nextTokens.add(token)
-              state(ExtendedReplissLexer.State.INIT)
+              state(ExtendedMinifumoLexer.State.INIT)
               return firstNewline.get
             }
           case State.BEGIN_LINE =>
@@ -170,23 +170,23 @@ object ExtendedLexer {
               numberOfTabs += tabWidth(token)
             }
             else {
-              if (token.getType == LangParser.NL) {
-                state(ExtendedReplissLexer.State.NEWLINES)
+              if (token.getType == MinifumoParser.NL) {
+                state(ExtendedMinifumoLexer.State.NEWLINES)
               }
               else {
                 if (isWrapCharBeginLine(token.getType)) {
                   lastCharWasWrap = isWrapChar(token.getType)
-                  state(ExtendedReplissLexer.State.INIT)
+                  state(ExtendedMinifumoLexer.State.INIT)
                   return token
                 }
                 else {
                   if (lastCharWasWrap && numberOfTabs > indentationLevels.top) { // ignore the newline, only return the token
-                    state(ExtendedReplissLexer.State.INIT)
+                    state(ExtendedMinifumoLexer.State.INIT)
                     return token
                   }
                   else {
                     handleIndent(numberOfTabs, token, token.getStartIndex, token.getStopIndex, firstNewline)
-                    state(ExtendedReplissLexer.State.INIT)
+                    state(ExtendedMinifumoLexer.State.INIT)
                     nextTokens.add(token)
                     return firstNewline.get
                   }
@@ -203,7 +203,7 @@ object ExtendedLexer {
     def tabWidth(token: Token): Int = {
       val len: Int = 1 + token.getStopIndex - token.getStartIndex
       token.getType match {
-        case LangParser.SPACETAB =>
+        case MinifumoParser.SPACETAB =>
           len
         case _ =>
           throw new IllegalArgumentException
@@ -212,11 +212,11 @@ object ExtendedLexer {
 
 
     private def isTab(token: Token): Boolean = {
-      token.getType == LangParser.SPACETAB
+      token.getType == MinifumoParser.SPACETAB
     }
 
 
-    private def state(s: ExtendedReplissLexer.State.State): Unit = {
+    private def state(s: ExtendedMinifumoLexer.State.State): Unit = {
       if (debug) {
         WLogger.info("state " + state + " -> " + s)
       }
@@ -232,14 +232,14 @@ object ExtendedLexer {
           spacesPerIndent = n
         }
         indentationLevels.push(n)
-        nextTokens.add(makeToken(LangParser.STARTBLOCK, "$begin", start, stop))
+        nextTokens.add(makeToken(MinifumoParser.BEGIN, "$begin", start, stop))
       }
       else {
         while ( {
           n < indentationLevels.top
         }) {
           indentationLevels.pop
-          nextTokens.add(makeToken(LangParser.ENDBLOCK, "$end",
+          nextTokens.add(makeToken(MinifumoParser.END, "$end",
             endBlockToken.map(_.getStartIndex).getOrElse(0),
             endBlockToken.map(_.getStartIndex).getOrElse(0)))
         }
@@ -257,29 +257,29 @@ object ExtendedLexer {
 
     private def isWrapChar(tokenKind: Int): Boolean = {
       tokenKind match {
-        case LangParser.COMMA
-             | LangParser.PLUS
-             | LangParser.MULT
-             | LangParser.MINUS
-             | LangParser.DIV
-             | LangParser.MOD
-             | LangParser.AND
-             | LangParser.OR
-             | LangParser.COLON
-             | LangParser.COLONCOLON
-             | LangParser.EQ
-             | LangParser.EQEQ
-             | LangParser.NOTEQ
-             | LangParser.BAR
-             | LangParser.IMPLIES
-             | LangParser.IFF => true
+        case MinifumoParser.COMMA
+             | MinifumoParser.PLUS
+             | MinifumoParser.MULT
+             | MinifumoParser.MINUS
+             | MinifumoParser.DIV
+             | MinifumoParser.MOD
+             | MinifumoParser.AND
+             | MinifumoParser.OR
+             | MinifumoParser.COLON
+             | MinifumoParser.COLONCOLON
+             | MinifumoParser.EQ
+             | MinifumoParser.EQEQ
+             | MinifumoParser.NOTEQ
+             | MinifumoParser.BAR
+             | MinifumoParser.IMPLIES
+             | MinifumoParser.IFF => true
         case _ => false
       }
     }
 
     private def isWrapCharEndLine(tokenKind: Int): Boolean = {
       tokenKind match {
-        case LangParser.PAREN_LEFT | LangParser.BRACKET_LEFT | LangParser.BRACE_LEFT =>
+        case MinifumoParser.PAREN_LEFT | MinifumoParser.BRACKET_LEFT | MinifumoParser.BRACE_LEFT =>
           true
         case _ =>
           isWrapChar(tokenKind)
@@ -288,11 +288,11 @@ object ExtendedLexer {
 
     private def isWrapCharBeginLine(`type`: Int): Boolean = {
       `type` match {
-        case LangParser.PAREN_RIGHT
-             | LangParser.BRACKET_RIGHT
-             | LangParser.BRACE_RIGHT
-             | LangParser.NOT
-             | LangParser.DOT =>
+        case MinifumoParser.PAREN_RIGHT
+             | MinifumoParser.BRACKET_RIGHT
+             | MinifumoParser.BRACE_RIGHT
+             | MinifumoParser.NOT
+             | MinifumoParser.DOT =>
           true
         case _ =>
           isWrapChar(`type`)
