@@ -90,7 +90,7 @@ expr
 
   // postfix
   | expr '(' argList? ')'                     #Call
-  | expr '.' ID                               #Dot
+  | expr '.' ID ('(' argList? ')')?           #Dot
 
   // unary
   | '-' expr                                  #Neg
