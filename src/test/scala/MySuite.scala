@@ -42,4 +42,52 @@ class MySuite extends munit.FunSuite {
       println("Type error: " + err)
     println("Typed AST: " + typed)
   }
+
+  test("type checker can instantiate generic functions") {
+    val c = parseInput("""
+      |fun id[T](x T) T
+      |    x
+      |
+      |fun main() Int
+      |    id(42)
+    """.stripMargin)
+    val ast = AstTransform.program(c)
+    val result = Interpreter.evalProg(ast, "main")
+    assertEquals(result, Interpreter.Value.IntVal(BigInt(42)))
+    val (typed, errors) = TypeChecker.checkProgram(ast)
+    println(s"Found ${errors.length} type errors.")
+    for err <- errors do
+      println("Type error: " + err)
+    println("Typed AST: " + typed)
+  }
+
+
+  test("type checker can work with simple data types") {
+    val c = parseInput("""
+      |data List =
+      |   Nil
+      | | Cons(head Int, tail List)
+      |fun myAppend(a List, b List) List
+      |    match a
+      |        case Nil
+      |          b
+      |        case Cons(h, t)
+      |          Cons(h, myAppend(t, b))
+      |
+      |fun main() Unit
+      |    let lst1 = Cons(1, Cons(2, Nil))
+      |    let lst2 = Cons(3, Cons(4, Nil))
+      |    let lst3 = myAppend(lst1, lst2)
+      |    println(lst3)
+    """.stripMargin)
+    val ast = AstTransform.program(c)
+    println("Evaluating program...")
+    val result = Interpreter.evalProg(ast, "main")
+    assertEquals(result, Interpreter.Value.UnitVal)
+    val (typed, errors) = TypeChecker.checkProgram(ast)
+    println(s"Found ${errors.length} type errors.")
+    for err <- errors do
+      println("Type error: " + err)
+    println("Typed AST: " + typed)
+  }
 }

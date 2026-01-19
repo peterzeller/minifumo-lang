@@ -15,7 +15,11 @@ object Interpreter:
     case MapVal(value: Map[Value, Value])
     case AdtVal(name: String, args: List[Value])
     case UnitVal
+    case FuncVal(fn: (List[Value], Env) => (Value, Env))
     case UndefinedVal
+
+    override def toString(): String =
+      renderValue(this)
 
   final case class FunDef(params: List[String], body: Suite)
 
@@ -25,7 +29,32 @@ object Interpreter:
       ctors: Map[String, Int]
     ):
     def resolve(name: String): Option[Value] =
-      scopes.collectFirst { case scope if scope.contains(name) => scope(name) }
+      scopes.collectFirst { case scope if scope.contains(name) => scope(name) }.orElse({
+        functions.get(name).map(f => {
+          Value.FuncVal((args: List[Value], env: Env) => {
+            if args.length != f.params.length then
+              throw new IllegalArgumentException(s"Function $name expects ${f.params.length} args, got ${args.length}")
+            val bindings = f.params.zip(args).toMap
+            val envWithParams = env.pushScope(bindings)
+            try
+              val (result, envAfter) = Interpreter.evalSuite(f.body, envWithParams)
+              (result, envAfter.popScope)
+            catch
+              case Interpreter.ReturnSignal(value, envAfter) =>
+                (value, envAfter.popScope)
+          })
+        })
+      }).orElse({
+        ctors.get(name).map(arity =>
+          if arity == 0 then
+            Value.AdtVal(name, Nil)
+          else
+            Value.FuncVal((args: List[Value], env: Env) => {
+            if args.length != arity then
+              throw new IllegalArgumentException(s"Constructor $name expects $arity args, got ${args.length}")
+            (Value.AdtVal(name, args), env)
+        }))
+      })
 
     def pushScope(bindings: Map[String, Value]): Env =
       copy(scopes = bindings :: scopes)
@@ -204,7 +233,7 @@ object Interpreter:
       case Literal.StringLit(value) => Value.StringVal(value)
 
   private def matchPattern(pattern: Pattern, value: Value, env: Env): Option[Map[String, Value]] =
-    pattern match
+    val res = pattern match
       case Pattern.Wildcard =>
         Some(Map.empty)
       case Pattern.Lit(literal) =>
@@ -222,6 +251,7 @@ object Interpreter:
           case Value.AdtVal(ctorName, ctorArgs) if ctorName == name && ctorArgs.length == args.length =>
             matchPatternList(args, ctorArgs, env)
           case _ => None
+    res
 
   private def matchPatternList(
       patterns: List[Pattern],
@@ -440,3 +470,4 @@ object Interpreter:
       case Value.AdtVal(name, args) => s"$name${args.map(renderValue).mkString("(", ", ", ")")}"
       case Value.UnitVal => "unit"
       case Value.UndefinedVal => "undefined"
+      case Value.FuncVal(_) => "<function>"
