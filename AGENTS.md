@@ -1,0 +1,28 @@
+# Architecture and Project Map (for Codex)
+
+## Overview
+Minifumo is a language implementation in Scala 3. The core flow is:
+grammar -> parser -> AST -> type checker -> interpreter.
+Builtins are defined in both Scala and Minifumo source files.
+
+## Key entry points
+- Interpreter: `src/main/scala/com/github/peterzeller/minifumo/interpreter/Interpreter.scala`
+- Type checking: `src/main/scala/com/github/peterzeller/minifumo/typing/TypeChecker.scala`
+- Builtins (Scala side): `src/main/scala/com/github/peterzeller/minifumo/builtins/standard.scala`
+- Builtins (Minifumo source): `src/main/scala/com/github/peterzeller/minifumo/builtins/standard.minifumo`
+
+## Directory map
+- AST definitions: `src/main/scala/com/github/peterzeller/minifumo/ast`
+- Parser: `src/main/scala/com/github/peterzeller/minifumo/parser`
+- Lexer: `src/main/scala/com/github/peterzeller/minifumo/lexer`
+- Typing: `src/main/scala/com/github/peterzeller/minifumo/typing`
+- Interpreter: `src/main/scala/com/github/peterzeller/minifumo/interpreter`
+- Builtins: `src/main/scala/com/github/peterzeller/minifumo/builtins`
+
+## Grammar and generated sources
+- ANTLR grammar: `src/main/antlr4/Minifumo.g4`
+- Generated ANTLR sources: `target/scala-*/src_managed/main/antlr4`
+
+## Build notes
+- Build config: `build.sbt`
+- ANTLR generation task: `generateAntlr` in `build.sbt`
