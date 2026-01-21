@@ -1,0 +1,7 @@
+fun main() unit
+    println("Line 1")
+    println("Line 2")
+
+// Output:
+// Line 1
+// Line 2

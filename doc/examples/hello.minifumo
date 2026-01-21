@@ -1,0 +1,4 @@
+fun main() unit
+    println("Hello World")
+
+// Output: Hello World

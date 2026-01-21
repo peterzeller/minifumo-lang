@@ -6,15 +6,6 @@ import com.github.peterzeller.minifumo.interpreter.Interpreter
 import com.github.peterzeller.minifumo.typing.TypeChecker
 // https://scalameta.org/munit/docs/getting-started.html
 class MySuite extends munit.FunSuite {
-  test("example test that succeeds") {
-    val c = parseInput("""
-      |fun add(x Int, y Int) Int
-      |    x + y
-    """.stripMargin)
-    println("CST: " + c.toStringTree(new MinifumoParser(null)))
-    val ast = AstTransform.program(c)
-    println("AST: " + ast)
-  }
 
   test("interpreter evals main with 1+2") {
     val c = parseInput("""
@@ -37,10 +28,7 @@ class MySuite extends munit.FunSuite {
     val result = Interpreter.evalProg(ast, "main")
     assertEquals(result, Interpreter.Value.IntVal(BigInt(3)))
     val (typed, errors) = TypeChecker.checkProgram(ast)
-    println(s"Found ${errors.length} type errors.")
-    for err <- errors do
-      println("Type error: " + err)
-    println("Typed AST: " + typed)
+    assert(errors == List())
   }
 
   test("type checker can instantiate generic functions") {
@@ -55,10 +43,7 @@ class MySuite extends munit.FunSuite {
     val result = Interpreter.evalProg(ast, "main")
     assertEquals(result, Interpreter.Value.IntVal(BigInt(42)))
     val (typed, errors) = TypeChecker.checkProgram(ast)
-    println(s"Found ${errors.length} type errors.")
-    for err <- errors do
-      println("Type error: " + err)
-    println("Typed AST: " + typed)
+    assert(errors == List())
   }
 
 
@@ -74,7 +59,7 @@ class MySuite extends munit.FunSuite {
       |        case Cons(h, t)
       |          Cons(h, myAppend(t, b))
       |
-      |fun main() Unit
+      |fun main() unit
       |    let lst1 = Cons(1, Cons(2, Nil))
       |    let lst2 = Cons(3, Cons(4, Nil))
       |    let lst3 = myAppend(lst1, lst2)
@@ -85,9 +70,6 @@ class MySuite extends munit.FunSuite {
     val result = Interpreter.evalProg(ast, "main")
     assertEquals(result, Interpreter.Value.UnitVal)
     val (typed, errors) = TypeChecker.checkProgram(ast)
-    println(s"Found ${errors.length} type errors.")
-    for err <- errors do
-      println("Type error: " + err)
-    println("Typed AST: " + typed)
+    assert(errors.isEmpty, s"Type errors:\n${errors.mkString("\n")}")
   }
 }

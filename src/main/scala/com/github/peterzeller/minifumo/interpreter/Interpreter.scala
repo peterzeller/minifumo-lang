@@ -306,7 +306,8 @@ object Interpreter:
     )
 
   private def builtinPrintln(args: List[Value], env: Env): (Value, Env) =
-    args.foreach(value => println(renderValue(value)))
+    // TODO do not use global state, pass in the PrintStream via the Env
+    args.foreach(value => System.out.println(renderValue(value)))
     (Value.UnitVal, env)
 
   private def builtinPlus(args: List[Value], env: Env): (Value, Env) =
