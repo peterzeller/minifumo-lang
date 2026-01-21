@@ -234,7 +234,7 @@ object Interpreter:
 
   private def matchPattern(pattern: Pattern, value: Value, env: Env): Option[Map[String, Value]] =
     val res = pattern match
-      case Pattern.Wildcard =>
+      case Pattern.Wildcard() =>
         Some(Map.empty)
       case Pattern.Lit(literal) =>
         if literalValue(literal) == value then Some(Map.empty) else None
