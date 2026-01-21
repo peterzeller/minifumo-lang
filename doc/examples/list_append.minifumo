@@ -1,0 +1,16 @@
+data List =
+   Nil
+ | Cons(head Int, tail List)
+
+fun myAppend(a List, b List) List
+    match a
+        case Nil
+          b
+        case Cons(h, t)
+          Cons(h, myAppend(t, b))
+
+fun main() Unit
+    let lst1 = Cons(1, Cons(2, Nil))
+    let lst2 = Cons(3, Cons(4, Nil))
+    let lst3 = myAppend(lst1, lst2)
+    println(lst3)

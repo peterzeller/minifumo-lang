@@ -75,7 +75,7 @@ object TypeChecker:
       "block" -> BuiltinFunctionSymbol("block", Type.Fun(Nil, Type.Unknown))
     )
 
-  def checkProgram(program: ast.Program): (Program, List[TypeError]) =
+  def checkProgram(program: ast.ProgramFile): (Program, List[TypeError]) =
     val (exports, exportErrors) = extractExports(program)
     val errors = ListBuffer.empty[TypeError]
     errors ++= exportErrors
@@ -93,7 +93,7 @@ object TypeChecker:
     }
     (Program(typedItems), errors.toList)
 
-  def extractExports(program: ast.Program): (ExportEnv, List[TypeError]) =
+  def extractExports(program: ast.ProgramFile): (ExportEnv, List[TypeError]) =
     val errors = ListBuffer.empty[TypeError]
     var functions = Map.empty[String, FunctionSymbol]
     var ctors = Map.empty[String, CtorSymbol]

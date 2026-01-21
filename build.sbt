@@ -19,6 +19,8 @@ lazy val root = project
       "org.scalameta" %% "munit" % "1.0.0" % Test
     ),
 
+    run / fork := true,
+
     Compile / sourceGenerators += generateAntlr.taskValue,
     generateAntlr := {
       val log = streams.value.log

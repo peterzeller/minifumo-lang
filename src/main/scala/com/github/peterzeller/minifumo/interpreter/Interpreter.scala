@@ -71,7 +71,7 @@ object Interpreter:
 
   type Builtin = (List[Value], Env) => (Value, Env)
 
-  def evalProg(program: Program, entryName: String): Value =
+  def evalProg(program: ProgramFile, entryName: String): Value =
     val env = buildEnv(program)
     val (value, _) = evalFunc(entryName, Nil, env)
     value
@@ -205,7 +205,7 @@ object Interpreter:
     }
     (values, currentEnv)
 
-  private def buildEnv(program: Program): Env =
+  private def buildEnv(program: ProgramFile): Env =
     var functions = Map.empty[String, FunDef]
     var ctors = Map.empty[String, Int]
     program.items.foreach {
@@ -366,8 +366,13 @@ object Interpreter:
   private def builtinMap(args: List[Value], env: Env): (Value, Env) =
     if args.length % 2 != 0 then
       throw new IllegalArgumentException("map expects an even number of args (key/value pairs)")
-    val entries = args.grouped(2).map { case List(k, v) => k -> v }.toMap
+    val entries = args.grouped(2).map(listToPair).toMap
     (Value.MapVal(entries), env)
+
+  private def listToPair(list: List[Value]): (Value, Value) =
+    list match
+      case List(a, b) => (a, b)
+      case other => throw new IllegalArgumentException(s"Expected list of length 2 for pair, got: $other")
 
   private def builtinLen(args: List[Value], env: Env): (Value, Env) =
     args match

@@ -8,12 +8,23 @@ grammar Minifumo;
 // -------------------- Parser --------------------
 
 program
-  : (NL | topLevel)* EOF
+  : importStatement* (NL | topLevel)* EOF
   ;
+
+// Import statements
+// 1. project local wrt. to package root
+//    For example, import symbol foo from a file "blub/bla.minifumo":
+//    import foo from "blub/bla"
+// 2. from a Git repo, specifying a tag or commit hash (version locked in local lock file and in global proxy)
+//    For example, import symbol foo from a file "blub/bla.minifumo" in a Github repo with a specific tag:
+//    import foo from "blub/bla" in "github.com/example/blub@v1.3"
+importStatement: 'import' ID  ('from' from=STRING ('in' in=STRING)?)? NL;
 
 topLevel
   : dataDecl
   | funDecl
+  | typeClassDecl
+  | typeClassImpl
   ;
 
 // -------- ADTs --------
@@ -45,7 +56,11 @@ ctorField
 // -------- Functions --------
 
 funDecl
-  : 'fun' ID typeParams? '(' funParams? ')' type? suite
+  : funSig suite
+  ;
+
+funSig
+  : 'fun' ID typeParams? '(' funParams? ')' type?
   ;
 
 funParams
@@ -64,6 +79,12 @@ suite
 block
   : (NL)* expr (NL+ expr)* (NL)*
   ;
+
+// Type classes
+
+typeClassDecl: 'typeclass' ID NL BEGIN (funSig NL)* END;
+
+typeClassImpl: 'implement' ID 'for' type BEGIN (funDecl NL)* END;
 
 // -------- Types --------
 

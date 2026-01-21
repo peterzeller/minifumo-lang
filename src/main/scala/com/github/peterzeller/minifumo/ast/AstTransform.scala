@@ -5,8 +5,8 @@ import com.github.peterzeller.minifumo.antlr.MinifumoParser
 import scala.jdk.CollectionConverters.*
 
 object AstTransform:
-  def program(ctx: MinifumoParser.ProgramContext): Program =
-    Program(ctx.topLevel().asScala.toList.map(topLevel))
+  def program(ctx: MinifumoParser.ProgramContext): ProgramFile =
+    ProgramFile(ctx.topLevel().asScala.toList.map(topLevel))
 
   def topLevel(ctx: MinifumoParser.TopLevelContext): TopLevel =
     if ctx.dataDecl() != null then
@@ -38,10 +38,11 @@ object AstTransform:
     CtorField(ctx.ID().getText, `type`(ctx.`type`()))
 
   def funDecl(ctx: MinifumoParser.FunDeclContext): TopLevel =
-    val name = ctx.ID().getText
-    val params = Option(ctx.funParams()).map(funParams).getOrElse(Nil)
-    val tParams = Option(ctx.typeParams()).map(typeParams).getOrElse(Nil)
-    val returnType = Option(ctx.`type`()).map(`type`)
+    val sig = ctx.funSig()
+    val name = sig.ID().getText
+    val params = Option(sig.funParams()).map(funParams).getOrElse(Nil)
+    val tParams = Option(sig.typeParams()).map(typeParams).getOrElse(Nil)
+    val returnType = Option(sig.`type`()).map(`type`)
     val body = suite(ctx.suite())
     TopLevel.FunDecl(name, tParams, params, returnType, body)
 

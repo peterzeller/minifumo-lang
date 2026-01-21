@@ -1,6 +1,9 @@
 package com.github.peterzeller.minifumo.ast
 
-case class Program(items: List[TopLevel])
+case class SourcePos(line: Int, column: Int)
+case class SourceRange(start: SourcePos, end: SourcePos)
+
+case class ProgramFile(items: List[TopLevel])(source: SourceRange)
 
 enum TopLevel:
   case DataDecl(name: String, typeParams: List[String], ctors: List[CtorDecl])
