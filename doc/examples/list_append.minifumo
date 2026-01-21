@@ -14,3 +14,5 @@ fun main() unit
     let lst2 = Cons(3, Cons(4, Nil))
     let lst3 = myAppend(lst1, lst2)
     println(lst3)
+
+// Output: Cons(1, Cons(2, Cons(3, Cons(4, Nil))))

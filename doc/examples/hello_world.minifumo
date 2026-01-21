@@ -2,3 +2,5 @@
 
 fun main() unit
     println("Hello world")
+
+// Output: Hello world

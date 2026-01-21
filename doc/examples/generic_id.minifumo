@@ -3,3 +3,5 @@ fun id[T](x T) T
 
 fun main() Int
     id(42)
+
+// Output:

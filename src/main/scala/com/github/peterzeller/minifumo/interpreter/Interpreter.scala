@@ -473,7 +473,8 @@ object Interpreter:
       case Value.SetVal(values) => values.map(renderValue).mkString("Set(", ", ", ")")
       case Value.MapVal(values) =>
         values.map { case (k, v) => s"${renderValue(k)}: ${renderValue(v)}" }.mkString("Map(", ", ", ")")
-      case Value.AdtVal(name, args) => s"$name${args.map(renderValue).mkString("(", ", ", ")")}"
+      case Value.AdtVal(name, args) =>
+        if args.isEmpty then name else s"$name${args.map(renderValue).mkString("(", ", ", ")")}"
       case Value.UnitVal => "unit"
       case Value.UndefinedVal => "undefined"
       case Value.FuncVal(_) => "<function>"
