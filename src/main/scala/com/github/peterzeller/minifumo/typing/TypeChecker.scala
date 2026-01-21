@@ -225,6 +225,15 @@ object TypeChecker:
         (Expr.Lit(value, tpe)(source), Nil)
       case ast.Expr.Var(name) =>
         resolveSymbol(name, env) match
+          case Some(symbol: CtorSymbol) if symbol.arity == 0 =>
+            val tpe = expectedType match
+              case Some(expected) if expected != Type.Unknown =>
+                val typeParamBindings = scala.collection.mutable.Map.empty[String, Type]
+                collectTypeParamBindings(symbol.resultType, expected, symbol.typeParams.toSet, typeParamBindings)
+                instantiateType(symbol.resultType, typeParamBindings.toMap)
+              case _ =>
+                symbol.resultType
+            (Expr.Var(symbol, tpe)(source), Nil)
           case Some(symbol) =>
             (Expr.Var(symbol, symbol.tpe)(source), Nil)
           case None =>
