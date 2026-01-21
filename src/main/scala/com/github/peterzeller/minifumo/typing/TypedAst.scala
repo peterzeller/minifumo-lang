@@ -21,8 +21,9 @@ object TypedAst:
   final case class BuiltinValueSymbol(name: String, tpe: Type) extends TermSymbol
   final case class ErrorSymbol(name: String, tpe: Type) extends Symbol
 
-  final case class FunctionSymbol(name: String, tpe: Type.Fun) extends Symbol
-  final case class CtorSymbol(name: String, tpe: Type.Fun, arity: Int, resultType: Type) extends Symbol
+  final case class FunctionSymbol(name: String, typeParams: List[String], tpe: Type.Fun) extends Symbol
+  final case class CtorSymbol(name: String, typeParams: List[String], tpe: Type.Fun, arity: Int, resultType: Type)
+      extends Symbol
   final case class BuiltinFunctionSymbol(name: String, tpe: Type.Fun) extends Symbol
 
   case class Program(items: List[TopLevel])(val source: SourceRange)
