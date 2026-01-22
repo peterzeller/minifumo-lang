@@ -60,7 +60,12 @@ funDecl
   ;
 
 funSig
-  : 'fun' ID typeParams? '(' funParams? ')' type?
+  : 'fun' ID typeParams? '(' funParams? ')' type? givenClause?
+  ;
+
+// given clause can be used to define required type classes for a function or type class instantiation.
+givenClause
+  : 'given' '(' funParams ')'
   ;
 
 funParams
@@ -82,9 +87,9 @@ block
 
 // Type classes
 
-typeClassDecl: 'typeclass' ID NL BEGIN (funSig NL)* END;
+typeClassDecl: 'typeclass' ID typeParams? NL BEGIN (funSig NL)* END;
 
-typeClassImpl: 'implement' ID 'for' type BEGIN (funDecl NL)* END;
+typeClassImpl: 'instance' name=ID typeParams? 'for' ID typeArgs? givenClause? NL BEGIN (funDecl NL)* END;
 
 // -------- Types --------
 
@@ -110,7 +115,7 @@ expr
   | '(' expr ')'                              #Paren
 
   // postfix
-  | expr '(' argList? ')'                     #Call
+  | expr typeArgs? '(' argList? ')' usingClause?                    #Call
   | expr '.' ID ('(' argList? ')')?           #Dot
 
   // unary
@@ -158,6 +163,16 @@ expr
 argList
   : expr (',' expr)*
   ;
+
+typeArgs
+  : '[' type (',' type)* ']'
+  ;
+
+usingClause
+  : 'using' '(' type (',' type)* ')'
+  ;
+
+
 
 matchCase
   : 'case' pattern suite

@@ -1,0 +1,28 @@
+
+
+typeclass Show[T]
+    fun show(value T) String
+
+instance showString for Show[String]
+    fun show(value String) String
+        value
+
+instance showInt for Show[Int]
+    fun show(value Int) String
+        "41"
+
+instance showInt2 for Show[Int]
+    fun show(value Int) String
+        "42"
+
+fun printValue[T](value T) given (s Show[T])
+    println(show(value))
+
+fun main()
+    printValue("Hello World")
+    printValue(42) using (showInt2)
+
+
+// Output:
+// Hello World
+// 42
