@@ -57,6 +57,7 @@ object Main:
         Using.resource(Files.list(path)) { stream =>
           stream.iterator().asScala.toList
             .filter(Files.isRegularFile(_))
+            .filter(_.toString.endsWith(".minifumo"))
             .sortBy(_.toString)
             .flatMap(checkFile)
         }
