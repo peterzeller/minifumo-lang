@@ -87,9 +87,21 @@ block
 
 // Type classes
 
-typeClassDecl: 'typeclass' ID typeParams? NL BEGIN (funSig NL)* END;
+typeClassDecl
+  : 'typeclass' ID typeParams? NL BEGIN typeClassSigBlock? END
+  ;
 
-typeClassImpl: 'instance' name=ID typeParams? 'for' ID typeArgs? givenClause? NL BEGIN (funDecl NL)* END;
+typeClassImpl
+  : 'instance' name=ID typeParams? 'for' ID typeArgs? givenClause? NL BEGIN typeClassImplBlock? END
+  ;
+
+typeClassSigBlock
+  : (NL)* funSig (NL+ funSig)* (NL)*
+  ;
+
+typeClassImplBlock
+  : (NL)* funDecl (NL+ funDecl)* (NL)*
+  ;
 
 // -------- Types --------
 
