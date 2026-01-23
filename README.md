@@ -115,3 +115,16 @@ So, why don't existing languages use minimal functional modules?
         The invariant is a function that takes an instance of the data type and returns a Boolean.
         When construction an instance of the data type, it is checked that the invariant is true (either with a runtime check or proven via a property).
     2. An encapsulated data type that can only be constructed via a small set of function and does not expose its internal representation.
+
+## Development setup (Codex)
+
+Use the following commands to install sbt locally (per the Codex environment setup) and run tests:
+
+```bash
+curl -L -o sbt-1.10.10.zip \
+  https://github.com/sbt/sbt/releases/download/v1.10.10/sbt-1.10.10.zip
+unzip sbt-1.10.10.zip
+export PATH="$PWD/sbt/bin:$PATH"
+
+sbt test
+```
