@@ -1,6 +1,8 @@
 package com.github.peterzeller.minifumo.interpreter
 
-import com.github.peterzeller.minifumo.ast.*
+import com.github.peterzeller.minifumo.ast.Literal
+import com.github.peterzeller.minifumo.typing.TypedAst
+import com.github.peterzeller.minifumo.typing.TypedAst.*
 
 import scala.annotation.tailrec
 import scala.util.control.NoStackTrace
@@ -21,57 +23,46 @@ object Interpreter:
     override def toString(): String =
       renderValue(this)
 
-  final case class FunDef(params: List[String], body: Suite)
+  final case class FunDef(params: List[ParamSymbol], body: Suite)
 
   final case class Env(
-      scopes: List[Map[String, Value]],
+      scopes: List[Map[Int, Value]],
       functions: Map[String, FunDef],
       ctors: Map[String, Int]
     ):
-    def resolve(name: String): Option[Value] =
-      scopes.collectFirst { case scope if scope.contains(name) => scope(name) }.orElse({
-        functions.get(name).map(f => {
-          Value.FuncVal((args: List[Value], env: Env) => {
-            if args.length != f.params.length then
-              throw new IllegalArgumentException(s"Function $name expects ${f.params.length} args, got ${args.length}")
-            val bindings = f.params.zip(args).toMap
-            val envWithParams = env.pushScope(bindings)
-            try
-              val (result, envAfter) = Interpreter.evalSuite(f.body, envWithParams)
-              (result, envAfter.popScope)
-            catch
-              case Interpreter.ReturnSignal(value, envAfter) =>
-                (value, envAfter.popScope)
-          })
-        })
-      }).orElse({
-        ctors.get(name).map(arity =>
-          if arity == 0 then
-            Value.AdtVal(name, Nil)
-          else
-            Value.FuncVal((args: List[Value], env: Env) => {
-            if args.length != arity then
-              throw new IllegalArgumentException(s"Constructor $name expects $arity args, got ${args.length}")
-            (Value.AdtVal(name, args), env)
-        }))
-      })
+    def resolve(symbol: TypedAst.Symbol): Option[Value] =
+      symbol match
+        case term: TermSymbol => resolveTerm(term)
+        case fun: FunctionSymbol =>
+          functions.get(fun.name).map(funValue)
+        case ctor: CtorSymbol =>
+          ctorValue(ctor.name, ctor.arity)
+        case builtin: BuiltinFunctionSymbol =>
+          builtins.get(builtin.name).map(builtinValue)
+        case _: ErrorSymbol => None
 
-    def pushScope(bindings: Map[String, Value]): Env =
+    private def resolveTerm(symbol: TermSymbol): Option[Value] =
+      symbol match
+        case LocalSymbol(_, _, id) => scopes.collectFirst { case scope if scope.contains(id) => scope(id) }
+        case ParamSymbol(_, _, id) => scopes.collectFirst { case scope if scope.contains(id) => scope(id) }
+        case BuiltinValueSymbol(name, _) => baseScope.get(name)
+
+    def pushScope(bindings: Map[Int, Value]): Env =
       copy(scopes = bindings :: scopes)
 
     def popScope: Env =
       copy(scopes = scopes.drop(1))
 
-    def withBinding(name: String, value: Value): Env =
+    def withBinding(id: Int, value: Value): Env =
       scopes match
-        case head :: tail => copy(scopes = (head + (name -> value)) :: tail)
-        case Nil => copy(scopes = List(Map(name -> value)))
+        case head :: tail => copy(scopes = (head + (id -> value)) :: tail)
+        case Nil => copy(scopes = List(Map(id -> value)))
 
   private final case class ReturnSignal(value: Value, env: Env) extends RuntimeException with NoStackTrace
 
   type Builtin = (List[Value], Env) => (Value, Env)
 
-  def evalProg(program: ProgramFile, entryName: String): Value =
+  def evalProg(program: TypedAst.Program, entryName: String): Value =
     val env = buildEnv(program)
     val (value, _) = evalFunc(entryName, Nil, env)
     value
@@ -89,69 +80,60 @@ object Interpreter:
           case None =>
             env.functions.get(name) match
               case Some(funDef) =>
-                if args.length != funDef.params.length then
-                  throw new IllegalArgumentException(
-                    s"Function $name expects ${funDef.params.length} args, got ${args.length}"
-                  )
-                val bindings = funDef.params.zip(args).toMap
-                val envWithParams = env.pushScope(bindings)
-                try
-                  val (result, envAfter) = evalSuite(funDef.body, envWithParams)
-                  (result, envAfter.popScope)
-                catch
-                  case ReturnSignal(value, envAfter) =>
-                    (value, envAfter.popScope)
+                funValue(funDef) match
+                  case Value.FuncVal(fn) => fn(args, env)
+                  case _ =>
+                    throw new IllegalArgumentException(s"Function $name is not callable")
               case None =>
                 throw new IllegalArgumentException(s"Unknown function: $name")
 
   def evalExpr(expr: Expr, env: Env): (Value, Env) =
     expr match
-      case Expr.Lit(value) =>
+      case Expr.Lit(value, _) =>
         (literalValue(value), env)
-      case Expr.Var(name) =>
-        env.resolve(name) match
+      case Expr.Var(symbol, _) =>
+        env.resolve(symbol) match
           case Some(value) => (value, env)
-          case None => throw new IllegalArgumentException(s"Unknown variable: $name")
-      case Expr.Paren(inner) =>
+          case None => throw new IllegalArgumentException(s"Unknown symbol: ${symbol.name}")
+      case Expr.Paren(inner, _) =>
         evalExpr(inner, env)
-      case Expr.Call(callee, args) =>
+      case Expr.Call(callee, args, _) =>
         callee match
-          case Expr.Var(".") if args.length == 2 =>
+          case Expr.Var(symbol, _) if symbol.name == "." && args.length == 2 =>
             val (target, envAfterTarget) = evalExpr(args.head, env)
-            val fieldName = args(1) match
-              case Expr.Var(name) => name
-              case Expr.Lit(Literal.StringLit(value)) => value
-              case other => throw new IllegalArgumentException(s"Expected field name, got: $other")
+            val fieldName = dotFieldName(args(1))
             builtinDot(List(target, Value.StringVal(fieldName)), envAfterTarget)
-          case Expr.Var(name) =>
-            val (argValues, envAfterArgs) = evalArgs(args, env)
-            evalFunc(name, argValues, envAfterArgs)
           case _ =>
-            throw new IllegalArgumentException(s"Call target must be a variable, got: $callee")
-      case Expr.LetIn(name, _, _, valueExpr, bodyExpr) =>
+            val (calleeValue, envAfterCallee) = evalExpr(callee, env)
+            val (argValues, envAfterArgs) = evalArgs(args, envAfterCallee)
+            calleeValue match
+              case Value.FuncVal(fn) => fn(argValues, envAfterArgs)
+              case other =>
+                throw new IllegalArgumentException(s"Call target must be a function, got: $other")
+      case Expr.LetIn(symbol, _, _, valueExpr, bodyExpr, _) =>
         val (value, envAfterValue) = evalExpr(valueExpr, env)
-        val envWithBinding = envAfterValue.pushScope(Map(name -> value))
+        val envWithBinding = envAfterValue.pushScope(Map(symbol.id -> value))
         val (result, envAfterBody) = evalExpr(bodyExpr, envWithBinding)
         (result, envAfterBody.popScope)
-      case Expr.IfThenElse(cond, thenExpr, elseExpr) =>
+      case Expr.IfThenElse(cond, thenExpr, elseExpr, _) =>
         val (condValue, envAfterCond) = evalExpr(cond, env)
         condValue match
           case Value.BoolVal(true) => evalExpr(thenExpr, envAfterCond)
           case Value.BoolVal(false) => evalExpr(elseExpr, envAfterCond)
           case other => throw new IllegalArgumentException(s"Expected Bool in if condition, got: $other")
-      case Expr.For(name, inExpr, body) =>
+      case Expr.For(symbol, inExpr, body, _) =>
         val (collection, envAfterCollection) = evalExpr(inExpr, env)
         val elements = iterableElements(collection)
         var currentEnv = envAfterCollection
         var lastValue: Value = Value.UnitVal
         elements.foreach { elem =>
-          val envWithElem = currentEnv.pushScope(Map(name -> elem))
+          val envWithElem = currentEnv.pushScope(Map(symbol.id -> elem))
           val (value, envAfterBody) = evalSuite(body, envWithElem)
           lastValue = value
           currentEnv = envAfterBody.popScope
         }
         (lastValue, currentEnv)
-      case Expr.While(cond, body) =>
+      case Expr.While(cond, body, _) =>
         @tailrec
         def loop(loopEnv: Env, lastValue: Value): (Value, Env) =
           val (condValue, envAfterCond) = evalExpr(cond, loopEnv)
@@ -165,7 +147,7 @@ object Interpreter:
               throw new IllegalArgumentException(s"Expected Bool in while condition, got: $other")
 
         loop(env, Value.UnitVal)
-      case Expr.Match(scrutinee, cases) =>
+      case Expr.Match(scrutinee, cases, _) =>
         val (value, envAfterScrutinee) = evalExpr(scrutinee, env)
         cases.iterator
           .flatMap { matchCase =>
@@ -178,7 +160,7 @@ object Interpreter:
           .toSeq
           .headOption
           .getOrElse(throw new IllegalArgumentException(s"No match for value: ${renderValue(value)}"))
-      case Expr.Return(valueExpr) =>
+      case Expr.Return(valueExpr, _) =>
         val (value, envAfterValue) = evalExpr(valueExpr, env)
         throw ReturnSignal(value, envAfterValue)
 
@@ -186,7 +168,7 @@ object Interpreter:
     suite match
       case Suite.Single(expr) =>
         evalExpr(expr, env)
-      case Suite.Block(exprs) =>
+      case Suite.Block(exprs, _) =>
         var currentEnv = env
         var lastValue: Value = Value.UnitVal
         exprs.foreach { expr =>
@@ -205,18 +187,18 @@ object Interpreter:
     }
     (values, currentEnv)
 
-  private def buildEnv(program: ProgramFile): Env =
+  private def buildEnv(program: TypedAst.Program): Env =
     var functions = Map.empty[String, FunDef]
     var ctors = Map.empty[String, Int]
     program.items.foreach {
           case TopLevel.DataDecl(_, _, constructors) =>
             constructors.foreach { ctor =>
-              ctors = ctors + (ctor.name -> ctor.fields.length)
+              ctors = ctors + (ctor.symbol.name -> ctor.fields.length)
             }
-          case TopLevel.FunDecl(name, _, params, _, body) =>
-            functions = functions + (name -> FunDef(params.map(_.name), body))
+          case TopLevel.FunDecl(symbol, _, params, body) =>
+            functions = functions + (symbol.name -> FunDef(params, body))
         }
-    Env(List(baseScope), functions, ctors)
+    Env(List(Map.empty), functions, ctors)
 
   private def baseScope: Map[String, Value] =
     Map(
@@ -232,23 +214,17 @@ object Interpreter:
       case Literal.BoolLit(value) => Value.BoolVal(value)
       case Literal.StringLit(value) => Value.StringVal(value)
 
-  private def matchPattern(pattern: Pattern, value: Value, env: Env): Option[Map[String, Value]] =
+  private def matchPattern(pattern: Pattern, value: Value, env: Env): Option[Map[Int, Value]] =
     val res = pattern match
       case Pattern.Wildcard() =>
         Some(Map.empty)
       case Pattern.Lit(literal) =>
         if literalValue(literal) == value then Some(Map.empty) else None
-      case Pattern.BinderOrCtor0(name) =>
-        env.ctors.get(name) match
-          case Some(0) =>
-            value match
-              case Value.AdtVal(ctorName, args) if ctorName == name && args.isEmpty => Some(Map.empty)
-              case _ => None
-          case _ =>
-            Some(Map(name -> value))
-      case Pattern.Ctor(name, args) =>
+      case Pattern.Binder(symbol) =>
+        Some(Map(symbol.id -> value))
+      case Pattern.Ctor(symbol, args) =>
         value match
-          case Value.AdtVal(ctorName, ctorArgs) if ctorName == name && ctorArgs.length == args.length =>
+          case Value.AdtVal(ctorName, ctorArgs) if ctorName == symbol.name && ctorArgs.length == args.length =>
             matchPatternList(args, ctorArgs, env)
           case _ => None
     res
@@ -257,10 +233,10 @@ object Interpreter:
       patterns: List[Pattern],
       values: List[Value],
       env: Env
-    ): Option[Map[String, Value]] =
+    ): Option[Map[Int, Value]] =
     val results = patterns.zip(values).map { case (pat, v) => matchPattern(pat, v, env) }
     if results.forall(_.isDefined) then
-      Some(results.flatten.foldLeft(Map.empty[String, Value])(_ ++ _))
+      Some(results.flatten.foldLeft(Map.empty[Int, Value])(_ ++ _))
     else
       None
 
@@ -463,6 +439,43 @@ object Interpreter:
           case Some(value) => (value, env)
           case None => throw new IllegalArgumentException(s"Missing map field: $field")
       case other => throw new IllegalArgumentException(s"Unsupported . args: $other")
+
+  private def dotFieldName(expr: Expr): String =
+    expr match
+      case Expr.Var(symbol, _) => symbol.name
+      case Expr.Lit(Literal.StringLit(value), _) => value
+      case other => throw new IllegalArgumentException(s"Expected field name, got: $other")
+
+  private def funValue(funDef: FunDef): Value.FuncVal =
+    Value.FuncVal((args: List[Value], env: Env) => {
+      if args.length != funDef.params.length then
+        throw new IllegalArgumentException(
+          s"Function expects ${funDef.params.length} args, got ${args.length}"
+        )
+      val bindings = funDef.params.zip(args).map { case (param, arg) => param.id -> arg }.toMap
+      val envWithParams = env.pushScope(bindings)
+      try
+        val (result, envAfter) = Interpreter.evalSuite(funDef.body, envWithParams)
+        (result, envAfter.popScope)
+      catch
+        case Interpreter.ReturnSignal(value, envAfter) =>
+          (value, envAfter.popScope)
+    })
+
+  private def ctorValue(name: String, arity: Int): Option[Value] =
+    if arity == 0 then
+      Some(Value.AdtVal(name, Nil))
+    else
+      Some(
+        Value.FuncVal((args: List[Value], env: Env) => {
+          if args.length != arity then
+            throw new IllegalArgumentException(s"Constructor $name expects $arity args, got ${args.length}")
+          (Value.AdtVal(name, args), env)
+        })
+      )
+
+  private def builtinValue(builtin: Builtin): Value.FuncVal =
+    Value.FuncVal((args: List[Value], env: Env) => builtin(args, env))
 
   private def renderValue(value: Value): String =
     value match

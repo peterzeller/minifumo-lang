@@ -26,6 +26,9 @@ local.sbt
 .metals/
 metals.sbt
 
+# Codex
+.codex/bin/
+
 # IDEA
 .idea
 .idea_modules

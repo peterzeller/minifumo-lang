@@ -3,6 +3,7 @@ package com.github.peterzeller.minifumo
 import com.github.peterzeller.minifumo.ast.{AstTransform, TopLevel}
 import com.github.peterzeller.minifumo.interpreter.Interpreter
 import com.github.peterzeller.minifumo.parser.parseInput
+import com.github.peterzeller.minifumo.typing.TypeChecker
 import munit.FunSuite
 
 import java.io.{ByteArrayOutputStream, PrintStream}
@@ -41,12 +42,15 @@ class ExamplesSuite extends FunSuite:
 
     val cst = parseInput(content)
     val ast = AstTransform.program(cst)
+    val (typedProgram, errors) = TypeChecker.checkProgram(ast)
 
     val hasMain = ast.items.exists:
       case fun: TopLevel.FunDecl => fun.name == "main"
       case _ => false
 
     if hasMain then
+      if errors.nonEmpty then
+        fail(s"Type check failed for ${path.getFileName}:\n${errors.map(_.message).mkString("\n")}")
       val expectedOutputOpt = extractExpectedOutput(content)
 
       val baos = new ByteArrayOutputStream()
@@ -55,7 +59,7 @@ class ExamplesSuite extends FunSuite:
       System.setOut(ps)
 
       try
-        Interpreter.evalProg(ast, "main")
+        Interpreter.evalProg(typedProgram, "main")
       catch
         case e: Throwable =>
           System.setOut(oldOut)

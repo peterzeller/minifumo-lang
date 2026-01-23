@@ -47,7 +47,12 @@ object Main:
     )
 
   def runFile(path: Path): Either[String, Interpreter.Value] =
-    parseProgram(path).map(program => Interpreter.evalProg(program, "main"))
+    parseProgram(path).flatMap { program =>
+      val (typedProgram, errors) = TypeChecker.checkProgram(program)
+      if errors.nonEmpty then
+        errors.foreach(err => Console.err.println(s"${path.toString}:${renderSourceRange(err.source)}: ${err.message}"))
+      Right(Interpreter.evalProg(typedProgram, "main"))
+    }
 
   def checkDirectory(path: Path): List[String] =
     if !Files.exists(path) then
@@ -93,4 +98,3 @@ object Main:
       s"${start.line}:${start.column}"
     else
       s"${start.line}:${start.column}-${end.line}:${end.column}"
-
