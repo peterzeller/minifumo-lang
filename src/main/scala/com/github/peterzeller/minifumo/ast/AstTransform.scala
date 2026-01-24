@@ -184,10 +184,24 @@ object AstTransform:
   private def opCall(name: String, args: List[Expr], source: SourceRange): Expr =
     Expr.Call(Expr.Var(name)(source), args)(source)
 
+  private var blockCounter: Long = 0
+
+  private def freshBlockName(): String =
+    blockCounter += 1
+    s"$$block$$${blockCounter}"
+
   private def suiteToExpr(s: Suite): Expr =
     s match
       case Suite.Single(e) => e
-      case Suite.Block(exprs) => opCall("block", exprs, suiteSource(s))
+      case Suite.Block(exprs) =>
+        exprs match
+          case Nil => Expr.Var("unit")(suiteSource(s))
+          case _ =>
+            val init = exprs.init
+            val last = exprs.last
+            init.foldRight(last) { (expr, acc) =>
+              Expr.LetIn(freshBlockName(), true, None, expr, acc)(suiteSource(s))
+            }
 
   private def uninitializedValue(source: SourceRange): Expr =
     Expr.Var("undefined")(source)
