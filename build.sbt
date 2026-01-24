@@ -20,6 +20,7 @@ lazy val root = project
     ),
 
     run / fork := true,
+    Test / parallelExecution := false,
 
     Compile / sourceGenerators += generateAntlr.taskValue,
     generateAntlr := {

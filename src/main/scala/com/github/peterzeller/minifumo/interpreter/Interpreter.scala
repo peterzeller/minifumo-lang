@@ -90,79 +90,119 @@ object Interpreter:
   def evalExpr(expr: Expr, env: Env): (Value, Env) =
     expr match
       case Expr.Lit(value, _) =>
-        (literalValue(value), env)
+        evalLit(value, env)
       case Expr.Var(symbol, _) =>
-        env.resolve(symbol) match
-          case Some(value) => (value, env)
-          case None => throw new IllegalArgumentException(s"Unknown symbol: ${symbol.name}")
+        evalVar(symbol, env)
       case Expr.Paren(inner, _) =>
-        evalExpr(inner, env)
+        evalParen(inner, env)
       case Expr.Call(callee, args, _) =>
-        callee match
-          case Expr.Var(symbol, _) if symbol.name == "." && args.length == 2 =>
-            val (target, envAfterTarget) = evalExpr(args.head, env)
-            val fieldName = dotFieldName(args(1))
-            builtinDot(List(target, Value.StringVal(fieldName)), envAfterTarget)
-          case _ =>
-            val (calleeValue, envAfterCallee) = evalExpr(callee, env)
-            val (argValues, envAfterArgs) = evalArgs(args, envAfterCallee)
-            calleeValue match
-              case Value.FuncVal(fn) => fn(argValues, envAfterArgs)
-              case other =>
-                throw new IllegalArgumentException(s"Call target must be a function, got: $other")
+        evalCall(callee, args, env)
       case Expr.LetIn(symbol, _, _, valueExpr, bodyExpr, _) =>
-        val (value, envAfterValue) = evalExpr(valueExpr, env)
-        val envWithBinding = envAfterValue.pushScope(Map(symbol.id -> value))
-        val (result, envAfterBody) = evalExpr(bodyExpr, envWithBinding)
-        (result, envAfterBody.popScope)
+        evalLetIn(symbol, valueExpr, bodyExpr, env)
       case Expr.IfThenElse(cond, thenExpr, elseExpr, _) =>
-        val (condValue, envAfterCond) = evalExpr(cond, env)
-        condValue match
-          case Value.BoolVal(true) => evalExpr(thenExpr, envAfterCond)
-          case Value.BoolVal(false) => evalExpr(elseExpr, envAfterCond)
-          case other => throw new IllegalArgumentException(s"Expected Bool in if condition, got: $other")
+        evalIfThenElse(cond, thenExpr, elseExpr, env)
       case Expr.For(symbol, inExpr, body, _) =>
-        val (collection, envAfterCollection) = evalExpr(inExpr, env)
-        val elements = iterableElements(collection)
-        var currentEnv = envAfterCollection
-        var lastValue: Value = Value.UnitVal
-        elements.foreach { elem =>
-          val envWithElem = currentEnv.pushScope(Map(symbol.id -> elem))
-          val (value, envAfterBody) = evalSuite(body, envWithElem)
-          lastValue = value
-          currentEnv = envAfterBody.popScope
-        }
-        (lastValue, currentEnv)
+        evalFor(symbol, inExpr, body, env)
       case Expr.While(cond, body, _) =>
-        @tailrec
-        def loop(loopEnv: Env, lastValue: Value): (Value, Env) =
-          val (condValue, envAfterCond) = evalExpr(cond, loopEnv)
-          condValue match
-            case Value.BoolVal(true) =>
-              val (value, envAfterBody) = evalSuite(body, envAfterCond)
-              loop(envAfterBody, value)
-            case Value.BoolVal(false) =>
-              (lastValue, envAfterCond)
-            case other =>
-              throw new IllegalArgumentException(s"Expected Bool in while condition, got: $other")
-
-        loop(env, Value.UnitVal)
+        evalWhile(cond, body, env)
       case Expr.Match(scrutinee, cases, _) =>
-        val (value, envAfterScrutinee) = evalExpr(scrutinee, env)
-        cases.iterator
-          .flatMap { matchCase =>
-            matchPattern(matchCase.pattern, value, envAfterScrutinee).map { bindings =>
-              val envWithBindings = envAfterScrutinee.pushScope(bindings)
-              val (result, envAfterBody) = evalSuite(matchCase.body, envWithBindings)
-              (result, envAfterBody.popScope)
-            }
-          }
-          .toSeq
-          .headOption
-          .getOrElse(throw new IllegalArgumentException(s"No match for value: ${renderValue(value)}"))
+        evalMatch(scrutinee, cases, env)
       case Expr.Return(valueExpr, _) =>
-        val (value, envAfterValue) = evalExpr(valueExpr, env)
-        throw ReturnSignal(value, envAfterValue)
+        evalReturn(valueExpr, env)
+
+  private def evalLit(value: Literal, env: Env): (Value, Env) =
+    (literalValue(value), env)
+
+  private def evalVar(symbol: TypedAst.Symbol, env: Env): (Value, Env) =
+    env.resolve(symbol) match
+      case Some(value) => (value, env)
+      case None => throw new IllegalArgumentException(s"Unknown symbol: ${symbol.name}")
+
+  private def evalParen(inner: Expr, env: Env): (Value, Env) =
+    evalExpr(inner, env)
+
+  private def evalCall(callee: Expr, args: List[Expr], env: Env): (Value, Env) =
+    callee match
+      case Expr.Var(symbol, _) if symbol.name == "." && args.length == 2 =>
+        val (target, envAfterTarget) = evalExpr(args.head, env)
+        val fieldName = dotFieldName(args(1))
+        builtinDot(List(target, Value.StringVal(fieldName)), envAfterTarget)
+      case _ =>
+        val (calleeValue, envAfterCallee) = evalExpr(callee, env)
+        val (argValues, envAfterArgs) = evalArgs(args, envAfterCallee)
+        calleeValue match
+          case Value.FuncVal(fn) => fn(argValues, envAfterArgs)
+          case other =>
+            throw new IllegalArgumentException(s"Call target must be a function, got: $other")
+
+  private def evalLetIn(
+      symbol: LocalSymbol,
+      valueExpr: Expr,
+      bodyExpr: Expr,
+      env: Env
+    ): (Value, Env) =
+    val (value, envAfterValue) = evalExpr(valueExpr, env)
+    val envWithBinding = envAfterValue.pushScope(Map(symbol.id -> value))
+    val (result, envAfterBody) = evalExpr(bodyExpr, envWithBinding)
+    (result, envAfterBody.popScope)
+
+  private def evalIfThenElse(
+      cond: Expr,
+      thenExpr: Expr,
+      elseExpr: Expr,
+      env: Env
+    ): (Value, Env) =
+    val (condValue, envAfterCond) = evalExpr(cond, env)
+    condValue match
+      case Value.BoolVal(true) => evalExpr(thenExpr, envAfterCond)
+      case Value.BoolVal(false) => evalExpr(elseExpr, envAfterCond)
+      case other => throw new IllegalArgumentException(s"Expected Bool in if condition, got: $other")
+
+  private def evalFor(symbol: LocalSymbol, inExpr: Expr, body: Suite, env: Env): (Value, Env) =
+    val (collection, envAfterCollection) = evalExpr(inExpr, env)
+    val elements = iterableElements(collection)
+    var currentEnv = envAfterCollection
+    var lastValue: Value = Value.UnitVal
+    elements.foreach { elem =>
+      val envWithElem = currentEnv.pushScope(Map(symbol.id -> elem))
+      val (value, envAfterBody) = evalSuite(body, envWithElem)
+      lastValue = value
+      currentEnv = envAfterBody.popScope
+    }
+    (lastValue, currentEnv)
+
+  private def evalWhile(cond: Expr, body: Suite, env: Env): (Value, Env) =
+    @tailrec
+    def loop(loopEnv: Env, lastValue: Value): (Value, Env) =
+      val (condValue, envAfterCond) = evalExpr(cond, loopEnv)
+      condValue match
+        case Value.BoolVal(true) =>
+          val (value, envAfterBody) = evalSuite(body, envAfterCond)
+          loop(envAfterBody, value)
+        case Value.BoolVal(false) =>
+          (lastValue, envAfterCond)
+        case other =>
+          throw new IllegalArgumentException(s"Expected Bool in while condition, got: $other")
+
+    loop(env, Value.UnitVal)
+
+  private def evalMatch(scrutinee: Expr, cases: List[MatchCase], env: Env): (Value, Env) =
+    val (value, envAfterScrutinee) = evalExpr(scrutinee, env)
+    cases.iterator
+      .flatMap { matchCase =>
+        matchPattern(matchCase.pattern, value, envAfterScrutinee).map { bindings =>
+          val envWithBindings = envAfterScrutinee.pushScope(bindings)
+          val (result, envAfterBody) = evalSuite(matchCase.body, envWithBindings)
+          (result, envAfterBody.popScope)
+        }
+      }
+      .toSeq
+      .headOption
+      .getOrElse(throw new IllegalArgumentException(s"No match for value: ${renderValue(value)}"))
+
+  private def evalReturn(valueExpr: Expr, env: Env): (Value, Env) =
+    val (value, envAfterValue) = evalExpr(valueExpr, env)
+    throw ReturnSignal(value, envAfterValue)
 
   def evalSuite(suite: Suite, env: Env): (Value, Env) =
     suite match
