@@ -7,8 +7,11 @@ import org.antlr.v4.runtime.atn.ATNConfigSet
 import org.antlr.v4.runtime.dfa.DFA
 import org.antlr.v4.runtime.Parser
 import java.{util => ju}
+import com.github.peterzeller.minifumo.ast.SourcePos
 
-def parseInput(input: String): ProgramContext =
+case class SyntaxError(pos: SourcePos, message: String)
+
+def parseInput(input: String): (ProgramContext, List[SyntaxError]) =
 
   val charStream = org.antlr.v4.runtime.CharStreams.fromString(input)
   val lexer = new ExtendedMinifumoLexer(charStream)
@@ -20,14 +23,11 @@ def parseInput(input: String): ProgramContext =
   parser.addErrorListener(errors)
   val tree = parser.program()
   val syntaxErrors = errors.syntaxErrors
-  if syntaxErrors.nonEmpty then
-    throw new RuntimeException("Syntax errors:\n" + syntaxErrors.mkString("\n"))
-  tree
+  (tree, syntaxErrors)
 
 class ErrorCollector extends ANTLRErrorListener:
-  private val errors: scala.collection.mutable.ListBuffer[String] = scala.collection.mutable.ListBuffer()
-  def syntaxErrors: List[String] = errors.toList
-
+  private val errors: scala.collection.mutable.ListBuffer[SyntaxError] = scala.collection.mutable.ListBuffer()
+  def syntaxErrors: List[SyntaxError] = errors.toList
   override def reportAttemptingFullContext(recognizer: Parser, dfa: DFA, startIndex: Int, stopIndex: Int, conflictingAlts: ju.BitSet, configs: ATNConfigSet): Unit = ()
 
   override def reportAmbiguity(recognizer: Parser, dfa: DFA, startIndex: Int, stopIndex: Int, exact: Boolean, ambigAlts: ju.BitSet, configs: ATNConfigSet): Unit = ()
@@ -42,7 +42,7 @@ class ErrorCollector extends ANTLRErrorListener:
       msg: String,
       e: org.antlr.v4.runtime.RecognitionException
   ): Unit =
-    errors += s"line $line:$charPositionInLine $msg"
+    errors += SyntaxError(SourcePos(line, charPositionInLine), msg)
 
 
   override def reportContextSensitivity(

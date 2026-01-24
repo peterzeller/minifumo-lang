@@ -135,8 +135,6 @@ object AstTransform:
         Expr.Bind(c.ID().getText, false, tpe, uninitializedValue(range(c)))(range(c))
       case c: MinifumoParser.AssignContext =>
         Expr.Assign(c.ID().getText, expr(c.expr()))(range(c))
-      case c: MinifumoParser.BindSuiteContext =>
-        Expr.LetIn(c.ID().getText, false, None, expr(c.expr()), suiteToExpr(suite(c.suite())))(range(c))
       case c: MinifumoParser.IfThenElseContext =>
         Expr.IfThenElse(expr(c.expr(0)), expr(c.expr(1)), expr(c.expr(2)))(range(c))
       case c: MinifumoParser.IfSuiteContext =>

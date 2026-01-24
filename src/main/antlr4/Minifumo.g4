@@ -81,7 +81,7 @@ suite
   ;
 
 block
-  : (NL)* expr (NL+ expr)* (NL)*
+  : (expr NL)+
   ;
 
 // Type classes
@@ -164,9 +164,6 @@ expr
 
   // assignment statement
   | ID ':=' expr                              #Assign
-
-  // binder-suite: x := expr NL ...
-  | ID ':=' expr suite                        #BindSuite
 
   // if
   | 'if' expr 'then' expr 'else' expr  #IfThenElse
