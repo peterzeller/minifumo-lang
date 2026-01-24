@@ -1,0 +1,4 @@
+fun main() unit
+    println(1 < 2)
+
+// Output: true

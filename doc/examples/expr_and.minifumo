@@ -1,0 +1,4 @@
+fun main() unit
+    println(true and false)
+
+// Output: false

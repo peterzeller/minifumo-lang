@@ -55,10 +55,7 @@ object AstTransform:
     FunParam(ctx.ID().getText, `type`(ctx.`type`()))(range(ctx))
 
   def suite(ctx: MinifumoParser.SuiteContext): Suite =
-    if ctx.block() != null then
-      Suite.Block(block(ctx.block()))(range(ctx))
-    else
-      Suite.Single(expr(ctx.expr()))(range(ctx))
+    Suite.Block(block(ctx.block()))(range(ctx))
 
   def block(ctx: MinifumoParser.BlockContext): List[Expr] =
     ctx.expr().asScala.toList.map(expr)
@@ -124,8 +121,20 @@ object AstTransform:
       case c: MinifumoParser.VarSuiteNoInitContext =>
         val tpe = Option(c.`type`()).map(`type`)
         Expr.LetIn(c.ID().getText, false, tpe, uninitializedValue(range(c)), suiteToExpr(suite(c.suite())))(range(c))
-      case c: MinifumoParser.BindSuiteContext =>
-        Expr.LetIn(c.ID().getText, false, None, expr(c.expr()), suiteToExpr(suite(c.suite())))(range(c))
+      case c: MinifumoParser.LetStmtContext =>
+        val tpe = Option(c.`type`()).map(`type`)
+        Expr.Bind(c.ID().getText, true, tpe, expr(c.expr()))(range(c))
+      case c: MinifumoParser.LetStmtNoInitContext =>
+        val tpe = Option(c.`type`()).map(`type`)
+        Expr.Bind(c.ID().getText, true, tpe, uninitializedValue(range(c)))(range(c))
+      case c: MinifumoParser.VarStmtContext =>
+        val tpe = Option(c.`type`()).map(`type`)
+        Expr.Bind(c.ID().getText, false, tpe, expr(c.expr()))(range(c))
+      case c: MinifumoParser.VarStmtNoInitContext =>
+        val tpe = Option(c.`type`()).map(`type`)
+        Expr.Bind(c.ID().getText, false, tpe, uninitializedValue(range(c)))(range(c))
+      case c: MinifumoParser.AssignContext =>
+        Expr.Assign(c.ID().getText, expr(c.expr()))(range(c))
       case c: MinifumoParser.IfThenElseContext =>
         Expr.IfThenElse(expr(c.expr(0)), expr(c.expr(1)), expr(c.expr(2)))(range(c))
       case c: MinifumoParser.IfSuiteContext =>
@@ -184,24 +193,13 @@ object AstTransform:
   private def opCall(name: String, args: List[Expr], source: SourceRange): Expr =
     Expr.Call(Expr.Var(name)(source), args)(source)
 
-  private var blockCounter: Long = 0
-
-  private def freshBlockName(): String =
-    blockCounter += 1
-    s"$$block$$${blockCounter}"
-
   private def suiteToExpr(s: Suite): Expr =
     s match
       case Suite.Single(e) => e
       case Suite.Block(exprs) =>
         exprs match
           case Nil => Expr.Var("unit")(suiteSource(s))
-          case _ =>
-            val init = exprs.init
-            val last = exprs.last
-            init.foldRight(last) { (expr, acc) =>
-              Expr.LetIn(freshBlockName(), true, None, expr, acc)(suiteSource(s))
-            }
+          case _ => Expr.Block(exprs)(suiteSource(s))
 
   private def uninitializedValue(source: SourceRange): Expr =
     Expr.Var("undefined")(source)

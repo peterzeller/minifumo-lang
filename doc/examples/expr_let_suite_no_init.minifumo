@@ -1,0 +1,5 @@
+fun main() unit
+    let x Int
+        println(1)
+
+// Output: 1

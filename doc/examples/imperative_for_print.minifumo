@@ -1,0 +1,13 @@
+data List[A] = Nil | Cons(head A, tail List[A])
+
+fun logAll(numbers List[Int]) unit
+    for n in numbers
+        println(n)
+
+fun main() unit
+    logAll(Cons(1, Cons(2, Cons(3, Nil))))
+
+// Output:
+// 1
+// 2
+// 3

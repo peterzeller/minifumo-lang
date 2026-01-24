@@ -1,7 +1,8 @@
 fun id[T](x T) T
     x
 
-fun main() Int
-    id(42)
+fun main() unit
+    let value Int = id(42)
+    println(value)
 
-// Output:
+// Output: 42
