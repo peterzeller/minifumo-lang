@@ -8,8 +8,9 @@ import org.antlr.v4.runtime.dfa.DFA
 import org.antlr.v4.runtime.Parser
 import java.{util => ju}
 import com.github.peterzeller.minifumo.ast.SourcePos
+import com.github.peterzeller.minifumo.common.MinifumoError
 
-case class SyntaxError(pos: SourcePos, message: String)
+case class SyntaxError(pos: SourcePos, message: String) extends MinifumoError
 
 def parseInput(input: String): (ProgramContext, List[SyntaxError]) =
 

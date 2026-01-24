@@ -4,9 +4,10 @@ import com.github.peterzeller.minifumo.ast
 import com.github.peterzeller.minifumo.typing.TypedAst.*
 
 import scala.collection.mutable.ListBuffer
+import com.github.peterzeller.minifumo.common.MinifumoError
 
 object TypeChecker:
-  final case class TypeError(message: String, source: ast.SourceRange)
+  final case class TypeError(message: String, source: ast.SourceRange) extends MinifumoError
 
   final case class DataType(name: String, typeParams: List[String], ctors: List[CtorSymbol])
 

@@ -8,6 +8,13 @@ import com.github.peterzeller.minifumo.typing.TypeChecker
 import java.nio.file.{Files, Path, Paths}
 import scala.jdk.CollectionConverters.*
 import scala.util.{Try, Using}
+import com.github.peterzeller.minifumo.ast.ProgramFile
+import com.github.peterzeller.minifumo.ast.SourceRange
+import com.github.peterzeller.minifumo.ast.SourcePos
+import com.github.peterzeller.minifumo.parser.SyntaxError
+import com.github.peterzeller.minifumo.typing.TypeChecker.TypeError
+import com.github.peterzeller.minifumo.common.MinifumoError
+import scala.deriving.Mirror
 
 object Main:
   def main(args: Array[String]): Unit =
@@ -46,12 +53,14 @@ object Main:
         |  minifumo check <filename-or-directory>""".stripMargin
     )
 
-  def runFile(path: Path): Either[String, Interpreter.Value] =
-    parseProgram(path).map(program => Interpreter.evalProg(program, "main"))
+  def runFile(path: Path): (Interpreter.Value, List[MinifumoError]) =
+    val (program, syntaxError) = parseProgram(path)
+    (Interpreter.evalProg(program, "main"), syntaxError)
 
-  def checkDirectory(path: Path): List[String] =
+
+  def checkDirectory(path: Path): List[(Path, List[MinifumoError])] =
     if !Files.exists(path) then
-      List(s"Path not found: ${path.toString}")
+      List((path, List(TypeError(s"Directory not found: ${path.toString}", SourceRange(SourcePos(0, 0), SourcePos(0, 0))))))
     else
       Try {
         Using.resource(Files.list(path)) { stream =>
@@ -61,10 +70,11 @@ object Main:
             .sortBy(_.toString)
             .flatMap(checkFile)
         }
-      }.getOrElse(List(s"Failed reading directory: ${path.toString}"))
+      } TODO
 
-  def checkFile(path: Path): List[String] =
-    parseProgram(path) match
+  def checkFile(path: Path): List[TypeError] =
+    let (program, syntaxErrors) = parseProgram(path)
+
       case Left(message) =>
         List(message)
       case Right(program) =>
@@ -74,17 +84,22 @@ object Main:
         else
           errors.map(err => s"${path.toString}:${renderSourceRange(err.source)}: ${err.message}")
 
-  private def parseProgram(path: Path): Either[String, com.github.peterzeller.minifumo.ast.ProgramFile] =
+  private val emptyProgramFile = ProgramFile(List())(SourceRange(SourcePos(0, 0), SourcePos(0, 0)))
+
+  private def parseProgram(path: Path): (ProgramFile, List[SyntaxError]) =
     if !Files.exists(path) then
-      Left(s"Path not found: ${path.toString}")
+      (emptyProgramFile, List(SyntaxError(SourcePos(0, 0), s"File not found: ${path.toString}")))
     else
       val content = Try {
         Using.resource(scala.io.Source.fromFile(path.toFile))(_.mkString)
-      }.toEither.left.map(ex => s"Failed reading ${path.toString}: ${ex.getMessage}")
-      content.flatMap { input =>
-        Try(AstTransform.program(parseInput(input))).toEither
-          .left.map(ex => s"Failed parsing ${path.toString}: ${ex.getMessage}")
       }
+      content match
+        case scala.util.Failure(exception) =>
+          (emptyProgramFile, List(SyntaxError(SourcePos(0, 0), s"Failed reading file ${path.toString}: ${exception.getMessage}")) )
+        case scala.util.Success(input) =>
+          val (cst, syntaxErrors) = parseInput(input)
+          val ast = AstTransform.program(cst)
+          (ast, syntaxErrors)
 
   private def renderSourceRange(range: com.github.peterzeller.minifumo.ast.SourceRange): String =
     val start = range.start
