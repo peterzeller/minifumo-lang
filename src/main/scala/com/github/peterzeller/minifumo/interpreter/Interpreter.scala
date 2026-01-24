@@ -67,6 +67,21 @@ object Interpreter:
         case head :: tail => copy(scopes = (head + (name -> value)) :: tail)
         case Nil => copy(scopes = List(Map(name -> value)))
 
+    def updateBinding(name: String, value: Value): Env =
+      def updateScopes(remaining: List[Map[String, Value]]): (List[Map[String, Value]], Boolean) =
+        remaining match
+          case Nil => (Nil, false)
+          case head :: tail =>
+            if head.contains(name) then
+              ((head + (name -> value)) :: tail, true)
+            else
+              val (updatedTail, found) = updateScopes(tail)
+              (head :: updatedTail, found)
+      val (updatedScopes, found) = updateScopes(scopes)
+      if !found then
+        throw new IllegalArgumentException(s"Unknown variable: $name")
+      copy(scopes = updatedScopes)
+
   private final case class ReturnSignal(value: Value, env: Env) extends RuntimeException with NoStackTrace
 
   type Builtin = (List[Value], Env) => (Value, Env)
@@ -114,6 +129,15 @@ object Interpreter:
           case None => throw new IllegalArgumentException(s"Unknown variable: $name")
       case Expr.Paren(inner) =>
         evalExpr(inner, env)
+      case Expr.Block(exprs) =>
+        var currentEnv = env
+        var lastValue: Value = Value.UnitVal
+        exprs.foreach { expr =>
+          val (value, envAfter) = evalExpr(expr, currentEnv)
+          lastValue = value
+          currentEnv = envAfter
+        }
+        (lastValue, currentEnv)
       case Expr.Call(callee, args) =>
         callee match
           case Expr.Var(".") if args.length == 2 =>
@@ -133,6 +157,12 @@ object Interpreter:
         val envWithBinding = envAfterValue.pushScope(Map(name -> value))
         val (result, envAfterBody) = evalExpr(bodyExpr, envWithBinding)
         (result, envAfterBody.popScope)
+      case Expr.Bind(name, _, _, valueExpr) =>
+        val (value, envAfterValue) = evalExpr(valueExpr, env)
+        (Value.UnitVal, envAfterValue.withBinding(name, value))
+      case Expr.Assign(name, valueExpr) =>
+        val (value, envAfterValue) = evalExpr(valueExpr, env)
+        (Value.UnitVal, envAfterValue.updateBinding(name, value))
       case Expr.IfThenElse(cond, thenExpr, elseExpr) =>
         val (condValue, envAfterCond) = evalExpr(cond, env)
         condValue match
@@ -269,6 +299,8 @@ object Interpreter:
       case Value.ListVal(values) => values.toList
       case Value.SetVal(values) => values.toList
       case Value.MapVal(values) => values.keys.toList
+      case Value.AdtVal("Nil", Nil) => Nil
+      case Value.AdtVal("Cons", List(head, tail)) => head :: iterableElements(tail)
       case other =>
         throw new IllegalArgumentException(s"Expected iterable, got: $other")
 

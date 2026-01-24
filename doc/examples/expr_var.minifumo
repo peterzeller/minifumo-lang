@@ -1,0 +1,7 @@
+fun identity(x Int) Int
+    x
+
+fun main() unit
+    println(identity(1))
+
+// Output: 1

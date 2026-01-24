@@ -1,0 +1,13 @@
+data Option[A] = None | Some(value A)
+
+fun matchValue(value Option[Int]) Int
+    match value
+        case None
+            0
+        case Some(x)
+            x
+
+fun main() unit
+    println(matchValue(Some(1)))
+
+// Output: 1

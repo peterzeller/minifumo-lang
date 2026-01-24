@@ -1,0 +1,4 @@
+fun main() unit
+    println(let x = 1 in -x)
+
+// Output: -1

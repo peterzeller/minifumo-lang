@@ -1,0 +1,7 @@
+fun main() unit
+    if true
+        println(1)
+    else
+        println(2)
+
+// Output: 1
