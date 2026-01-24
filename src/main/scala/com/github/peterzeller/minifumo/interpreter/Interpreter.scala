@@ -301,8 +301,7 @@ object Interpreter:
       "values" -> builtinValues,
       "append" -> builtinAppend,
       "concat" -> builtinConcat,
-      "slice" -> builtinSlice,
-      "block" -> builtinBlock
+      "slice" -> builtinSlice
     )
 
   private def builtinPrintln(args: List[Value], env: Env): (Value, Env) =
@@ -451,10 +450,6 @@ object Interpreter:
         val e = end.toInt
         (Value.ListVal(values.slice(s, e)), env)
       case other => throw new IllegalArgumentException(s"Unsupported slice args: $other")
-
-  private def builtinBlock(args: List[Value], env: Env): (Value, Env) =
-    val value = args.lastOption.getOrElse(Value.UnitVal)
-    (value, env)
 
   private def builtinDot(args: List[Value], env: Env): (Value, Env) =
     args match
