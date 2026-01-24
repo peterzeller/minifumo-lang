@@ -39,7 +39,7 @@ class ExamplesSuite extends FunSuite:
   def runExample(path: Path): Unit =
     val content = Files.readString(path)
 
-    val cst = parseInput(content)
+    val (cst, _) = parseInput(content)
     val ast = AstTransform.program(cst)
 
     val hasMain = ast.items.exists:

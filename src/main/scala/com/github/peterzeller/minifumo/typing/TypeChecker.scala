@@ -4,9 +4,10 @@ import com.github.peterzeller.minifumo.ast
 import com.github.peterzeller.minifumo.typing.TypedAst.*
 
 import scala.collection.mutable.ListBuffer
+import com.github.peterzeller.minifumo.common.MinifumoError
 
 object TypeChecker:
-  final case class TypeError(message: String, source: ast.SourceRange)
+  final case class TypeError(message: String, source: ast.SourceRange) extends MinifumoError
 
   final case class DataType(name: String, typeParams: List[String], ctors: List[CtorSymbol])
 
@@ -203,10 +204,13 @@ object TypeChecker:
       case ast.Suite.Block(exprs) =>
         val errors = ListBuffer.empty[TypeError]
         val lastIndex = exprs.length - 1
+        var currentEnv = env
         val typedExprs = exprs.zipWithIndex.map { case (expr, index) =>
           val exprExpectedType = if index == lastIndex then expectedType else None
-          val (typedExpr, exprErrors) = typeExpr(expr, env, expectedReturn, exprExpectedType, idSupply)
+          val (typedExpr, exprErrors, updatedEnv) =
+            typeExprWithEnv(expr, currentEnv, expectedReturn, exprExpectedType, idSupply)
           errors ++= exprErrors
+          currentEnv = updatedEnv
           typedExpr
         }
         val tpe = typedExprs.lastOption.map(_.tpe).getOrElse(baseTypes("unit"))
@@ -243,9 +247,14 @@ object TypeChecker:
       case ast.Expr.Lit(value) => synthLit(value, expr.source)
       case ast.Expr.Var(name) => synthVar(name, expr.source, env)
       case ast.Expr.Paren(inner) => synthParen(inner, expr.source, env, idSupply)
+      case ast.Expr.Block(exprs) => synthBlock(exprs, expr.source, env, idSupply)
       case ast.Expr.Call(callee, args) => synthCall(callee, args, expr.source, env, idSupply)
       case ast.Expr.LetIn(name, isConstant, declaredTypeAst, valueExpr, bodyExpr) =>
         synthLetIn(name, isConstant, declaredTypeAst, valueExpr, bodyExpr, expr.source, env, idSupply)
+      case ast.Expr.Bind(name, isConstant, declaredTypeAst, valueExpr) =>
+        synthBind(name, isConstant, declaredTypeAst, valueExpr, expr.source, env, idSupply)
+      case ast.Expr.Assign(name, valueExpr) =>
+        synthAssign(name, valueExpr, expr.source, env, idSupply)
       case ast.Expr.IfThenElse(cond, thenExpr, elseExpr) =>
         synthIfThenElse(cond, thenExpr, elseExpr, expr.source, env, idSupply)
       case ast.Expr.For(name, inExpr, body) =>
@@ -272,6 +281,8 @@ object TypeChecker:
       case ast.Expr.Lit(value) => checkLit(value, expectedType, expr.source)
       case ast.Expr.Var(name) => checkVar(name, expectedType, expr.source, env)
       case ast.Expr.Paren(inner) => checkParen(inner, expectedType, expr.source, env, expectedReturn, idSupply)
+      case ast.Expr.Block(exprs) =>
+        checkBlock(exprs, expectedType, expr.source, env, expectedReturn, idSupply)
       case ast.Expr.Call(callee, args) =>
         checkCall(callee, args, expectedType, expr.source, env, expectedReturn, idSupply)
       case ast.Expr.LetIn(name, isConstant, declaredTypeAst, valueExpr, bodyExpr) =>
@@ -287,6 +298,10 @@ object TypeChecker:
           expectedReturn,
           idSupply
         )
+      case ast.Expr.Bind(name, isConstant, declaredTypeAst, valueExpr) =>
+        checkBind(name, isConstant, declaredTypeAst, valueExpr, expectedType, expr.source, env, expectedReturn, idSupply)
+      case ast.Expr.Assign(name, valueExpr) =>
+        checkAssign(name, valueExpr, expectedType, expr.source, env, expectedReturn, idSupply)
       case ast.Expr.IfThenElse(cond, thenExpr, elseExpr) =>
         checkIfThenElse(cond, thenExpr, elseExpr, expectedType, expr.source, env, expectedReturn, idSupply)
       case ast.Expr.For(name, inExpr, body) =>
@@ -365,6 +380,69 @@ object TypeChecker:
     ): (Expr, List[TypeError]) =
     val (typedInner, errors) = checkExpr(inner, env, expectedReturn, expectedType, idSupply)
     (Expr.Paren(typedInner, typedInner.tpe)(source), errors)
+
+  private def synthBlock(
+      exprs: List[ast.Expr],
+      source: ast.SourceRange,
+      env: TypeEnv,
+      idSupply: IdSupply
+    ): (Expr, List[TypeError]) =
+    typeBlockExpr(exprs, None, source, env, env.expectedReturn, idSupply)
+
+  private def checkBlock(
+      exprs: List[ast.Expr],
+      expectedType: Type,
+      source: ast.SourceRange,
+      env: TypeEnv,
+      expectedReturn: Type,
+      idSupply: IdSupply
+    ): (Expr, List[TypeError]) =
+    typeBlockExpr(exprs, Some(expectedType), source, env, expectedReturn, idSupply)
+
+  private def typeBlockExpr(
+      exprs: List[ast.Expr],
+      expectedType: Option[Type],
+      source: ast.SourceRange,
+      env: TypeEnv,
+      expectedReturn: Type,
+      idSupply: IdSupply
+    ): (Expr, List[TypeError]) =
+    val errors = ListBuffer.empty[TypeError]
+    val lastIndex = exprs.length - 1
+    var currentEnv = env
+    val typedExprs = exprs.zipWithIndex.map { case (expr, index) =>
+      val exprExpectedType = if index == lastIndex then expectedType else None
+      val (typedExpr, exprErrors, updatedEnv) =
+        typeExprWithEnv(expr, currentEnv, expectedReturn, exprExpectedType, idSupply)
+      errors ++= exprErrors
+      currentEnv = updatedEnv
+      typedExpr
+    }
+    val tpe = typedExprs.lastOption.map(_.tpe).getOrElse(baseTypes("unit"))
+    (Expr.Block(typedExprs, tpe)(source), errors.toList)
+
+  private def typeExprWithEnv(
+      expr: ast.Expr,
+      env: TypeEnv,
+      expectedReturn: Type,
+      expectedType: Option[Type],
+      idSupply: IdSupply
+    ): (Expr, List[TypeError], TypeEnv) =
+    expr match
+      case ast.Expr.Bind(name, isConstant, declaredTypeAst, valueExpr) =>
+        val (typedExpr, errors, updatedEnv) =
+          typeBindWithEnv(name, isConstant, declaredTypeAst, valueExpr, expectedType, expr.source, env, expectedReturn, idSupply)
+        (typedExpr, errors, updatedEnv)
+      case ast.Expr.Assign(name, valueExpr) =>
+        val (typedExpr, errors) = expectedType match
+          case Some(tpe) => checkAssign(name, valueExpr, tpe, expr.source, env, expectedReturn, idSupply)
+          case None => synthAssign(name, valueExpr, expr.source, env, idSupply)
+        (typedExpr, errors, env)
+      case _ =>
+        val (typedExpr, errors) = expectedType match
+          case Some(tpe) => checkExpr(expr, env, expectedReturn, tpe, idSupply)
+          case None => synthesizeExpr(expr, env, idSupply)
+        (typedExpr, errors, env)
 
   // T-App: Γ ⊢ f ⇒ T1 → T2  and  Γ ⊢ a ⇐ T1  ⇒  Γ ⊢ f a ⇒ T2
   private def synthCall(
@@ -486,6 +564,107 @@ object TypeChecker:
     val (typedBody, bodyErrors) = checkExpr(bodyExpr, env.withBinding(symbol), expectedReturn, expectedType, idSupply)
     val allErrors = valueErrors ++ typeErrors ++ bodyErrors
     (Expr.LetIn(symbol, isConstant, declaredType, typedValue, typedBody, typedBody.tpe)(source), allErrors)
+
+  private def synthBind(
+      name: String,
+      isConstant: Boolean,
+      declaredTypeAst: Option[ast.Type],
+      valueExpr: ast.Expr,
+      source: ast.SourceRange,
+      env: TypeEnv,
+      idSupply: IdSupply
+    ): (Expr, List[TypeError]) =
+    val (typedExpr, errors, _) =
+      typeBindWithEnv(name, isConstant, declaredTypeAst, valueExpr, Some(baseTypes("unit")), source, env, env.expectedReturn, idSupply)
+    (typedExpr, errors)
+
+  private def checkBind(
+      name: String,
+      isConstant: Boolean,
+      declaredTypeAst: Option[ast.Type],
+      valueExpr: ast.Expr,
+      expectedType: Type,
+      source: ast.SourceRange,
+      env: TypeEnv,
+      expectedReturn: Type,
+      idSupply: IdSupply
+    ): (Expr, List[TypeError]) =
+    val (typedExpr, errors, _) =
+      typeBindWithEnv(name, isConstant, declaredTypeAst, valueExpr, Some(expectedType), source, env, expectedReturn, idSupply)
+    (typedExpr, errors)
+
+  private def typeBindWithEnv(
+      name: String,
+      isConstant: Boolean,
+      declaredTypeAst: Option[ast.Type],
+      valueExpr: ast.Expr,
+      expectedType: Option[Type],
+      source: ast.SourceRange,
+      env: TypeEnv,
+      expectedReturn: Type,
+      idSupply: IdSupply
+    ): (Expr, List[TypeError], TypeEnv) =
+    val declaredType = declaredTypeAst.map(fromAstType)
+    val (typedValue, valueErrors) = declaredType match
+      case Some(tpe) => checkExpr(valueExpr, env, expectedReturn, tpe, idSupply)
+      case None => synthesizeExpr(valueExpr, env, idSupply)
+    val typeErrors = declaredTypeAst.toList.flatMap(tpe => validateAstType(tpe, env.typeParams, env.exports))
+    val bindingType = declaredType.getOrElse(typedValue.tpe)
+    val symbol = LocalSymbol(name, bindingType, idSupply.freshId())
+    val (checkedType, expectedErrors) = ensureExpectedType(baseTypes("unit"), expectedType, source)
+    val typedExpr = Expr.Bind(symbol, isConstant, declaredType, typedValue, checkedType)(source)
+    (typedExpr, valueErrors ++ typeErrors ++ expectedErrors, env.withBinding(symbol))
+
+  private def synthAssign(
+      name: String,
+      valueExpr: ast.Expr,
+      source: ast.SourceRange,
+      env: TypeEnv,
+      idSupply: IdSupply
+    ): (Expr, List[TypeError]) =
+    val (typedExpr, errors) = typeAssign(name, valueExpr, None, source, env, env.expectedReturn, idSupply)
+    (typedExpr, errors)
+
+  private def checkAssign(
+      name: String,
+      valueExpr: ast.Expr,
+      expectedType: Type,
+      source: ast.SourceRange,
+      env: TypeEnv,
+      expectedReturn: Type,
+      idSupply: IdSupply
+    ): (Expr, List[TypeError]) =
+    val (typedExpr, errors) = typeAssign(name, valueExpr, Some(expectedType), source, env, expectedReturn, idSupply)
+    (typedExpr, errors)
+
+  private def typeAssign(
+      name: String,
+      valueExpr: ast.Expr,
+      expectedType: Option[Type],
+      source: ast.SourceRange,
+      env: TypeEnv,
+      expectedReturn: Type,
+      idSupply: IdSupply
+    ): (Expr, List[TypeError]) =
+    env.resolveLocal(name) match
+      case Some(symbol: LocalSymbol) =>
+        val (typedValue, valueErrors) = checkExpr(valueExpr, env, expectedReturn, symbol.tpe, idSupply)
+        val (checkedType, expectedErrors) = ensureExpectedType(baseTypes("unit"), expectedType, source)
+        (Expr.Assign(symbol, typedValue, checkedType)(source), valueErrors ++ expectedErrors)
+      case Some(symbol) =>
+        val (typedValue, valueErrors) = synthesizeExpr(valueExpr, env, idSupply)
+        val (checkedType, expectedErrors) = ensureExpectedType(baseTypes("unit"), expectedType, source)
+        val errors = valueErrors ++ expectedErrors :+ errorAt(source, s"Cannot assign to ${symbol.name}")
+        val fallbackSymbol = LocalSymbol(name, Type.Unknown, idSupply.freshId())
+        (Expr.Assign(fallbackSymbol, typedValue, checkedType)(source), errors)
+      case None =>
+        val (typedValue, valueErrors) = synthesizeExpr(valueExpr, env, idSupply)
+        val (checkedType, expectedErrors) = ensureExpectedType(baseTypes("unit"), expectedType, source)
+        val symbol = LocalSymbol(name, Type.Unknown, idSupply.freshId())
+        (
+          Expr.Assign(symbol, typedValue, checkedType)(source),
+          valueErrors ++ expectedErrors :+ errorAt(source, s"Unknown variable: $name")
+        )
 
   // T-If: Γ ⊢ c ⇐ Bool  and  Γ ⊢ t ⇒ T  and  Γ ⊢ e ⇒ T  ⇒  Γ ⊢ if c then t else e ⇒ T
   private def synthIfThenElse(

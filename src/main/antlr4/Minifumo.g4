@@ -78,7 +78,6 @@ funParam
 
 suite
   : NL BEGIN block END
-  | NL expr
   ;
 
 block
@@ -157,8 +156,14 @@ expr
   | 'var' ID type? '=' expr suite             #VarSuite
   | 'var' ID type? suite                      #VarSuiteNoInit
 
-  // binder-suite: x := expr NL ...
-  | ID ':=' expr suite                        #BindSuite
+  // let/var binding statements
+  | 'let' ID type? '=' expr                   #LetStmt
+  | 'let' ID type?                            #LetStmtNoInit
+  | 'var' ID type? '=' expr                   #VarStmt
+  | 'var' ID type?                            #VarStmtNoInit
+
+  // assignment statement
+  | ID ':=' expr                              #Assign
 
   // if
   | 'if' expr 'then' expr 'else' expr  #IfThenElse

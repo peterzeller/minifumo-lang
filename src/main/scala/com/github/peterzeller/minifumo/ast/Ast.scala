@@ -39,11 +39,14 @@ enum Expr:
   case Lit(value: Literal)(val source: SourceRange)
   case Var(name: String)(val source: SourceRange)
   case Paren(expr: Expr)(val source: SourceRange)
+  case Block(exprs: List[Expr])(val source: SourceRange)
   // Call is used for both function calls, as well as expressions like "a + b"
   // For example, `a+b` is represented as `Call(Var("+"), List(Var("a"), Var("b")))`
   case Call(callee: Expr, args: List[Expr])(val source: SourceRange)
   // Let and Var bindings
   case LetIn(name: String, isConstant: Boolean, tpe: Option[Type], value: Expr, body: Expr)(val source: SourceRange)
+  case Bind(name: String, isConstant: Boolean, tpe: Option[Type], value: Expr)(val source: SourceRange)
+  case Assign(name: String, value: Expr)(val source: SourceRange)
   case IfThenElse(cond: Expr, thenExpr: Expr, elseExpr: Expr)(val source: SourceRange)
   case For(name: String, inExpr: Expr, body: Suite)(val source: SourceRange)
   case While(cond: Expr, body: Suite)(val source: SourceRange)

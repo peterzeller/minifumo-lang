@@ -1,0 +1,7 @@
+fun combine(a Int, b Int) Int
+    a + b
+
+fun main() unit
+    println(1.combine(2))
+
+// Output: 3

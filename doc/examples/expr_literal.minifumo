@@ -1,0 +1,18 @@
+fun constInt() Int
+    42
+
+fun constBool() Bool
+    true
+
+fun constString() String
+    "hi"
+
+fun main() unit
+    println(constInt())
+    println(constBool())
+    println(constString())
+
+// Output:
+// 42
+// true
+// hi

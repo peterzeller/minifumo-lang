@@ -1,2 +1,7 @@
-fun add(x Int, y Int) Int
+fun myAdd(x Int, y Int) Int
     x + y
+
+fun main() unit
+    println(myAdd(1, 2))
+
+// Output: 3

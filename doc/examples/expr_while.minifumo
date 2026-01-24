@@ -1,0 +1,5 @@
+fun main() unit
+    while false
+        println("never")
+
+// Output:

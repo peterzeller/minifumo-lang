@@ -1,0 +1,9 @@
+fun main() unit
+    var dist1 = 0
+    var dist2 = 999
+    var dist3 = 999
+    dist2 := 4
+    dist3 := dist2 + 3
+    println(dist3)
+
+// Output: 7

@@ -1,0 +1,13 @@
+data List = Nil | Cons(head Int, tail List)
+
+fun length(list List) Int
+    match list
+        case Nil
+            0
+        case Cons(_, t)
+            1 + length(t)
+
+fun main() unit
+    println(length(Cons(1, Cons(2, Nil))))
+
+// Output: 2

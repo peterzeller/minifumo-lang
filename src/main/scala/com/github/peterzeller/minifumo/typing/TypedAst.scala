@@ -47,6 +47,7 @@ object TypedAst:
     final case class Lit(value: ast.Literal, tpe: Type)(val source: SourceRange) extends Expr
     final case class Var(symbol: Symbol, tpe: Type)(val source: SourceRange) extends Expr
     final case class Paren(expr: Expr, tpe: Type)(val source: SourceRange) extends Expr
+    final case class Block(exprs: List[Expr], tpe: Type)(val source: SourceRange) extends Expr
     final case class Call(callee: Expr, args: List[Expr], tpe: Type)(val source: SourceRange) extends Expr
     final case class LetIn(
         symbol: LocalSymbol,
@@ -56,6 +57,14 @@ object TypedAst:
         body: Expr,
         tpe: Type
       )(val source: SourceRange) extends Expr
+    final case class Bind(
+        symbol: LocalSymbol,
+        isConstant: Boolean,
+        declaredType: Option[Type],
+        value: Expr,
+        tpe: Type
+      )(val source: SourceRange) extends Expr
+    final case class Assign(symbol: LocalSymbol, value: Expr, tpe: Type)(val source: SourceRange) extends Expr
     final case class IfThenElse(cond: Expr, thenExpr: Expr, elseExpr: Expr, tpe: Type)(val source: SourceRange) extends Expr
     final case class For(symbol: LocalSymbol, inExpr: Expr, body: Suite, tpe: Type)(val source: SourceRange) extends Expr
     final case class While(cond: Expr, body: Suite, tpe: Type)(val source: SourceRange) extends Expr

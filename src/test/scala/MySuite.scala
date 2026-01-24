@@ -8,7 +8,7 @@ import com.github.peterzeller.minifumo.typing.TypeChecker
 class MySuite extends munit.FunSuite {
 
   test("interpreter evals main with 1+2") {
-    val c = parseInput("""
+    val (c, _) = parseInput("""
       |fun main() Int
       |    1 + 2
     """.stripMargin)
@@ -18,7 +18,7 @@ class MySuite extends munit.FunSuite {
   }
 
   test("type checker can type ints") {
-    val c = parseInput("""
+    val (c, _) = parseInput("""
       |fun main() Int
       |    let x = 1
       |    let y = 2
@@ -32,7 +32,7 @@ class MySuite extends munit.FunSuite {
   }
 
   test("type checker can instantiate generic functions") {
-    val c = parseInput("""
+    val (c, _) = parseInput("""
       |fun id[T](x T) T
       |    x
       |
@@ -48,7 +48,7 @@ class MySuite extends munit.FunSuite {
 
 
   test("type checker can work with simple data types") {
-    val c = parseInput("""
+    val (c, _) = parseInput("""
       |data List =
       |   Nil
       | | Cons(head Int, tail List)
