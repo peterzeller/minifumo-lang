@@ -3,6 +3,8 @@ package com.github.peterzeller.minifumo
 import com.github.peterzeller.minifumo.ast.{AstTransform, SourceRange, TopLevel}
 import com.github.peterzeller.minifumo.interpreter.Interpreter
 import com.github.peterzeller.minifumo.parser.{SyntaxError, parseInput}
+import com.github.peterzeller.minifumo.ast.{AstTransform, TopLevel}
+import com.github.peterzeller.minifumo.parser.parseInput
 import com.github.peterzeller.minifumo.typing.TypeChecker
 import munit.FunSuite
 
@@ -46,6 +48,9 @@ class ExamplesSuite extends FunSuite:
 
     val (cst, _) = parseInput(content)
     val ast = AstTransform.program(cst)
+    val (typedProgram, typeErrors) = TypeChecker.checkProgram(ast)
+    if typeErrors.nonEmpty then
+      fail(s"Type check failed:\n${typeErrors.mkString("\n")}")
 
     val hasMain = ast.items.exists:
       case fun: TopLevel.FunDecl => fun.name == "main"
@@ -60,7 +65,7 @@ class ExamplesSuite extends FunSuite:
       System.setOut(ps)
 
       try
-        Interpreter.evalProg(ast, "main")
+        Interpreter.evalProg(typedProgram, "main")
       catch
         case e: Throwable =>
           System.setOut(oldOut)

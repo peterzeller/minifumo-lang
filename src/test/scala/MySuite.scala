@@ -13,7 +13,9 @@ class MySuite extends munit.FunSuite {
       |    1 + 2
     """.stripMargin)
     val ast = AstTransform.program(c)
-    val result = Interpreter.evalProg(ast, "main")
+    val (typed, errors) = TypeChecker.checkProgram(ast)
+    assertEquals(errors, List())
+    val result = Interpreter.evalProg(typed, "main")
     assertEquals(result, Interpreter.Value.IntVal(BigInt(3)))
   }
 
@@ -25,10 +27,10 @@ class MySuite extends munit.FunSuite {
       |    x + y
     """.stripMargin)
     val ast = AstTransform.program(c)
-    val result = Interpreter.evalProg(ast, "main")
-    assertEquals(result, Interpreter.Value.IntVal(BigInt(3)))
     val (typed, errors) = TypeChecker.checkProgram(ast)
     assert(errors == List())
+    val result = Interpreter.evalProg(typed, "main")
+    assertEquals(result, Interpreter.Value.IntVal(BigInt(3)))
   }
 
   test("type checker can instantiate generic functions") {
@@ -40,10 +42,10 @@ class MySuite extends munit.FunSuite {
       |    id(42)
     """.stripMargin)
     val ast = AstTransform.program(c)
-    val result = Interpreter.evalProg(ast, "main")
-    assertEquals(result, Interpreter.Value.IntVal(BigInt(42)))
     val (typed, errors) = TypeChecker.checkProgram(ast)
     assert(errors == List())
+    val result = Interpreter.evalProg(typed, "main")
+    assertEquals(result, Interpreter.Value.IntVal(BigInt(42)))
   }
 
 
@@ -66,10 +68,10 @@ class MySuite extends munit.FunSuite {
       |    println(lst3)
     """.stripMargin)
     val ast = AstTransform.program(c)
-    println("Evaluating program...")
-    val result = Interpreter.evalProg(ast, "main")
-    assertEquals(result, Interpreter.Value.UnitVal)
     val (typed, errors) = TypeChecker.checkProgram(ast)
     assert(errors.isEmpty, s"Type errors:\n${errors.mkString("\n")}")
+    println("Evaluating program...")
+    val result = Interpreter.evalProg(typed, "main")
+    assertEquals(result, Interpreter.Value.UnitVal)
   }
 }

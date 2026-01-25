@@ -48,7 +48,8 @@ object TypedAst:
     final case class Var(symbol: Symbol, tpe: Type)(val source: SourceRange) extends Expr
     final case class Paren(expr: Expr, tpe: Type)(val source: SourceRange) extends Expr
     final case class Block(exprs: List[Expr], tpe: Type)(val source: SourceRange) extends Expr
-    final case class Call(callee: Expr, args: List[Expr], tpe: Type)(val source: SourceRange) extends Expr
+    final case class CallFun(callee: Expr, args: List[Expr], tpe: Type)(val source: SourceRange) extends Expr
+    final case class CallCtor(symbol: CtorSymbol, args: List[Expr], tpe: Type)(val source: SourceRange) extends Expr
     final case class LetIn(
         symbol: LocalSymbol,
         isConstant: Boolean,
