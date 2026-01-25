@@ -1,0 +1,2 @@
+fun usesUnknown() Int
+    wadada // error: Unknown symbol: wadada
