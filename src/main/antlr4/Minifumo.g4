@@ -150,12 +150,6 @@ expr
   | 'let' ID type? '=' expr 'in' expr         #LetIn
   | 'var' ID type? '=' expr 'in' expr         #VarIn
 
-  // let/var with suite (newline + body)
-  | 'let' ID type? '=' expr suite             #LetSuite
-  | 'let' ID type? suite                      #LetSuiteNoInit
-  | 'var' ID type? '=' expr suite             #VarSuite
-  | 'var' ID type? suite                      #VarSuiteNoInit
-
   // let/var binding statements
   | 'let' ID type? '=' expr                   #LetStmt
   | 'let' ID type?                            #LetStmtNoInit

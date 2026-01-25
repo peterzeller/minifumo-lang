@@ -1,5 +1,5 @@
 fun main() unit
     var x Int
-        println(1)
+    println(1)
 
 // Output: 1

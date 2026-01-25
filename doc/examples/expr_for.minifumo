@@ -2,8 +2,8 @@ data List[A] = Nil | Cons(head A, tail List[A])
 
 fun main() unit
     let numbers List[Int] = Cons(1, Cons(2, Cons(3, Nil)))
-        for n in numbers
-            println(n + 1)
+    for n in numbers
+        println(n + 1)
 
 // Output:
 // 2

@@ -109,18 +109,6 @@ object AstTransform:
       case c: MinifumoParser.VarInContext =>
         val tpe = Option(c.`type`()).map(`type`)
         Expr.LetIn(c.ID().getText, false, tpe, expr(c.expr(0)), expr(c.expr(1)))(range(c))
-      case c: MinifumoParser.LetSuiteContext =>
-        val tpe = Option(c.`type`()).map(`type`)
-        Expr.LetIn(c.ID().getText, true, tpe, expr(c.expr()), suiteToExpr(suite(c.suite())))(range(c))
-      case c: MinifumoParser.LetSuiteNoInitContext =>
-        val tpe = Option(c.`type`()).map(`type`)
-        Expr.LetIn(c.ID().getText, true, tpe, uninitializedValue(range(c)), suiteToExpr(suite(c.suite())))(range(c))
-      case c: MinifumoParser.VarSuiteContext =>
-        val tpe = Option(c.`type`()).map(`type`)
-        Expr.LetIn(c.ID().getText, false, tpe, expr(c.expr()), suiteToExpr(suite(c.suite())))(range(c))
-      case c: MinifumoParser.VarSuiteNoInitContext =>
-        val tpe = Option(c.`type`()).map(`type`)
-        Expr.LetIn(c.ID().getText, false, tpe, uninitializedValue(range(c)), suiteToExpr(suite(c.suite())))(range(c))
       case c: MinifumoParser.LetStmtContext =>
         val tpe = Option(c.`type`()).map(`type`)
         Expr.Bind(c.ID().getText, true, tpe, expr(c.expr()))(range(c))
