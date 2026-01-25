@@ -51,7 +51,11 @@ object Main:
     if syntaxErrors.nonEmpty then
       Left(renderSyntaxErrors(path, syntaxErrors))
     else
-      Right(Interpreter.evalProg(program, "main"))
+      val (typedProgram, typeErrors) = TypeChecker.checkProgram(program)
+      if typeErrors.nonEmpty then
+        Left(renderTypeErrors(path, typeErrors))
+      else
+        Right(Interpreter.evalProg(typedProgram, "main"))
 
   def checkDirectory(path: Path): List[String] =
     if !Files.exists(path) then
@@ -106,4 +110,9 @@ object Main:
   private def renderSyntaxErrors(path: Path, errors: List[SyntaxError]): List[String] =
     errors.map { err =>
       s"${path.toString}:${err.pos.line}:${err.pos.column}: ${err.message}"
+    }
+
+  private def renderTypeErrors(path: Path, errors: List[TypeError]): List[String] =
+    errors.map { err =>
+      s"${path.toString}:${renderSourceRange(err.source)}: ${err.message}"
     }
