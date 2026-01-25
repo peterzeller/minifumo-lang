@@ -182,11 +182,6 @@ object TypeChecker:
       if funSymbol.tpe.result == Type.Unknown then None else Some(funSymbol.tpe.result)
     val (typedBody, bodyErrors) = typeSuite(funDecl.body, env, funSymbol.tpe.result, expectedBodyType, idSupply)
     errors ++= bodyErrors
-    if !isCompatible(funSymbol.tpe.result, suiteType(typedBody)) then
-      errors += errorAt(
-        funDecl.source,
-        s"Function ${funDecl.name} returns ${renderType(suiteType(typedBody))}, expected ${renderType(funSymbol.tpe.result)}"
-      )
     val typedFun: TopLevel.FunDecl = TopLevel.FunDecl(funSymbol, funDecl.typeParams, params, typedBody)(funDecl.source)
     (typedFun, errors.toList)
 
@@ -1084,6 +1079,8 @@ object TypeChecker:
       source: ast.SourceRange
     ): (Type, List[TypeError]) =
     expectedType match
+      case Some(expected) if actualType == Type.Unknown =>
+        (actualType, Nil)
       case Some(expected) if !isCompatible(expected, actualType) =>
         (
           actualType,
