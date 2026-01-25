@@ -328,7 +328,7 @@ object TypeChecker:
   private def synthVar(name: String, source: ast.SourceRange, env: TypeEnv): (Expr, List[TypeError]) =
     resolveSymbol(name, env) match
       case Some(symbol: CtorSymbol) if symbol.arity == 0 =>
-        (Expr.Var(symbol, symbol.resultType)(source), Nil)
+        (Expr.CallCtor(symbol, Nil, symbol.resultType)(source), Nil)
       case Some(symbol) =>
         (Expr.Var(symbol, symbol.tpe)(source), Nil)
       case None =>
@@ -350,7 +350,7 @@ object TypeChecker:
           instantiateType(symbol.resultType, typeParamBindings.toMap)
         else symbol.resultType
         val (checkedType, errors) = ensureExpectedType(tpe, Some(expectedType), source)
-        (Expr.Var(symbol, checkedType)(source), errors)
+        (Expr.CallCtor(symbol, Nil, checkedType)(source), errors)
       case Some(symbol) =>
         val (checkedType, errors) = ensureExpectedType(symbol.tpe, Some(expectedType), source)
         (Expr.Var(symbol, checkedType)(source), errors)
@@ -469,11 +469,14 @@ object TypeChecker:
       case Expr.Var(symbol, _) if symbol.name == "." && args.length == 2 =>
         val (typedArgs, argsErrors) = typeExprs(args, env, expectedReturn, None, idSupply)
         val errors = calleeErrors ++ argsErrors :+ errorAt(callee.source, "Field access typing is not implemented")
-        (Expr.Call(typedCallee, typedArgs, Type.Unknown)(source), errors)
+        (Expr.CallFun(typedCallee, typedArgs, Type.Unknown)(source), errors)
       case Expr.Var(symbol, _) if symbol.name == "-" && args.length == 1 =>
         val (typedArg, argErrors) = checkExpr(args.head, env, expectedReturn, baseTypes("Int"), idSupply)
         val errors = calleeErrors ++ argErrors
-        (Expr.Call(typedCallee, List(typedArg), baseTypes("Int"))(source), errors)
+        (Expr.CallFun(typedCallee, List(typedArg), baseTypes("Int"))(source), errors)
+      case Expr.Var(symbol: CtorSymbol, _) =>
+        val (typedExpr, ctorErrors) = typeCtorCall(symbol, args, expectedType, source, env, expectedReturn, idSupply)
+        (typedExpr, calleeErrors ++ ctorErrors)
       case _ =>
         val maybeFunType = resolveFunctionType(typedCallee)
         maybeFunType match
@@ -512,12 +515,57 @@ object TypeChecker:
             }
             val (checkedType, expectedErrors) = ensureExpectedType(instantiatedResultType, Some(expectedType), source)
             errors ++= expectedErrors
-            (Expr.Call(typedCallee, typedArgs, checkedType)(source), errors.toList)
+            (Expr.CallFun(typedCallee, typedArgs, checkedType)(source), errors.toList)
           case None =>
             val (typedArgs, argsErrors) = typeExprs(args, env, expectedReturn, None, idSupply)
             val errors =
               calleeErrors ++ argsErrors :+ errorAt(callee.source, s"Call target is not a function: ${renderType(typedCallee.tpe)}")
-            (Expr.Call(typedCallee, typedArgs, Type.Unknown)(source), errors)
+            (Expr.CallFun(typedCallee, typedArgs, Type.Unknown)(source), errors)
+
+  private def typeCtorCall(
+      ctor: CtorSymbol,
+      args: List[ast.Expr],
+      expectedType: Type,
+      source: ast.SourceRange,
+      env: TypeEnv,
+      expectedReturn: Type,
+      idSupply: IdSupply
+    ): (Expr, List[TypeError]) =
+    val Type.Fun(paramTypes, resultType) = ctor.tpe
+    val errors = ListBuffer.empty[TypeError]
+    val typeParamBindings = scala.collection.mutable.Map.empty[String, Type]
+    if expectedType != Type.Unknown then
+      collectTypeParamBindings(resultType, expectedType, ctor.typeParams.toSet, typeParamBindings)
+    val typedArgs = args.zipWithIndex.map { case (arg, index) =>
+      val expectedParamType =
+        if index < paramTypes.length then
+          instantiateType(paramTypes(index), typeParamBindings.toMap)
+        else Type.Unknown
+      val (typedArg, argErrors) = checkExpr(arg, env, expectedReturn, expectedParamType, idSupply)
+      errors ++= argErrors
+      if index < paramTypes.length then
+        collectTypeParamBindings(paramTypes(index), typedArg.tpe, ctor.typeParams.toSet, typeParamBindings)
+      typedArg
+    }
+    val instantiatedParamTypes = paramTypes.map(p => instantiateType(p, typeParamBindings.toMap))
+    val instantiatedResultType = instantiateType(resultType, typeParamBindings.toMap)
+    if instantiatedParamTypes.length != args.length then
+      errors += errorAt(source, s"Constructor ${ctor.name} expects ${instantiatedParamTypes.length} args, got ${args.length}")
+    instantiatedParamTypes.zipAll(
+      typedArgs,
+      Type.Unknown,
+      Expr.Var(ErrorSymbol("<missing>", Type.Unknown), Type.Unknown)(source)
+    ).foreach {
+      case (expected, actual) if !isCompatible(expected, actual.tpe) =>
+        errors += errorAt(
+          actual.source,
+          s"Argument has type ${renderType(actual.tpe)}, expected ${renderType(expected)}"
+        )
+      case _ => ()
+    }
+    val (checkedType, expectedErrors) = ensureExpectedType(instantiatedResultType, Some(expectedType), source)
+    errors ++= expectedErrors
+    (Expr.CallCtor(ctor, typedArgs, checkedType)(source), errors.toList)
 
   // T-Let: Γ ⊢ v ⇐ T1  and  Γ,x:T1 ⊢ e ⇒ T2  ⇒  Γ ⊢ let x=v in e ⇒ T2
   private def synthLetIn(
@@ -1053,7 +1101,6 @@ object TypeChecker:
       case Expr.Var(symbol, _) =>
         symbol match
           case fun: FunctionSymbol => Some((fun.tpe, fun.typeParams.toSet))
-          case ctor: CtorSymbol => Some((ctor.tpe, ctor.typeParams.toSet))
           case builtin: BuiltinFunctionSymbol => Some((builtin.tpe, Set.empty[String]))
           case _ => None
       case _ =>

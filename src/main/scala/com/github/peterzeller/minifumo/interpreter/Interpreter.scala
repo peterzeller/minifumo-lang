@@ -135,7 +135,7 @@ object Interpreter:
           currentEnv = envAfter
         }
         (lastValue, currentEnv)
-      case Expr.Call(callee, args, _) =>
+      case Expr.CallFun(callee, args, _) =>
         callee match
           case Expr.Var(symbol, _) if symbol.name == "." && args.length == 2 =>
             val (target, envAfterTarget) = evalExpr(args.head, env)
@@ -150,6 +150,13 @@ object Interpreter:
             calleeValue match
               case Value.FuncVal(fn) => fn(argValues, envAfterArgs)
               case other => throw new IllegalArgumentException(s"Call target must be a function, got: $other")
+      case Expr.CallCtor(symbol, args, _) =>
+        val (argValues, envAfterArgs) = evalArgs(args, env)
+        if argValues.length != symbol.arity then
+          throw new IllegalArgumentException(
+            s"Constructor ${symbol.name} expects ${symbol.arity} args, got ${argValues.length}"
+          )
+        (Value.AdtVal(symbol.name, argValues), envAfterArgs)
       case Expr.LetIn(symbol, _, _, valueExpr, bodyExpr, _) =>
         val (value, envAfterValue) = evalExpr(valueExpr, env)
         val envWithBinding = envAfterValue.pushScope(Map(symbol -> value))
