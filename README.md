@@ -118,4 +118,4 @@ So, why don't existing languages use minimal functional modules?
 
 ## Development setup (Codex)
 
-See `agent.md` for the Codex setup and test commands.
+See `AGENTS.md` for the Codex setup and test commands.
