@@ -28,6 +28,7 @@ Builtins are defined in both Scala and Minifumo source files.
 - ANTLR generation task: `generateAntlr` in `build.sbt`
 
 ## Development setup (Codex)
+Always run the full test suite (`sbt test`) before finalizing changes.
 
 Use the following commands to install sbt locally (per the Codex environment setup) and run tests:
 

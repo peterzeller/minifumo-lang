@@ -180,7 +180,7 @@ typeArgs
   ;
 
 usingClause
-  : 'using' '(' type (',' type)* ')'
+  : 'using' '(' expr (',' expr)* ')'
   ;
 
 

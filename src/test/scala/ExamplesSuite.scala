@@ -38,7 +38,11 @@ class ExamplesSuite extends FunSuite:
 
   for file <- exampleFiles do
     test(s"run example ${file.getFileName}"):
-      val expectedErrors = extractExpectedErrors(Files.readString(file))
+      val content = Files.readString(file)
+      val expectedErrors = extractExpectedErrors(content)
+      val expectedOutputOpt = extractExpectedOutput(content)
+      if expectedErrors.isEmpty && expectedOutputOpt.isEmpty then
+        fail(s"Example ${file.getFileName} must declare expected output or expected errors.")
       val actualErrors = collectErrors(file)
       if expectedErrors.isEmpty && actualErrors.isEmpty then
         runExample(file)

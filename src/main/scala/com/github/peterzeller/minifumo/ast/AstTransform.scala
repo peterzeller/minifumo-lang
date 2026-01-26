@@ -13,6 +13,10 @@ object AstTransform:
   def topLevel(ctx: MinifumoParser.TopLevelContext): TopLevel =
     if ctx.dataDecl() != null then
       dataDecl(ctx.dataDecl())
+    else if ctx.typeClassDecl() != null then
+      typeClassDecl(ctx.typeClassDecl())
+    else if ctx.typeClassImpl() != null then
+      typeClassImpl(ctx.typeClassImpl())
     else
       funDecl(ctx.funDecl())
 
@@ -41,18 +45,48 @@ object AstTransform:
 
   def funDecl(ctx: MinifumoParser.FunDeclContext): TopLevel =
     val sig = ctx.funSig()
-    val name = sig.ID().getText
-    val params = Option(sig.funParams()).map(funParams).getOrElse(Nil)
-    val tParams = Option(sig.typeParams()).map(typeParams).getOrElse(Nil)
-    val returnType = Option(sig.`type`()).map(`type`)
+    val funSigDecl = funSig(sig)
     val body = suite(ctx.suite())
-    TopLevel.FunDecl(name, tParams, params, returnType, body)(range(ctx))
+    TopLevel.FunDecl(
+      funSigDecl.name,
+      funSigDecl.typeParams,
+      funSigDecl.params,
+      funSigDecl.returnType,
+      funSigDecl.givenParams,
+      body
+    )(range(ctx))
+
+  def funSig(ctx: MinifumoParser.FunSigContext): FunSig =
+    val name = ctx.ID().getText
+    val params = Option(ctx.funParams()).map(funParams).getOrElse(Nil)
+    val tParams = Option(ctx.typeParams()).map(typeParams).getOrElse(Nil)
+    val returnType = Option(ctx.`type`()).map(`type`)
+    val givenParams = Option(ctx.givenClause()).map(givenClause).getOrElse(Nil)
+    FunSig(name, tParams, params, returnType, givenParams)(range(ctx))
+
+  def typeClassDecl(ctx: MinifumoParser.TypeClassDeclContext): TopLevel =
+    val name = ctx.ID().getText
+    val tParams = Option(ctx.typeParams()).map(typeParams).getOrElse(Nil)
+    val members = Option(ctx.typeClassSigBlock()).map(typeClassSigBlock).getOrElse(Nil)
+    TopLevel.TypeClassDecl(name, tParams, members)(range(ctx))
+
+  def typeClassImpl(ctx: MinifumoParser.TypeClassImplContext): TopLevel =
+    val name = ctx.name.getText
+    val tParams = Option(ctx.typeParams()).map(typeParams).getOrElse(Nil)
+    val typeClassName = ctx.ID().get(1).getText
+    val head = typeClassHead(typeClassName, Option(ctx.typeArgs()).map(typeArgs).getOrElse(Nil), range(ctx))
+    val givenParams = Option(ctx.givenClause()).map(givenClause).getOrElse(Nil)
+    val members = Option(ctx.typeClassImplBlock()).map(typeClassImplBlock).getOrElse(Nil)
+    TopLevel.InstanceDecl(name, tParams, head, givenParams, members)(range(ctx))
 
   def funParams(ctx: MinifumoParser.FunParamsContext): List[FunParam] =
     ctx.funParam().asScala.toList.map(funParam)
 
   def funParam(ctx: MinifumoParser.FunParamContext): FunParam =
     FunParam(ctx.ID().getText, `type`(ctx.`type`()))(range(ctx))
+
+  def givenClause(ctx: MinifumoParser.GivenClauseContext): List[FunParam] =
+    funParams(ctx.funParams())
 
   def suite(ctx: MinifumoParser.SuiteContext): Suite =
     Suite.Block(block(ctx.block()))(range(ctx))
@@ -85,7 +119,9 @@ object AstTransform:
         Expr.Paren(expr(c.expr()))(range(c))
       case c: MinifumoParser.CallContext =>
         val args = Option(c.argList()).map(argList).getOrElse(Nil)
-        Expr.Call(expr(c.expr()), args)(range(c))
+        val tArgs = Option(c.typeArgs()).map(typeArgs).getOrElse(Nil)
+        val usingArgs = Option(c.usingClause()).map(usingClause).getOrElse(Nil)
+        Expr.Call(expr(c.expr()), tArgs, args, usingArgs)(range(c))
       case c: MinifumoParser.DotContext =>
         // The expression x.f(a,b,c) is short for f(x,a,b,c)
         opCall(c.ID().getText(), expr(c.expr()) :: argList(c.argList()), range(c))
@@ -142,6 +178,12 @@ object AstTransform:
   def argList(ctx: MinifumoParser.ArgListContext): List[Expr] =
     ctx.expr().asScala.toList.map(expr)
 
+  def typeArgs(ctx: MinifumoParser.TypeArgsContext): List[Type] =
+    ctx.`type`().asScala.toList.map(`type`)
+
+  def usingClause(ctx: MinifumoParser.UsingClauseContext): List[Expr] =
+    ctx.expr().asScala.toList.map(expr)
+
   def matchCase(ctx: MinifumoParser.MatchCaseContext): MatchCase =
     MatchCase(pattern(ctx.pattern()), suite(ctx.suite()))(range(ctx))
 
@@ -172,6 +214,20 @@ object AstTransform:
   def patternArgs(ctx: MinifumoParser.PatternArgsContext): List[Pattern] =
     ctx.pattern().asScala.toList.map(pattern)
 
+  def typeClassSigBlock(ctx: MinifumoParser.TypeClassSigBlockContext): List[FunSig] =
+    ctx.funSig().asScala.toList.map(funSig)
+
+  def typeClassImplBlock(ctx: MinifumoParser.TypeClassImplBlockContext): List[TopLevel.FunDecl] =
+    ctx.funDecl().asScala.toList.map { funDecl =>
+      val sig = funSig(funDecl.funSig())
+      TopLevel.FunDecl(sig.name, sig.typeParams, sig.params, sig.returnType, sig.givenParams, suite(funDecl.suite()))(
+        range(funDecl)
+      )
+    }
+
+  private def typeClassHead(name: String, args: List[Type], source: SourceRange): Type =
+    if args.isEmpty then Type.Name(name)(source) else Type.App(Type.Name(name)(source), args)(source)
+
   private def unquote(text: String): String =
     if text.length >= 2 && text.head == '"' && text.last == '"' then
       text.substring(1, text.length - 1)
@@ -179,7 +235,7 @@ object AstTransform:
       text
 
   private def opCall(name: String, args: List[Expr], source: SourceRange): Expr =
-    Expr.Call(Expr.Var(name)(source), args)(source)
+    Expr.Call(Expr.Var(name)(source), Nil, args, Nil)(source)
 
   private def suiteToExpr(s: Suite): Expr =
     s match

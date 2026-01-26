@@ -15,6 +15,8 @@ object Interpreter:
     case SetVal(value: Set[Value])
     case MapVal(value: Map[Value, Value])
     case AdtVal(name: String, args: List[Value])
+    // Maps member names to their implementation plus any captured given arguments.
+    case InstanceVal(members: Map[String, InstanceMemberValue])
     case UnitVal
     case FuncVal(fn: (List[Value], Env) => (Value, Env))
     case UndefinedVal
@@ -24,10 +26,14 @@ object Interpreter:
 
   final case class FunDef(params: List[ParamSymbol], body: Suite)
 
+  // Captured holds resolved given arguments for the instance member.
+  final case class InstanceMemberValue(symbol: FunctionSymbol, captured: List[Value])
+
   final case class Env(
       scopes: List[Map[TermSymbol, Value]],
       functions: Map[FunctionSymbol, FunDef],
-      ctors: Map[CtorSymbol, Int]
+      ctors: Map[CtorSymbol, Int],
+      instances: Map[InstanceSymbol, TopLevel.InstanceDecl]
     ):
     def resolve(symbol: TermSymbol): Option[Value] =
       scopes.collectFirst { case scope if scope.contains(symbol) => scope(symbol) }.orElse(baseValue(symbol))
@@ -69,7 +75,7 @@ object Interpreter:
 
   def evalProg(program: Program, entryName: String): Value =
     val env = buildEnv(program)
-    val entrySymbol = program.items.collectFirst { case TopLevel.FunDecl(symbol, _, _, _) if symbol.name == entryName => symbol }
+    val entrySymbol = program.items.collectFirst { case TopLevel.FunDecl(symbol, _, _, _, _) if symbol.name == entryName => symbol }
       .getOrElse(throw new IllegalArgumentException(s"Unknown function: $entryName"))
     val (value, _) = evalFunc(entrySymbol, Nil, env)
     value
@@ -112,6 +118,17 @@ object Interpreter:
         (literalValue(value), env)
       case Expr.Var(symbol, _) =>
         val value = symbol match
+          case instance: InstanceSymbol =>
+            env.instances.get(instance) match
+              case Some(instanceDecl) if instance.givenParams.isEmpty =>
+                val members = instanceDecl.members.map { member =>
+                  member.memberName -> InstanceMemberValue(member.symbol, Nil)
+                }.toMap
+                Value.InstanceVal(members)
+              case Some(_) =>
+                throw new IllegalArgumentException(s"Instance ${instance.name} requires given arguments")
+              case None =>
+                throw new IllegalArgumentException(s"Unknown instance: ${instance.name}")
           case term: TermSymbol =>
             env.resolve(term).getOrElse(throw new IllegalArgumentException(s"Unknown variable: ${term.name}"))
           case fun: FunctionSymbol =>
@@ -135,7 +152,7 @@ object Interpreter:
           currentEnv = envAfter
         }
         (lastValue, currentEnv)
-      case Expr.CallFun(callee, args, _) =>
+      case Expr.CallFun(callee, args, givenArgs, _) =>
         callee match
           case Expr.Var(symbol, _) if symbol.name == "." && args.length == 2 =>
             val (target, envAfterTarget) = evalExpr(args.head, env)
@@ -147,8 +164,9 @@ object Interpreter:
           case _ =>
             val (calleeValue, envAfterCallee) = evalExpr(callee, env)
             val (argValues, envAfterArgs) = evalArgs(args, envAfterCallee)
+            val (givenValues, envAfterGivens) = evalArgs(givenArgs, envAfterArgs)
             calleeValue match
-              case Value.FuncVal(fn) => fn(argValues, envAfterArgs)
+              case Value.FuncVal(fn) => fn(argValues ++ givenValues, envAfterGivens)
               case other => throw new IllegalArgumentException(s"Call target must be a function, got: $other")
       case Expr.CallCtor(symbol, args, _) =>
         val (argValues, envAfterArgs) = evalArgs(args, env)
@@ -157,6 +175,28 @@ object Interpreter:
             s"Constructor ${symbol.name} expects ${symbol.arity} args, got ${argValues.length}"
           )
         (Value.AdtVal(symbol.name, argValues), envAfterArgs)
+      case Expr.InstanceValue(symbol, givenArgs, _) =>
+        env.instances.get(symbol) match
+          case Some(instanceDecl) =>
+            val (givenValues, envAfterGivens) = evalArgs(givenArgs, env)
+            val members = instanceDecl.members.map { member =>
+              member.memberName -> InstanceMemberValue(member.symbol, givenValues)
+            }.toMap
+            (Value.InstanceVal(members), envAfterGivens)
+          case None =>
+            throw new IllegalArgumentException(s"Unknown instance: ${symbol.name}")
+      case Expr.CallTypeClassMember(instanceExpr, memberName, args, _) =>
+        val (instanceValue, envAfterInstance) = evalExpr(instanceExpr, env)
+        val (argValues, envAfterArgs) = evalArgs(args, envAfterInstance)
+        instanceValue match
+          case Value.InstanceVal(members) =>
+            members.get(memberName) match
+              case Some(InstanceMemberValue(memberSymbol, captured)) =>
+                evalFunc(memberSymbol, argValues ++ captured, envAfterArgs)
+              case None =>
+                throw new IllegalArgumentException(s"Unknown instance member: $memberName")
+          case other =>
+            throw new IllegalArgumentException(s"Expected typeclass instance, got: $other")
       case Expr.LetIn(symbol, _, _, valueExpr, bodyExpr, _) =>
         val (value, envAfterValue) = evalExpr(valueExpr, env)
         val envWithBinding = envAfterValue.pushScope(Map(symbol -> value))
@@ -243,15 +283,23 @@ object Interpreter:
   private def buildEnv(program: Program): Env =
     var functions = Map.empty[FunctionSymbol, FunDef]
     var ctors = Map.empty[CtorSymbol, Int]
+    var instances = Map.empty[InstanceSymbol, TopLevel.InstanceDecl]
     program.items.foreach {
           case TopLevel.DataDecl(_, _, constructors) =>
             constructors.foreach { ctor =>
               ctors = ctors + (ctor.symbol -> ctor.symbol.arity)
             }
-          case TopLevel.FunDecl(symbol, _, params, body) =>
-            functions = functions + (symbol -> FunDef(params, body))
+          case TopLevel.FunDecl(symbol, _, params, givenParams, body) =>
+            functions = functions + (symbol -> FunDef(params ++ givenParams, body))
+          case instanceDecl: TopLevel.InstanceDecl =>
+            instances = instances + (instanceDecl.symbol -> instanceDecl)
+            instanceDecl.members.foreach { member =>
+              functions = functions + (member.symbol -> FunDef(member.params, member.body))
+            }
+          case _: TopLevel.TypeClassDecl =>
+            ()
         }
-    Env(List(Map.empty), functions, ctors)
+    Env(List(Map.empty), functions, ctors, instances)
 
   private val baseValues: Map[String, Value] =
     Map(
@@ -499,6 +547,7 @@ object Interpreter:
       case Value.SetVal(values) => values.map(renderValue).mkString("Set(", ", ", ")")
       case Value.MapVal(values) =>
         values.map { case (k, v) => s"${renderValue(k)}: ${renderValue(v)}" }.mkString("Map(", ", ", ")")
+      case Value.InstanceVal(_) => "<instance>"
       case Value.AdtVal(name, args) =>
         if args.isEmpty then name else s"$name${args.map(renderValue).mkString("(", ", ", ")")}"
       case Value.UnitVal => "unit"
