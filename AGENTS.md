@@ -40,3 +40,7 @@ export PATH="$PWD/sbt/bin:$PATH"
 
 sbt test
 ```
+
+## Local coding rules
+- Each function should have a brief comment explaining what it does.
+- Avoid hard-coded strings for value kinds; prefer enums or typed representations.

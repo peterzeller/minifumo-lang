@@ -1,0 +1,7 @@
+export data Pair[A, B] = Pair(left A, right B)
+
+export fun add_one(value Int) Int
+    value + 1
+
+export typeclass Show[A]
+    fun show(value A) String

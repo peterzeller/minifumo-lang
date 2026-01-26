@@ -1,11 +1,7 @@
 package com.github.peterzeller.minifumo
 
 import com.github.peterzeller.minifumo.ast.{AstTransform, SourceRange, TopLevel}
-import com.github.peterzeller.minifumo.interpreter.Interpreter
-import com.github.peterzeller.minifumo.parser.{SyntaxError, parseInput}
-import com.github.peterzeller.minifumo.ast.{AstTransform, TopLevel}
 import com.github.peterzeller.minifumo.parser.parseInput
-import com.github.peterzeller.minifumo.typing.TypeChecker
 import munit.FunSuite
 
 import java.io.{ByteArrayOutputStream, PrintStream}
@@ -14,13 +10,16 @@ import scala.jdk.CollectionConverters.*
 import scala.collection.mutable.ListBuffer
 
 class ExamplesSuite extends FunSuite:
+  // Captures an expected error comment with line number and message.
   case class ExpectedError(line: Int, message: String)
+  // Captures an actual error with line number, message, and source range.
   case class ActualError(line: Int, message: String, source: SourceRange)
 
   val examplesDir: Path = Paths.get("doc/examples")
+  // Collects example files under doc/examples, including nested folders.
   val exampleFiles: List[Path] =
     if Files.exists(examplesDir) then
-      val stream = Files.list(examplesDir)
+      val stream = Files.walk(examplesDir)
       try
         stream.iterator().asScala
           .filter(Files.isRegularFile(_))
@@ -32,6 +31,7 @@ class ExamplesSuite extends FunSuite:
     else
       Nil
 
+  // Verifies that error expectations match actual errors for all examples.
   test("check errors in doc/examples"):
     if Files.exists(examplesDir) then
       exampleFiles.foreach(assertExpectedErrors)
@@ -41,24 +41,17 @@ class ExamplesSuite extends FunSuite:
       val content = Files.readString(file)
       val expectedErrors = extractExpectedErrors(content)
       val expectedOutputOpt = extractExpectedOutput(content)
-      if expectedErrors.isEmpty && expectedOutputOpt.isEmpty then
+      val hasMain = hasMainFunction(content)
+      if expectedErrors.isEmpty && expectedOutputOpt.isEmpty && hasMain then
         fail(s"Example ${file.getFileName} must declare expected output or expected errors.")
       val actualErrors = collectErrors(file)
       if expectedErrors.isEmpty && actualErrors.isEmpty then
         runExample(file)
 
+  // Runs an example via the main entry point, checking for execution errors.
   def runExample(path: Path): Unit =
     val content = Files.readString(path)
-
-    val (cst, _) = parseInput(content)
-    val ast = AstTransform.program(cst)
-    val (typedProgram, typeErrors) = TypeChecker.checkProgram(ast)
-    if typeErrors.nonEmpty then
-      fail(s"Type check failed:\n${typeErrors.mkString("\n")}")
-
-    val hasMain = ast.items.exists:
-      case fun: TopLevel.FunDecl => fun.name == "main"
-      case _ => false
+    val hasMain = hasMainFunction(content)
 
     if hasMain then
       val expectedOutputOpt = extractExpectedOutput(content)
@@ -69,7 +62,9 @@ class ExamplesSuite extends FunSuite:
       System.setOut(ps)
 
       try
-        Interpreter.evalProg(typedProgram, "main")
+        Main.runFile(path) match
+          case Left(messages) => fail(s"Type check failed:\n${messages.mkString("\n")}")
+          case Right(_) => ()
       catch
         case e: Throwable =>
           System.setOut(oldOut)
@@ -82,6 +77,7 @@ class ExamplesSuite extends FunSuite:
       expectedOutputOpt.foreach: expected =>
         assertEquals(actualOutput, expected.trim, s"Output mismatch for ${path.getFileName}")
 
+  // Asserts that error comments in the file match actual errors.
   def assertExpectedErrors(path: Path): Unit =
     val content = Files.readString(path)
     val expectedErrors = extractExpectedErrors(content)
@@ -111,16 +107,17 @@ class ExamplesSuite extends FunSuite:
         val extras = remainingExpected.map(err => s"line ${err.line}: ${err.message}").mkString("\n")
         fail(s"Expected error comments without matching errors in ${path.getFileName}:\n$extras")
 
+  // Collects errors using the CLI entry point to include import resolution.
   def collectErrors(path: Path): List[ActualError] =
-    val content = Files.readString(path)
-    val (cst, syntaxErrors) = parseInput(content)
-    if syntaxErrors.nonEmpty then
-      syntaxErrors.map(error => ActualError(error.pos.line, error.message, SourceRange(error.pos, error.pos)))
-    else
-      val ast = AstTransform.program(cst)
-      val (_, typeErrors) = TypeChecker.checkProgram(ast)
-      typeErrors.map(error => ActualError(error.source.start.line, error.message, error.source))
+    val errors = Main.checkFile(path)
+    errors.map { message =>
+      parseErrorMessage(message).getOrElse {
+        val pos = com.github.peterzeller.minifumo.ast.SourcePos(0, 0)
+        ActualError(0, message, SourceRange(pos, pos))
+      }
+    }
 
+  // Extracts expected errors from source comments.
   def extractExpectedErrors(content: String): List[ExpectedError] =
     val marker = "// error:"
     content.linesIterator.zipWithIndex.flatMap { case (line, index) =>
@@ -140,9 +137,11 @@ class ExamplesSuite extends FunSuite:
       errors.toList
     }.toList
 
+  // Formats a list of errors for reporting.
   def formatErrors(errors: List[ActualError]): String =
     errors.map(error => s"line ${error.line}: ${error.message}").mkString("\n")
 
+  // Extracts expected output comments from the example source.
   def extractExpectedOutput(content: String): Option[String] =
     val lines = content.linesIterator.toList
     val outputMarker = "// Output:"
@@ -164,3 +163,20 @@ class ExamplesSuite extends FunSuite:
             buffer.append(cleanContent)
             i += 1
           Some(buffer.toString())
+
+  // Determines whether a file declares a top-level main function.
+  private def hasMainFunction(content: String): Boolean =
+    val (cst, _) = parseInput(content)
+    val ast = AstTransform.program(cst)
+    ast.items.exists:
+      case fun: TopLevel.FunDecl => fun.name == "main"
+      case _ => false
+
+  // Parses error output from Main.checkFile into structured errors.
+  private def parseErrorMessage(message: String): Option[ActualError] =
+    val pattern = "^.+:(\\d+):(\\d+)(?:-\\d+:\\d+)?: (.+)$".r
+    message match
+      case pattern(line, column, text) =>
+        val pos = com.github.peterzeller.minifumo.ast.SourcePos(line.toInt, column.toInt)
+        Some(ActualError(line.toInt, text, SourceRange(pos, pos)))
+      case _ => None

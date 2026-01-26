@@ -30,7 +30,7 @@ topLevel
 // -------- ADTs --------
 
 dataDecl
-  : 'data' typeName typeParams? '=' ctorDecl ('|' ctorDecl)* (NL+ | EOF)
+  : 'export'? 'data' typeName typeParams? '=' ctorDecl ('|' ctorDecl)* (NL+ | EOF)
   ;
 
 typeName
@@ -56,7 +56,7 @@ ctorField
 // -------- Functions --------
 
 funDecl
-  : funSig suite
+  : 'export'? funSig suite
   ;
 
 funSig
@@ -87,7 +87,7 @@ block
 // Type classes
 
 typeClassDecl
-  : 'typeclass' ID typeParams? NL BEGIN typeClassSigBlock? END
+  : 'export'? 'typeclass' ID typeParams? NL BEGIN typeClassSigBlock? END
   ;
 
 typeClassImpl
@@ -219,6 +219,7 @@ NL      : ('\r'? '\n')+ ;
 DATA    : 'data';
 FUN     : 'fun';
 FUNC    : 'func';
+EXPORT  : 'export';
 MATCH   : 'match';
 CASE    : 'case';
 IF      : 'if';
