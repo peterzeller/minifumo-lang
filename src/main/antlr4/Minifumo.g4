@@ -99,7 +99,7 @@ typeClassSigBlock
   ;
 
 typeClassImplBlock
-  : (NL)* funDecl (NL+ funDecl)* (NL)*
+  : (NL)* funDecl (NL* funDecl)* (NL)*
   ;
 
 // -------- Types --------

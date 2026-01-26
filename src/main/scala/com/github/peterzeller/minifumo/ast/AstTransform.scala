@@ -136,19 +136,33 @@ object AstTransform:
         // The expression x.f(a,b,c) is short for f(x,a,b,c)
         opCall(c.ID().getText(), expr(c.expr()) :: argList(c.argList()), range(c))
       case c: MinifumoParser.NegContext =>
-        opCall("-", List(expr(c.expr())), range(c))
+        opCall("opNeg", List(expr(c.expr())), range(c))
       case c: MinifumoParser.MulDivContext =>
-        opCall(c.op.getText, List(expr(c.expr(0)), expr(c.expr(1))), range(c))
+        opCall(binaryOpName(c.op.getText), List(expr(c.expr(0)), expr(c.expr(1))), range(c))
       case c: MinifumoParser.AddSubContext =>
-        opCall(c.op.getText, List(expr(c.expr(0)), expr(c.expr(1))), range(c))
+        opCall(binaryOpName(c.op.getText), List(expr(c.expr(0)), expr(c.expr(1))), range(c))
       case c: MinifumoParser.CompareContext =>
-        opCall(c.op.getText, List(expr(c.expr(0)), expr(c.expr(1))), range(c))
+        val left = expr(c.expr(0))
+        val right = expr(c.expr(1))
+        val op = c.op.getText
+        if op == ">" then
+          opCall("opLt", List(right, left), range(c))
+        else if op == ">=" then
+          opCall("opLe", List(right, left), range(c))
+        else
+          opCall(binaryOpName(op), List(left, right), range(c))
       case c: MinifumoParser.EqNeqContext =>
-        opCall(c.op.getText, List(expr(c.expr(0)), expr(c.expr(1))), range(c))
+        val left = expr(c.expr(0))
+        val right = expr(c.expr(1))
+        if c.op.getText == "!=" then
+          val eqExpr = opCall("eq", List(left, right), range(c))
+          Expr.Call(Expr.Var("opNot")(range(c)), Nil, List(eqExpr), Nil)(range(c))
+        else
+          opCall("eq", List(left, right), range(c))
       case c: MinifumoParser.AndContext =>
-        opCall("and", List(expr(c.expr(0)), expr(c.expr(1))), range(c))
+        opCall("opAnd", List(expr(c.expr(0)), expr(c.expr(1))), range(c))
       case c: MinifumoParser.OrContext =>
-        opCall("or", List(expr(c.expr(0)), expr(c.expr(1))), range(c))
+        opCall("opOr", List(expr(c.expr(0)), expr(c.expr(1))), range(c))
       case c: MinifumoParser.LetInContext =>
         val tpe = Option(c.`type`()).map(`type`)
         Expr.LetIn(c.ID().getText, true, tpe, expr(c.expr(0)), expr(c.expr(1)))(range(c))
@@ -257,6 +271,18 @@ object AstTransform:
 
   private def opCall(name: String, args: List[Expr], source: SourceRange): Expr =
     Expr.Call(Expr.Var(name)(source), Nil, args, Nil)(source)
+
+  // Maps operator symbols to standard library typeclass member names.
+  private def binaryOpName(symbol: String): String =
+    symbol match
+      case "+" => "opPlus"
+      case "-" => "opMinus"
+      case "*" => "opTimes"
+      case "/" => "opDiv"
+      case "%" => "opMod"
+      case "<" => "opLt"
+      case "<=" => "opLe"
+      case other => other
 
   private def suiteToExpr(s: Suite): Expr =
     s match

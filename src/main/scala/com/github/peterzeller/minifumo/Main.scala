@@ -1,6 +1,7 @@
 package com.github.peterzeller.minifumo
 
 import com.github.peterzeller.minifumo.ast.{AstTransform, ProgramFile, SourcePos, SourceRange}
+import com.github.peterzeller.minifumo.builtins.Standard
 import com.github.peterzeller.minifumo.common.MinifumoError
 import com.github.peterzeller.minifumo.interpreter.Interpreter
 import com.github.peterzeller.minifumo.parser.{SyntaxError, parseInput}
@@ -77,7 +78,8 @@ object Main:
       if allErrors.nonEmpty then
         Left(renderTypeErrors(path, allErrors))
       else
-        val combinedProgram = TypedAst.Program(importedItems ++ typedProgram.items)(typedProgram.source)
+        val combinedProgram =
+          TypedAst.Program(Standard.typedProgram.items ++ importedItems ++ typedProgram.items)(typedProgram.source)
         Right(Interpreter.evalProg(combinedProgram, "main"))
 
   // Checks a directory of examples, reusing cached parse/import info across files.
@@ -219,7 +221,14 @@ object Main:
       val exports =
         info.exportCache.getOrElseUpdate(
           path,
-          TypeChecker.extractExports(program, TypeChecker.emptyExportEnv, includeNonExported = false)._1
+          TypeChecker.extractExports(
+            program,
+            TypeChecker.withStandardExports(TypeChecker.emptyExportEnv),
+            includeNonExported = false,
+            shadowedTypes = Standard.standardExports.types.keySet,
+            shadowedCtors = Standard.standardExports.ctors.keySet,
+            shadowedTypeClasses = Standard.standardExports.typeClasses.keySet
+          )._1
         )
       (exports, Nil)
 
@@ -247,7 +256,14 @@ object Main:
                 resolveImportsForProgram(program, root, info)
               errors ++= importErrors
               val (resolvedExports, exportErrors) =
-                TypeChecker.extractExports(program, importedExports, includeNonExported = false)
+                TypeChecker.extractExports(
+                  program,
+                  TypeChecker.withStandardExports(importedExports),
+                  includeNonExported = false,
+                  shadowedTypes = Standard.standardExports.types.keySet,
+                  shadowedCtors = Standard.standardExports.ctors.keySet,
+                  shadowedTypeClasses = Standard.standardExports.typeClasses.keySet
+                )
               errors ++= exportErrors
               resolvedExports
           info.resolving.remove(path)

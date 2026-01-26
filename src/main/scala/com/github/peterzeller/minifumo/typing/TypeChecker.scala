@@ -1,6 +1,7 @@
 package com.github.peterzeller.minifumo.typing
 
 import com.github.peterzeller.minifumo.ast
+import com.github.peterzeller.minifumo.builtins.Standard
 import com.github.peterzeller.minifumo.typing.TypedAst.*
 
 import scala.collection.mutable.ListBuffer
@@ -69,45 +70,103 @@ object TypeChecker:
       id
 
   private val builtinTypeNames: Set[String] =
-    Set("Int", "Bool", "String", "List", "Set", "Map", "unit")
+    Set("Set", "Map", "unit")
 
   private val baseTypes: Map[String, Type] =
     Map(
-      "Int" -> Type.Name("Int"),
-      "Bool" -> Type.Name("Bool"),
-      "String" -> Type.Name("String"),
       "unit" -> Type.Name("unit")
     )
 
   private val baseValues: Map[String, BuiltinValueSymbol] =
     Map(
       "unit" -> BuiltinValueSymbol("unit", baseTypes("unit")),
-      "undefined" -> BuiltinValueSymbol("undefined", Type.Unknown),
-      "true" -> BuiltinValueSymbol("true", baseTypes("Bool")),
-      "false" -> BuiltinValueSymbol("false", baseTypes("Bool"))
+      "undefined" -> BuiltinValueSymbol("undefined", Type.Unknown)
     )
 
   private val baseFunctions: Map[String, BuiltinFunctionSymbol] =
     Map(
       "println" -> BuiltinFunctionSymbol("println", Type.Fun(List(Type.Unknown), baseTypes("unit"))),
-      "+" -> BuiltinFunctionSymbol("+", Type.Fun(List(baseTypes("Int"), baseTypes("Int")), baseTypes("Int"))),
-      "-" -> BuiltinFunctionSymbol("-", Type.Fun(List(baseTypes("Int"), baseTypes("Int")), baseTypes("Int"))),
-      "*" -> BuiltinFunctionSymbol("*", Type.Fun(List(baseTypes("Int"), baseTypes("Int")), baseTypes("Int"))),
-      "/" -> BuiltinFunctionSymbol("/", Type.Fun(List(baseTypes("Int"), baseTypes("Int")), baseTypes("Int"))),
-      "%" -> BuiltinFunctionSymbol("%", Type.Fun(List(baseTypes("Int"), baseTypes("Int")), baseTypes("Int"))),
-      "<" -> BuiltinFunctionSymbol("<", Type.Fun(List(baseTypes("Int"), baseTypes("Int")), baseTypes("Bool"))),
-      "<=" -> BuiltinFunctionSymbol("<=", Type.Fun(List(baseTypes("Int"), baseTypes("Int")), baseTypes("Bool"))),
-      ">" -> BuiltinFunctionSymbol(">", Type.Fun(List(baseTypes("Int"), baseTypes("Int")), baseTypes("Bool"))),
-      ">=" -> BuiltinFunctionSymbol(">=", Type.Fun(List(baseTypes("Int"), baseTypes("Int")), baseTypes("Bool"))),
-      "==" -> BuiltinFunctionSymbol("==", Type.Fun(List(Type.Unknown, Type.Unknown), baseTypes("Bool"))),
-      "!=" -> BuiltinFunctionSymbol("!=", Type.Fun(List(Type.Unknown, Type.Unknown), baseTypes("Bool"))),
-      "and" -> BuiltinFunctionSymbol("and", Type.Fun(List(baseTypes("Bool"), baseTypes("Bool")), baseTypes("Bool"))),
-      "or" -> BuiltinFunctionSymbol("or", Type.Fun(List(baseTypes("Bool"), baseTypes("Bool")), baseTypes("Bool"))),
+      "nativePrintln" -> BuiltinFunctionSymbol("nativePrintln", Type.Fun(List(Type.Name("String")), baseTypes("unit"))),
+      "nativeIntPlus" -> BuiltinFunctionSymbol("nativeIntPlus", Type.Fun(List(Type.Name("Int"), Type.Name("Int")), Type.Name("Int"))),
+      "nativeIntMinus" -> BuiltinFunctionSymbol("nativeIntMinus", Type.Fun(List(Type.Name("Int"), Type.Name("Int")), Type.Name("Int"))),
+      "nativeIntTimes" -> BuiltinFunctionSymbol("nativeIntTimes", Type.Fun(List(Type.Name("Int"), Type.Name("Int")), Type.Name("Int"))),
+      "nativeIntDiv" -> BuiltinFunctionSymbol("nativeIntDiv", Type.Fun(List(Type.Name("Int"), Type.Name("Int")), Type.Name("Int"))),
+      "nativeIntMod" -> BuiltinFunctionSymbol("nativeIntMod", Type.Fun(List(Type.Name("Int"), Type.Name("Int")), Type.Name("Int"))),
+      "nativeIntNeg" -> BuiltinFunctionSymbol("nativeIntNeg", Type.Fun(List(Type.Name("Int")), Type.Name("Int"))),
+      "nativeIntLt" -> BuiltinFunctionSymbol("nativeIntLt", Type.Fun(List(Type.Name("Int"), Type.Name("Int")), Type.Name("Bool"))),
+      "nativeIntLe" -> BuiltinFunctionSymbol("nativeIntLe", Type.Fun(List(Type.Name("Int"), Type.Name("Int")), Type.Name("Bool"))),
+      "nativeStringPlus" -> BuiltinFunctionSymbol("nativeStringPlus", Type.Fun(List(Type.Name("String"), Type.Name("String")), Type.Name("String"))),
+      "nativeStringLt" -> BuiltinFunctionSymbol("nativeStringLt", Type.Fun(List(Type.Name("String"), Type.Name("String")), Type.Name("Bool"))),
+      "nativeStringLe" -> BuiltinFunctionSymbol("nativeStringLe", Type.Fun(List(Type.Name("String"), Type.Name("String")), Type.Name("Bool"))),
+      "nativeBoolAnd" -> BuiltinFunctionSymbol("nativeBoolAnd", Type.Fun(List(Type.Name("Bool"), Type.Name("Bool")), Type.Name("Bool"))),
+      "nativeBoolOr" -> BuiltinFunctionSymbol("nativeBoolOr", Type.Fun(List(Type.Name("Bool"), Type.Name("Bool")), Type.Name("Bool"))),
+      "nativeBoolNot" -> BuiltinFunctionSymbol("nativeBoolNot", Type.Fun(List(Type.Name("Bool")), Type.Name("Bool"))),
+      "nativeEq" -> BuiltinFunctionSymbol("nativeEq", Type.Fun(List(Type.Unknown, Type.Unknown), Type.Name("Bool"))),
+      "nativeShow" -> BuiltinFunctionSymbol("nativeShow", Type.Fun(List(Type.Unknown), Type.Name("String"))),
+      "nativeListConcat" -> BuiltinFunctionSymbol("nativeListConcat", Type.Fun(List(Type.Unknown, Type.Unknown), Type.Unknown)),
+      "nativeListGet" -> BuiltinFunctionSymbol("nativeListGet", Type.Fun(List(Type.Unknown, Type.Name("Int")), Type.Unknown)),
+      "nativeListSet" -> BuiltinFunctionSymbol("nativeListSet", Type.Fun(List(Type.Unknown, Type.Name("Int"), Type.Unknown), Type.Unknown)),
+      "nativeListContains" -> BuiltinFunctionSymbol("nativeListContains", Type.Fun(List(Type.Unknown, Type.Unknown), Type.Name("Bool"))),
+      "nativeSetContains" -> BuiltinFunctionSymbol("nativeSetContains", Type.Fun(List(Type.Unknown, Type.Unknown), Type.Name("Bool"))),
+      "nativeSetAdd" -> BuiltinFunctionSymbol("nativeSetAdd", Type.Fun(List(Type.Unknown, Type.Unknown), Type.Unknown)),
+      "nativeMapPut" -> BuiltinFunctionSymbol("nativeMapPut", Type.Fun(List(Type.Unknown, Type.Unknown, Type.Unknown), Type.Unknown)),
+      "nativeMapGet" -> BuiltinFunctionSymbol("nativeMapGet", Type.Fun(List(Type.Unknown, Type.Unknown), Type.Unknown)),
       "." -> BuiltinFunctionSymbol(".", Type.Fun(List(Type.Unknown, Type.Unknown), Type.Unknown))
     )
 
-  def checkProgram(program: ast.ProgramFile, importedExports: ExportEnv = emptyExportEnv): (Program, List[TypeError]) =
-    val (exports, exportErrors) = extractExports(program, importedExports, includeNonExported = true)
+  // Merges two export environments, preferring entries from the override environment.
+  def mergeExports(base: ExportEnv, overrideEnv: ExportEnv): ExportEnv =
+    val merged = ExportEnv(
+      functions = base.functions ++ overrideEnv.functions,
+      ctors = base.ctors ++ overrideEnv.ctors,
+      types = base.types ++ overrideEnv.types,
+      typeClasses = base.typeClasses ++ overrideEnv.typeClasses,
+      instances = base.instances ++ overrideEnv.instances,
+      memberIndex = Map.empty
+    )
+    val memberIndex = merged.typeClasses.values
+      .flatMap(tc => tc.members.map(_.name).distinct.map(_ -> tc))
+      .groupBy(_._1)
+      .view
+      .mapValues(_.map(_._2).toList)
+      .toMap
+    merged.copy(memberIndex = memberIndex)
+
+  // Adds the standard library exports to an import environment.
+  def withStandardExports(importedExports: ExportEnv): ExportEnv =
+    mergeExports(Standard.standardExports, importedExports)
+
+  // Type checks a program, including standard library exports by default.
+  def checkProgram(program: ast.ProgramFile, importedExports: ExportEnv = Standard.standardExports): (Program, List[TypeError]) =
+    checkProgramInternal(program, importedExports, includeStandard = true)
+
+  // Type checks a program without automatically adding the standard library.
+  def checkProgramWithoutStandard(
+      program: ast.ProgramFile,
+      importedExports: ExportEnv = emptyExportEnv
+    ): (Program, List[TypeError]) =
+    checkProgramInternal(program, importedExports, includeStandard = false)
+
+  // Shared implementation for type checking with optional standard library.
+  private def checkProgramInternal(
+      program: ast.ProgramFile,
+      importedExports: ExportEnv,
+      includeStandard: Boolean
+    ): (Program, List[TypeError]) =
+    val combinedExports =
+      if includeStandard then withStandardExports(importedExports) else importedExports
+    val shadowedTypes = if includeStandard then Standard.standardExports.types.keySet else Set.empty
+    val shadowedCtors = if includeStandard then Standard.standardExports.ctors.keySet else Set.empty
+    val shadowedTypeClasses = if includeStandard then Standard.standardExports.typeClasses.keySet else Set.empty
+    val (exports, exportErrors) =
+      extractExports(
+        program,
+        combinedExports,
+        includeNonExported = true,
+        shadowedTypes = shadowedTypes,
+        shadowedCtors = shadowedCtors,
+        shadowedTypeClasses = shadowedTypeClasses
+      )
     val errors = ListBuffer.empty[TypeError]
     errors ++= exportErrors
     val typedItems = program.items.map {
@@ -145,7 +204,10 @@ object TypeChecker:
   def extractExports(
       program: ast.ProgramFile,
       baseExports: ExportEnv = emptyExportEnv,
-      includeNonExported: Boolean = true
+      includeNonExported: Boolean = true,
+      shadowedTypes: Set[String] = Set.empty,
+      shadowedCtors: Set[String] = Set.empty,
+      shadowedTypeClasses: Set[String] = Set.empty
     ): (ExportEnv, List[TypeError]) =
     val errors = ListBuffer.empty[TypeError]
     var functions = baseExports.functions
@@ -154,11 +216,17 @@ object TypeChecker:
     var typeClasses = baseExports.typeClasses
     var instances = baseExports.instances
     var memberIndex = baseExports.memberIndex
+    val localTypes = scala.collection.mutable.Set.empty[String]
+    val localCtors = scala.collection.mutable.Set.empty[String]
+    val localTypeClasses = scala.collection.mutable.Set.empty[String]
 
     for item <- program.items do {
       item match
       case ast.TopLevel.DataDecl(name, typeParams, ctorDecls, exported) if includeNonExported || exported =>
-        if types.contains(name) then
+        val isShadowedType = shadowedTypes.contains(name)
+        if localTypes.contains(name) then
+          errors += errorAt(item.source, s"Duplicate data type: $name")
+        else if types.contains(name) && !isShadowedType then
           errors += errorAt(item.source, s"Duplicate data type: $name")
         val typeParamsTypes = typeParams.map(Type.Name.apply)
         val resultType =
@@ -176,12 +244,15 @@ object TypeChecker:
           }
         }
         ctorSymbols.zip(ctorDecls).foreach { case (ctorSymbol, ctorDecl) =>
-          if ctors.contains(ctorSymbol.name) then
+          if localCtors.contains(ctorSymbol.name) then
             errors += errorAt(ctorDecl.source, s"Duplicate constructor: ${ctorSymbol.name}")
-          else
-            ctors = ctors + (ctorSymbol.name -> ctorSymbol)
+          else if ctors.contains(ctorSymbol.name) && !shadowedCtors.contains(ctorSymbol.name) then
+            errors += errorAt(ctorDecl.source, s"Duplicate constructor: ${ctorSymbol.name}")
+          ctors = ctors + (ctorSymbol.name -> ctorSymbol)
+          localCtors += ctorSymbol.name
         }
         types = types + (name -> DataType(name, typeParams, ctorSymbols))
+        localTypes += name
         ctorDecls.foreach { ctor =>
           ctor.fields.foreach { field =>
             errors ++= validateAstType(field.tpe, typeParams.toSet, ExportEnv(functions, ctors, types, typeClasses, instances, memberIndex))
@@ -209,7 +280,10 @@ object TypeChecker:
           errors ++= validateAstType(tpe, typeParamSet, ExportEnv(functions, ctors, types, typeClasses, instances, memberIndex))
         }
       case ast.TopLevel.TypeClassDecl(name, typeParams, members, exported) if includeNonExported || exported =>
-        if typeClasses.contains(name) then
+        val isShadowedTypeClass = shadowedTypeClasses.contains(name)
+        if localTypeClasses.contains(name) then
+          errors += errorAt(item.source, s"Duplicate typeclass: $name")
+        else if typeClasses.contains(name) && !isShadowedTypeClass then
           errors += errorAt(item.source, s"Duplicate typeclass: $name")
         val memberSigs = members.map { member =>
           if member.givenParams.nonEmpty then
@@ -224,6 +298,7 @@ object TypeChecker:
           )
         }
         typeClasses = typeClasses + (name -> TypeClassDef(name, typeParams, memberSigs))
+        localTypeClasses += name
         memberSigs.foreach { member =>
           val typeParamSet = (typeParams ++ member.typeParams).toSet
           member.params.foreach { param =>
@@ -465,7 +540,7 @@ object TypeChecker:
       idSupply: IdSupply
     ): (Expr, List[TypeError]) =
     expr match
-      case ast.Expr.Lit(value) => synthLit(value, expr.source)
+      case ast.Expr.Lit(value) => synthLit(value, expr.source, env)
       case ast.Expr.Var(name) => synthVar(name, expr.source, env)
       case ast.Expr.Paren(inner) => synthParen(inner, expr.source, env, idSupply)
       case ast.Expr.Block(exprs) => synthBlock(exprs, expr.source, env, idSupply)
@@ -500,7 +575,7 @@ object TypeChecker:
       idSupply: IdSupply
     ): (Expr, List[TypeError]) =
     expr match
-      case ast.Expr.Lit(value) => checkLit(value, expectedType, expr.source)
+      case ast.Expr.Lit(value) => checkLit(value, expectedType, expr.source, env)
       case ast.Expr.Var(name) => checkVar(name, expectedType, expr.source, env)
       case ast.Expr.Paren(inner) => checkParen(inner, expectedType, expr.source, env, expectedReturn, idSupply)
       case ast.Expr.Block(exprs) =>
@@ -536,15 +611,22 @@ object TypeChecker:
         checkReturn(valueExpr, expectedType, expr.source, env, expectedReturn, idSupply)
 
   // T-Lit: Γ ⊢ n ⇒ Int / Γ ⊢ true ⇒ Bool / Γ ⊢ "s" ⇒ String
-  private def synthLit(value: ast.Literal, source: ast.SourceRange): (Expr, List[TypeError]) =
-    val tpe = literalType(value)
-    (Expr.Lit(value, tpe)(source), Nil)
+  private def synthLit(value: ast.Literal, source: ast.SourceRange, env: TypeEnv): (Expr, List[TypeError]) =
+    val errors = ListBuffer.empty[TypeError]
+    val tpe = literalType(value, source, env, errors)
+    (Expr.Lit(value, tpe)(source), errors.toList)
 
   // T-Lit-Check: Γ ⊢ e ⇐ T  if  Γ ⊢ e ⇒ S  and  S ≈ T
-  private def checkLit(value: ast.Literal, expectedType: Type, source: ast.SourceRange): (Expr, List[TypeError]) =
-    val tpe = literalType(value)
-    val (checkedType, errors) = ensureExpectedType(tpe, Some(expectedType), source)
-    (Expr.Lit(value, checkedType)(source), errors)
+  private def checkLit(
+      value: ast.Literal,
+      expectedType: Type,
+      source: ast.SourceRange,
+      env: TypeEnv
+    ): (Expr, List[TypeError]) =
+    val errors = ListBuffer.empty[TypeError]
+    val tpe = literalType(value, source, env, errors)
+    val (checkedType, expectedErrors) = ensureExpectedType(tpe, Some(expectedType), source)
+    (Expr.Lit(value, checkedType)(source), errors.toList ++ expectedErrors)
 
   // T-Var: Γ(x) = T  ⇒  Γ ⊢ x ⇒ T
   private def synthVar(name: String, source: ast.SourceRange, env: TypeEnv): (Expr, List[TypeError]) =
@@ -700,10 +782,6 @@ object TypeChecker:
             val (typedArgs, argsErrors) = typeExprs(args, env, expectedReturn, None, idSupply)
             val errors = calleeErrors ++ argsErrors :+ errorAt(callee.source, "Field access typing is not implemented")
             (Expr.CallFun(typedCallee, typedArgs, Nil, Type.Unknown)(source), errors)
-          case Expr.Var(symbol, _) if symbol.name == "-" && args.length == 1 =>
-            val (typedArg, argErrors) = checkExpr(args.head, env, expectedReturn, baseTypes("Int"), idSupply)
-            val errors = calleeErrors ++ argErrors
-            (Expr.CallFun(typedCallee, List(typedArg), Nil, baseTypes("Int"))(source), errors)
           case Expr.Var(symbol: CtorSymbol, _) =>
             val (typedExpr, ctorErrors) = typeCtorCall(symbol, args, expectedType, source, env, expectedReturn, idSupply)
             (typedExpr, calleeErrors ++ ctorErrors)
@@ -969,7 +1047,13 @@ object TypeChecker:
       val instanceCandidates = env.exports.instances.values.toList.filter { inst =>
         filter.forall(f => isCompatible(inst.head, f)) && matchInstanceHead(inst, goal)
       }
-      val resolved = instanceCandidates.flatMap { inst =>
+      val filteredCandidates =
+        if instanceCandidates.nonEmpty then
+          val minTypeParams = instanceCandidates.map(_.typeParams.length).min
+          instanceCandidates.filter(_.typeParams.length == minTypeParams)
+        else
+          instanceCandidates
+      val resolved = filteredCandidates.flatMap { inst =>
         val (bindingsOpt, matchErrors) = matchInstance(inst, goal, source)
         bindingsOpt.flatMap { case (bindings, instantiatedHead) =>
           val prunedBindings = dropSelfBindings(bindings)
@@ -1222,13 +1306,15 @@ object TypeChecker:
       env: TypeEnv,
       idSupply: IdSupply
     ): (Expr, List[TypeError]) =
-    val (typedCond, condErrors) = checkExpr(cond, env, env.expectedReturn, baseTypes("Bool"), idSupply)
+    val errors = ListBuffer.empty[TypeError]
+    val boolType = resolveTypeName("Bool", source, env, errors)
+    val (typedCond, condErrors) = checkExpr(cond, env, env.expectedReturn, boolType, idSupply)
     val (typedThen, thenErrors) = synthesizeExpr(thenExpr, env, idSupply)
     val (typedElse, elseErrors) = synthesizeExpr(elseExpr, env, idSupply)
     val (resultType, branchErrors) = unifyBranchTypes("if", typedThen.tpe, typedElse.tpe, source)
     (
       Expr.IfThenElse(typedCond, typedThen, typedElse, resultType)(source),
-      condErrors ++ thenErrors ++ elseErrors ++ branchErrors
+      errors.toList ++ condErrors ++ thenErrors ++ elseErrors ++ branchErrors
     )
 
   // T-If-Check: Γ ⊢ c ⇐ Bool  and  Γ ⊢ t ⇐ T  and  Γ ⊢ e ⇐ T  ⇒  Γ ⊢ if c then t else e ⇐ T
@@ -1242,13 +1328,15 @@ object TypeChecker:
       expectedReturn: Type,
       idSupply: IdSupply
     ): (Expr, List[TypeError]) =
-    val (typedCond, condErrors) = checkExpr(cond, env, expectedReturn, baseTypes("Bool"), idSupply)
+    val errors = ListBuffer.empty[TypeError]
+    val boolType = resolveTypeName("Bool", source, env, errors)
+    val (typedCond, condErrors) = checkExpr(cond, env, expectedReturn, boolType, idSupply)
     val (typedThen, thenErrors) = checkExpr(thenExpr, env, expectedReturn, expectedType, idSupply)
     val (typedElse, elseErrors) = checkExpr(elseExpr, env, expectedReturn, expectedType, idSupply)
     val (resultType, branchErrors) = unifyBranchTypes("if", typedThen.tpe, typedElse.tpe, source)
     (
       Expr.IfThenElse(typedCond, typedThen, typedElse, expectedType)(source),
-      condErrors ++ thenErrors ++ elseErrors ++ branchErrors
+      errors.toList ++ condErrors ++ thenErrors ++ elseErrors ++ branchErrors
     )
 
   // T-For: Γ ⊢ xs ⇒ Iterable[T]  and  Γ,x:T ⊢ e ⇒ U  ⇒  Γ ⊢ for x in xs do e ⇒ U
@@ -1298,12 +1386,14 @@ object TypeChecker:
       env: TypeEnv,
       idSupply: IdSupply
     ): (Expr, List[TypeError]) =
-    val (typedCond, condErrors) = checkExpr(cond, env, env.expectedReturn, baseTypes("Bool"), idSupply)
+    val errors = ListBuffer.empty[TypeError]
+    val boolType = resolveTypeName("Bool", source, env, errors)
+    val (typedCond, condErrors) = checkExpr(cond, env, env.expectedReturn, boolType, idSupply)
     val (typedBody, bodyErrors) = typeSuite(body, env, env.expectedReturn, None, idSupply)
     val (checkedType, expectedErrors) = ensureExpectedType(baseTypes("unit"), Some(baseTypes("unit")), source)
     (
       Expr.While(typedCond, typedBody, checkedType)(source),
-      condErrors ++ bodyErrors ++ expectedErrors
+      errors.toList ++ condErrors ++ bodyErrors ++ expectedErrors
     )
 
   // T-While-Check: Γ ⊢ c ⇐ Bool  and  Γ ⊢ e ⇐ unit  ⇒  Γ ⊢ while c do e ⇐ unit
@@ -1316,12 +1406,14 @@ object TypeChecker:
       expectedReturn: Type,
       idSupply: IdSupply
     ): (Expr, List[TypeError]) =
-    val (typedCond, condErrors) = checkExpr(cond, env, expectedReturn, baseTypes("Bool"), idSupply)
+    val errors = ListBuffer.empty[TypeError]
+    val boolType = resolveTypeName("Bool", source, env, errors)
+    val (typedCond, condErrors) = checkExpr(cond, env, expectedReturn, boolType, idSupply)
     val (typedBody, bodyErrors) = typeSuite(body, env, expectedReturn, Some(baseTypes("unit")), idSupply)
     val (checkedType, expectedErrors) = ensureExpectedType(baseTypes("unit"), Some(expectedType), source)
     (
       Expr.While(typedCond, typedBody, checkedType)(source),
-      condErrors ++ bodyErrors ++ expectedErrors
+      errors.toList ++ condErrors ++ bodyErrors ++ expectedErrors
     )
 
   // T-Match: Γ ⊢ e ⇒ T and Γ ⊢ cases ⇒ U  ⇒  Γ ⊢ match e with cases ⇒ U
@@ -1433,16 +1525,14 @@ object TypeChecker:
       case ast.Pattern.Wildcard() =>
         (Pattern.Wildcard()(pattern.source), Map.empty, Nil)
       case ast.Pattern.Lit(value) =>
-        val litType = literalType(value)
-        val errors =
-          if isCompatible(expectedType, litType) then Nil
-          else List(
-            errorAt(
-              source,
-              s"Pattern literal has type ${renderType(litType)}, expected ${renderType(expectedType)}"
-            )
+        val errors = ListBuffer.empty[TypeError]
+        val litType = literalType(value, source, env, errors)
+        if !isCompatible(expectedType, litType) then
+          errors += errorAt(
+            source,
+            s"Pattern literal has type ${renderType(litType)}, expected ${renderType(expectedType)}"
           )
-        (Pattern.Lit(value)(source), Map.empty, errors)
+        (Pattern.Lit(value)(source), Map.empty, errors.toList)
       case ast.Pattern.BinderOrCtor0(name) =>
         env.exports.ctors.get(name) match
           case Some(ctor) if ctor.arity == 0 =>
@@ -1644,7 +1734,18 @@ object TypeChecker:
     (expected, actual) match
       case (Type.Unknown, _) => true
       case (_, Type.Unknown) => true
-      case _ => expected == actual
+      case (Type.Name(left), Type.Name(right)) => left == right
+      case (Type.App(leftBase, leftArgs), Type.App(rightBase, rightArgs)) =>
+        isCompatible(leftBase, rightBase) &&
+          leftArgs
+            .zipAll(rightArgs, Type.Unknown, Type.Unknown)
+            .forall { case (left, right) => isCompatible(left, right) }
+      case (Type.Fun(leftParams, leftResult), Type.Fun(rightParams, rightResult)) =>
+        leftParams
+          .zipAll(rightParams, Type.Unknown, Type.Unknown)
+          .forall { case (left, right) => isCompatible(left, right) } &&
+          isCompatible(leftResult, rightResult)
+      case _ => false
 
   private def resolveSymbol(name: String, env: TypeEnv): Option[Symbol] =
     env.resolveLocal(name)
@@ -1653,6 +1754,23 @@ object TypeChecker:
       .orElse(env.exports.functions.get(name))
       .orElse(env.exports.ctors.get(name))
       .orElse(baseFunctions.get(name))
+
+  // Resolves a type name from the standard library or builtins.
+  private def resolveTypeName(
+      name: String,
+      source: ast.SourceRange,
+      env: TypeEnv,
+      errors: ListBuffer[TypeError]
+    ): Type =
+    baseTypes.get(name)
+      .orElse(env.exports.types.get(name).map(_ => Type.Name(name)))
+      .orElse {
+        if builtinTypeNames.contains(name) then Some(Type.Name(name)) else None
+      }
+      .getOrElse {
+        errors += errorAt(source, s"Unknown type name: $name")
+        Type.Unknown
+      }
 
   private def fromAstType(tpe: ast.Type): Type =
     tpe match
@@ -1686,11 +1804,17 @@ object TypeChecker:
         params.flatMap(param => validateTypedType(param, typeParams, exports, source)) ++ validateTypedType(result, typeParams, exports, source)
       case Type.Unknown => Nil
 
-  private def literalType(literal: ast.Literal): Type =
+  // Resolves literal types based on the standard library.
+  private def literalType(
+      literal: ast.Literal,
+      source: ast.SourceRange,
+      env: TypeEnv,
+      errors: ListBuffer[TypeError]
+    ): Type =
     literal match
-      case ast.Literal.IntLit(_) => baseTypes("Int")
-      case ast.Literal.BoolLit(_) => baseTypes("Bool")
-      case ast.Literal.StringLit(_) => baseTypes("String")
+      case ast.Literal.IntLit(_) => resolveTypeName("Int", source, env, errors)
+      case ast.Literal.BoolLit(_) => resolveTypeName("Bool", source, env, errors)
+      case ast.Literal.StringLit(_) => resolveTypeName("String", source, env, errors)
 
   private def renderType(tpe: Type): String =
     tpe match
