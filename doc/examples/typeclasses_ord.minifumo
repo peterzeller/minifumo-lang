@@ -1,0 +1,49 @@
+// Ord typeclass with instances for Int and MyList.
+
+data MyList[T] = Nil | Cons(head T, tail MyList[T])
+
+typeclass Ord[T]
+    fun lt(a T, b T) Bool
+
+instance ordInt for Ord[Int]
+    fun lt(a Int, b Int) Bool
+        a < b
+
+instance ordList[T] for Ord[MyList[T]] given (o Ord[T])
+    fun lt(a MyList[T], b MyList[T]) Bool
+        match a
+            case Nil
+                match b
+                    case Nil
+                        false
+                    case Cons(_, _)
+                        true
+            case Cons(ah, at)
+                match b
+                    case Nil
+                        false
+                    case Cons(bh, bt)
+                        if lt(ah, bh)
+                            true
+                        else
+                            if lt(bh, ah)
+                                false
+                            else
+                                lt(at, bt)
+
+fun minOf2[T](a T, b T) T given (o Ord[T])
+    if lt(a, b) then a else b
+
+fun minOf3[T](a T, b T, c T) T given (o Ord[T])
+    minOf2(minOf2(a, b), c)
+
+fun main() unit
+    println(minOf3(3, 1, 2))
+    let list1 MyList[Int] = Cons(1, Cons(2, Nil))
+    let list2 MyList[Int] = Cons(1, Cons(3, Nil))
+    let list3 MyList[Int] = Cons(0, Cons(9, Nil))
+    println(minOf3(list1, list2, list3))
+
+// Output:
+// 1
+// Cons(0, Cons(9, Nil))
