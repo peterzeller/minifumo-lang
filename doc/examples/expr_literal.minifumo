@@ -14,5 +14,5 @@ fun main() unit
 
 // Output:
 // 42
-// true
+// True
 // hi

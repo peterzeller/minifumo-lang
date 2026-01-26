@@ -83,37 +83,6 @@ object TypeChecker:
       "undefined" -> BuiltinValueSymbol("undefined", Type.Unknown)
     )
 
-  private val baseFunctions: Map[String, BuiltinFunctionSymbol] =
-    Map(
-      "println" -> BuiltinFunctionSymbol("println", Type.Fun(List(Type.Unknown), baseTypes("unit"))),
-      "nativePrintln" -> BuiltinFunctionSymbol("nativePrintln", Type.Fun(List(Type.Name("String")), baseTypes("unit"))),
-      "nativeIntPlus" -> BuiltinFunctionSymbol("nativeIntPlus", Type.Fun(List(Type.Name("Int"), Type.Name("Int")), Type.Name("Int"))),
-      "nativeIntMinus" -> BuiltinFunctionSymbol("nativeIntMinus", Type.Fun(List(Type.Name("Int"), Type.Name("Int")), Type.Name("Int"))),
-      "nativeIntTimes" -> BuiltinFunctionSymbol("nativeIntTimes", Type.Fun(List(Type.Name("Int"), Type.Name("Int")), Type.Name("Int"))),
-      "nativeIntDiv" -> BuiltinFunctionSymbol("nativeIntDiv", Type.Fun(List(Type.Name("Int"), Type.Name("Int")), Type.Name("Int"))),
-      "nativeIntMod" -> BuiltinFunctionSymbol("nativeIntMod", Type.Fun(List(Type.Name("Int"), Type.Name("Int")), Type.Name("Int"))),
-      "nativeIntNeg" -> BuiltinFunctionSymbol("nativeIntNeg", Type.Fun(List(Type.Name("Int")), Type.Name("Int"))),
-      "nativeIntLt" -> BuiltinFunctionSymbol("nativeIntLt", Type.Fun(List(Type.Name("Int"), Type.Name("Int")), Type.Name("Bool"))),
-      "nativeIntLe" -> BuiltinFunctionSymbol("nativeIntLe", Type.Fun(List(Type.Name("Int"), Type.Name("Int")), Type.Name("Bool"))),
-      "nativeStringPlus" -> BuiltinFunctionSymbol("nativeStringPlus", Type.Fun(List(Type.Name("String"), Type.Name("String")), Type.Name("String"))),
-      "nativeStringLt" -> BuiltinFunctionSymbol("nativeStringLt", Type.Fun(List(Type.Name("String"), Type.Name("String")), Type.Name("Bool"))),
-      "nativeStringLe" -> BuiltinFunctionSymbol("nativeStringLe", Type.Fun(List(Type.Name("String"), Type.Name("String")), Type.Name("Bool"))),
-      "nativeBoolAnd" -> BuiltinFunctionSymbol("nativeBoolAnd", Type.Fun(List(Type.Name("Bool"), Type.Name("Bool")), Type.Name("Bool"))),
-      "nativeBoolOr" -> BuiltinFunctionSymbol("nativeBoolOr", Type.Fun(List(Type.Name("Bool"), Type.Name("Bool")), Type.Name("Bool"))),
-      "nativeBoolNot" -> BuiltinFunctionSymbol("nativeBoolNot", Type.Fun(List(Type.Name("Bool")), Type.Name("Bool"))),
-      "nativeEq" -> BuiltinFunctionSymbol("nativeEq", Type.Fun(List(Type.Unknown, Type.Unknown), Type.Name("Bool"))),
-      "nativeShow" -> BuiltinFunctionSymbol("nativeShow", Type.Fun(List(Type.Unknown), Type.Name("String"))),
-      "nativeListConcat" -> BuiltinFunctionSymbol("nativeListConcat", Type.Fun(List(Type.Unknown, Type.Unknown), Type.Unknown)),
-      "nativeListGet" -> BuiltinFunctionSymbol("nativeListGet", Type.Fun(List(Type.Unknown, Type.Name("Int")), Type.Unknown)),
-      "nativeListSet" -> BuiltinFunctionSymbol("nativeListSet", Type.Fun(List(Type.Unknown, Type.Name("Int"), Type.Unknown), Type.Unknown)),
-      "nativeListContains" -> BuiltinFunctionSymbol("nativeListContains", Type.Fun(List(Type.Unknown, Type.Unknown), Type.Name("Bool"))),
-      "nativeSetContains" -> BuiltinFunctionSymbol("nativeSetContains", Type.Fun(List(Type.Unknown, Type.Unknown), Type.Name("Bool"))),
-      "nativeSetAdd" -> BuiltinFunctionSymbol("nativeSetAdd", Type.Fun(List(Type.Unknown, Type.Unknown), Type.Unknown)),
-      "nativeMapPut" -> BuiltinFunctionSymbol("nativeMapPut", Type.Fun(List(Type.Unknown, Type.Unknown, Type.Unknown), Type.Unknown)),
-      "nativeMapGet" -> BuiltinFunctionSymbol("nativeMapGet", Type.Fun(List(Type.Unknown, Type.Unknown), Type.Unknown)),
-      "." -> BuiltinFunctionSymbol(".", Type.Fun(List(Type.Unknown, Type.Unknown), Type.Unknown))
-    )
-
   // Merges two export environments, preferring entries from the override environment.
   def mergeExports(base: ExportEnv, overrideEnv: ExportEnv): ExportEnv =
     val merged = ExportEnv(
@@ -1081,7 +1050,8 @@ object TypeChecker:
         case Nil =>
           (None, List(errorAt(source, s"No instance found for ${renderType(goal)}")))
         case _ =>
-          (None, List(errorAt(source, s"Ambiguous instance for ${renderType(goal)}")))
+          throw Exception("Unreachable code: multiple resolved instances should have been caught earlier")
+          //(None, List(errorAt(source, s"Ambiguous instance for ${renderType(goal)}. Possible options:\n${resolved.map(_._1).map(r => s"- ${r._1.name}").mkString("\n")}")))
 
   private def matchInstanceHead(instance: InstanceDef, goal: Type): Boolean =
     val typeParamBindings = scala.collection.mutable.Map.empty[String, Type]
@@ -1723,7 +1693,6 @@ object TypeChecker:
       case Expr.Var(symbol, _) =>
         symbol match
           case fun: FunctionSymbol => Some((fun.tpe, fun.typeParams, fun.givenParams))
-          case builtin: BuiltinFunctionSymbol => Some((builtin.tpe, Nil, Nil))
           case _ => None
       case _ =>
         callee.tpe match
@@ -1753,7 +1722,6 @@ object TypeChecker:
       .orElse(env.exports.instances.get(name).map(_.symbol))
       .orElse(env.exports.functions.get(name))
       .orElse(env.exports.ctors.get(name))
-      .orElse(baseFunctions.get(name))
 
   // Resolves a type name from the standard library or builtins.
   private def resolveTypeName(
@@ -1815,6 +1783,7 @@ object TypeChecker:
       case ast.Literal.IntLit(_) => resolveTypeName("Int", source, env, errors)
       case ast.Literal.BoolLit(_) => resolveTypeName("Bool", source, env, errors)
       case ast.Literal.StringLit(_) => resolveTypeName("String", source, env, errors)
+      case ast.Literal.UnitLit() => resolveTypeName("unit", source, env, errors)
 
   private def renderType(tpe: Type): String =
     tpe match

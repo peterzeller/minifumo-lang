@@ -86,6 +86,7 @@ enum Literal:
   case IntLit(value: String)(val source: SourceRange)
   case BoolLit(value: Boolean)(val source: SourceRange)
   case StringLit(value: String)(val source: SourceRange)
+  case UnitLit()(val source: SourceRange)
 
   def source: SourceRange
 

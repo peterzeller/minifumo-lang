@@ -124,6 +124,7 @@ expr
   : literal                                   #Lit
   | ID                                        #Var
   | '(' expr ')'                              #Paren
+  | '(' ')' # Unit
 
   // postfix
   | expr typeArgs? '(' argList? ')' usingClause?                    #Call

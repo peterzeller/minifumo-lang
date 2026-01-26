@@ -9,6 +9,14 @@ fun myAppend(a List, b List) List
         case Cons(h, t)
           Cons(h, myAppend(t, b))
 
+instance myShowList for Show[List]
+    fun show(value List) String
+        match value
+            case Nil
+                "Nil"
+            case Cons(head, tail)
+                "Cons(" + show(head) + ", " + show(tail) + ")"
+
 fun main() unit
     let lst1 = Cons(1, Cons(2, Nil))
     let lst2 = Cons(3, Cons(4, Nil))

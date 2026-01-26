@@ -32,8 +32,6 @@ object TypedAst:
   final case class FunctionSymbol(name: String, typeParams: List[String], tpe: Type.Fun, givenParams: List[Type]) extends Symbol
   final case class CtorSymbol(name: String, typeParams: List[String], tpe: Type.Fun, arity: Int, resultType: Type)
       extends Symbol
-  final case class BuiltinFunctionSymbol(name: String, tpe: Type.Fun) extends Symbol
-
   case class Program(items: List[TopLevel])(val source: SourceRange)
 
   enum TopLevel:

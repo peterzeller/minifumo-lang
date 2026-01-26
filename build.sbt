@@ -19,6 +19,14 @@ lazy val root = project
       "org.scalameta" %% "munit" % "1.0.0" % Test
     ),
 
+    scalacOptions ++= Seq(
+      "-deprecation",
+      "-feature",
+      "-unchecked",
+      "-Wunused:all",
+      "-Wvalue-discard"
+    ),
+
     run / fork := true,
     Test / parallelExecution := false,
 
