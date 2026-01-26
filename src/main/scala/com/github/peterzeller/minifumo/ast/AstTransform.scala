@@ -8,7 +8,16 @@ import scala.jdk.CollectionConverters.*
 
 object AstTransform:
   def program(ctx: MinifumoParser.ProgramContext): ProgramFile =
-    ProgramFile(ctx.topLevel().asScala.toList.map(topLevel))(range(ctx))
+    ProgramFile(
+      ctx.importStatement().asScala.toList.map(importStatement),
+      ctx.topLevel().asScala.toList.map(topLevel)
+    )(range(ctx))
+
+  def importStatement(ctx: MinifumoParser.ImportStatementContext): ImportStatement =
+    val name = ctx.ID().getText
+    val from = Option(ctx.from).map(token => unquote(token.getText))
+    val inRepo = Option(ctx.in).map(token => unquote(token.getText))
+    ImportStatement(name, from, inRepo)(range(ctx))
 
   def topLevel(ctx: MinifumoParser.TopLevelContext): TopLevel =
     if ctx.dataDecl() != null then
@@ -24,7 +33,7 @@ object AstTransform:
     val name = typeName(ctx.typeName())
     val params = Option(ctx.typeParams()).map(typeParams).getOrElse(Nil)
     val ctors = ctx.ctorDecl().asScala.toList.map(ctorDecl)
-    TopLevel.DataDecl(name, params, ctors)(range(ctx))
+    TopLevel.DataDecl(name, params, ctors, isExported(ctx.EXPORT()))(range(ctx))
 
   def typeName(ctx: MinifumoParser.TypeNameContext): String =
     ctx.ID().getText
@@ -53,7 +62,8 @@ object AstTransform:
       funSigDecl.params,
       funSigDecl.returnType,
       funSigDecl.givenParams,
-      body
+      body,
+      isExported(ctx.EXPORT())
     )(range(ctx))
 
   def funSig(ctx: MinifumoParser.FunSigContext): FunSig =
@@ -68,7 +78,7 @@ object AstTransform:
     val name = ctx.ID().getText
     val tParams = Option(ctx.typeParams()).map(typeParams).getOrElse(Nil)
     val members = Option(ctx.typeClassSigBlock()).map(typeClassSigBlock).getOrElse(Nil)
-    TopLevel.TypeClassDecl(name, tParams, members)(range(ctx))
+    TopLevel.TypeClassDecl(name, tParams, members, isExported(ctx.EXPORT()))(range(ctx))
 
   def typeClassImpl(ctx: MinifumoParser.TypeClassImplContext): TopLevel =
     val name = ctx.name.getText
@@ -220,7 +230,15 @@ object AstTransform:
   def typeClassImplBlock(ctx: MinifumoParser.TypeClassImplBlockContext): List[TopLevel.FunDecl] =
     ctx.funDecl().asScala.toList.map { funDecl =>
       val sig = funSig(funDecl.funSig())
-      TopLevel.FunDecl(sig.name, sig.typeParams, sig.params, sig.returnType, sig.givenParams, suite(funDecl.suite()))(
+      TopLevel.FunDecl(
+        sig.name,
+        sig.typeParams,
+        sig.params,
+        sig.returnType,
+        sig.givenParams,
+        suite(funDecl.suite()),
+        exported = false
+      )(
         range(funDecl)
       )
     }
@@ -233,6 +251,9 @@ object AstTransform:
       text.substring(1, text.length - 1)
     else
       text
+
+  private def isExported(token: TerminalNode | Null): Boolean =
+    token != null
 
   private def opCall(name: String, args: List[Expr], source: SourceRange): Expr =
     Expr.Call(Expr.Var(name)(source), Nil, args, Nil)(source)

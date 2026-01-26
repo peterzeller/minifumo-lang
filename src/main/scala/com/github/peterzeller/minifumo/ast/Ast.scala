@@ -3,22 +3,26 @@ package com.github.peterzeller.minifumo.ast
 case class SourcePos(line: Int, column: Int)
 case class SourceRange(start: SourcePos, end: SourcePos)
 
-case class ProgramFile(items: List[TopLevel])(val source: SourceRange)
+case class ProgramFile(imports: List[ImportStatement], items: List[TopLevel])(val source: SourceRange)
+
+final case class ImportStatement(name: String, from: Option[String], inRepo: Option[String])(val source: SourceRange)
 
 enum TopLevel:
-  case DataDecl(name: String, typeParams: List[String], ctors: List[CtorDecl])(val source: SourceRange)
+  case DataDecl(name: String, typeParams: List[String], ctors: List[CtorDecl], exported: Boolean)(val source: SourceRange)
   case FunDecl(
       name: String,
       typeParams: List[String],
       params: List[FunParam],
       returnType: Option[Type],
       givenParams: List[FunParam],
-      body: Suite
+      body: Suite,
+      exported: Boolean
     )(val source: SourceRange)
   case TypeClassDecl(
       name: String,
       typeParams: List[String],
-      members: List[FunSig]
+      members: List[FunSig],
+      exported: Boolean
     )(val source: SourceRange)
   case InstanceDecl(
       name: String,

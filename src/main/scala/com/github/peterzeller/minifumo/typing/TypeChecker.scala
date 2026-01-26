@@ -40,6 +40,9 @@ object TypeChecker:
       memberIndex: Map[String, List[TypeClassDef]]
     )
 
+  val emptyExportEnv: ExportEnv =
+    ExportEnv(Map.empty, Map.empty, Map.empty, Map.empty, Map.empty, Map.empty)
+
   final case class TypeEnv(
       scopes: List[Map[String, TermSymbol]],
       exports: ExportEnv,
@@ -103,8 +106,8 @@ object TypeChecker:
       "." -> BuiltinFunctionSymbol(".", Type.Fun(List(Type.Unknown, Type.Unknown), Type.Unknown))
     )
 
-  def checkProgram(program: ast.ProgramFile): (Program, List[TypeError]) =
-    val (exports, exportErrors) = extractExports(program)
+  def checkProgram(program: ast.ProgramFile, importedExports: ExportEnv = emptyExportEnv): (Program, List[TypeError]) =
+    val (exports, exportErrors) = extractExports(program, importedExports, includeNonExported = true)
     val errors = ListBuffer.empty[TypeError]
     errors ++= exportErrors
     val typedItems = program.items.map {
@@ -138,18 +141,23 @@ object TypeChecker:
     }
     (Program(typedItems)(program.source), errors.toList)
 
-  def extractExports(program: ast.ProgramFile): (ExportEnv, List[TypeError]) =
+  // Extracts exported symbols from a program, optionally merging base exports for imports.
+  def extractExports(
+      program: ast.ProgramFile,
+      baseExports: ExportEnv = emptyExportEnv,
+      includeNonExported: Boolean = true
+    ): (ExportEnv, List[TypeError]) =
     val errors = ListBuffer.empty[TypeError]
-    var functions = Map.empty[String, FunctionSymbol]
-    var ctors = Map.empty[String, CtorSymbol]
-    var types = Map.empty[String, DataType]
-    var typeClasses = Map.empty[String, TypeClassDef]
-    var instances = Map.empty[String, InstanceDef]
-    var memberIndex = Map.empty[String, List[TypeClassDef]]
+    var functions = baseExports.functions
+    var ctors = baseExports.ctors
+    var types = baseExports.types
+    var typeClasses = baseExports.typeClasses
+    var instances = baseExports.instances
+    var memberIndex = baseExports.memberIndex
 
     for item <- program.items do {
       item match
-      case ast.TopLevel.DataDecl(name, typeParams, ctorDecls) =>
+      case ast.TopLevel.DataDecl(name, typeParams, ctorDecls, exported) if includeNonExported || exported =>
         if types.contains(name) then
           errors += errorAt(item.source, s"Duplicate data type: $name")
         val typeParamsTypes = typeParams.map(Type.Name.apply)
@@ -179,7 +187,7 @@ object TypeChecker:
             errors ++= validateAstType(field.tpe, typeParams.toSet, ExportEnv(functions, ctors, types, typeClasses, instances, memberIndex))
           }
         }
-      case funDecl @ ast.TopLevel.FunDecl(name, typeParams, params, returnType, _, _) =>
+      case funDecl @ ast.TopLevel.FunDecl(name, typeParams, params, returnType, _, _, exported) if includeNonExported || exported =>
         if functions.contains(name) then
           errors += errorAt(item.source, s"Duplicate function: $name")
         val paramTypes = params.map(p => fromAstType(p.tpe))
@@ -200,7 +208,7 @@ object TypeChecker:
         returnType.foreach { tpe =>
           errors ++= validateAstType(tpe, typeParamSet, ExportEnv(functions, ctors, types, typeClasses, instances, memberIndex))
         }
-      case ast.TopLevel.TypeClassDecl(name, typeParams, members) =>
+      case ast.TopLevel.TypeClassDecl(name, typeParams, members, exported) if includeNonExported || exported =>
         if typeClasses.contains(name) then
           errors += errorAt(item.source, s"Duplicate typeclass: $name")
         val memberSigs = members.map { member =>
@@ -223,7 +231,7 @@ object TypeChecker:
           }
           errors ++= validateTypedType(member.result, typeParamSet, ExportEnv(functions, ctors, types, typeClasses, instances, memberIndex), item.source)
         }
-      case ast.TopLevel.InstanceDecl(name, typeParams, head, givenParams, members) =>
+      case ast.TopLevel.InstanceDecl(name, typeParams, head, givenParams, members) if includeNonExported =>
         if instances.contains(name) then
           errors += errorAt(item.source, s"Duplicate instance: $name")
         val headType = fromAstType(head)
@@ -231,6 +239,7 @@ object TypeChecker:
         val memberMap = members.map(m => m.name -> m).toMap
         val instanceSymbol = InstanceSymbol(name, typeParams, headType, givenTypes, Map.empty)
         instances = instances + (name -> InstanceDef(instanceSymbol, typeParams, headType, givenTypes, memberMap))
+      case _ =>
     }
     memberIndex = typeClasses.values
       .flatMap(tc => tc.members.map(_.name).distinct.map(_ -> tc))

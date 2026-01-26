@@ -1,0 +1,5 @@
+import Hidden from "imports/private_defs" // error: Symbol Hidden is not exported from the imported file.
+import secret from "imports/private_defs" // error: Symbol secret is not exported from the imported file.
+import HiddenClass from "imports/private_defs" // error: Symbol HiddenClass is not exported from the imported file.
+import add_one from "imports/exported_defs"
+import add_one from "imports/exported_defs" // error: Duplicate function: add_one
