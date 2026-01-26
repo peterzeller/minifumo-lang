@@ -2,10 +2,23 @@
 import com.github.peterzeller.minifumo.parser.parseInput
 import com.github.peterzeller.minifumo.antlr.MinifumoParser
 import com.github.peterzeller.minifumo.ast.AstTransform
+import com.github.peterzeller.minifumo.builtins.Standard
 import com.github.peterzeller.minifumo.interpreter.Interpreter
 import com.github.peterzeller.minifumo.typing.TypeChecker
+import com.github.peterzeller.minifumo.typing.TypedAst
 // https://scalameta.org/munit/docs/getting-started.html
 class MySuite extends munit.FunSuite {
+  // Builds a Nat value for testing.
+  private def natValue(value: Int): Interpreter.Value =
+    if value <= 0 then
+      Interpreter.Value.AdtVal("Zero", Nil)
+    else
+      Interpreter.Value.AdtVal("Suc", List(natValue(value - 1)))
+
+  // Builds an Int value for testing.
+  private def intValue(value: Int): Interpreter.Value =
+    val sign = if value >= 0 then Interpreter.Value.AdtVal("True", Nil) else Interpreter.Value.AdtVal("False", Nil)
+    Interpreter.Value.AdtVal("Int", List(sign, natValue(math.abs(value))))
 
   test("interpreter evals main with 1+2") {
     val (c, _) = parseInput("""
@@ -15,8 +28,9 @@ class MySuite extends munit.FunSuite {
     val ast = AstTransform.program(c)
     val (typed, errors) = TypeChecker.checkProgram(ast)
     assertEquals(errors, List())
-    val result = Interpreter.evalProg(typed, "main")
-    assertEquals(result, Interpreter.Value.IntVal(BigInt(3)))
+    val combined = TypedAst.Program(Standard.typedProgram.items ++ typed.items)(typed.source)
+    val result = Interpreter.evalProg(combined, "main")
+    assertEquals(result, intValue(3))
   }
 
   test("type checker can type ints") {
@@ -29,8 +43,9 @@ class MySuite extends munit.FunSuite {
     val ast = AstTransform.program(c)
     val (typed, errors) = TypeChecker.checkProgram(ast)
     assert(errors == List())
-    val result = Interpreter.evalProg(typed, "main")
-    assertEquals(result, Interpreter.Value.IntVal(BigInt(3)))
+    val combined = TypedAst.Program(Standard.typedProgram.items ++ typed.items)(typed.source)
+    val result = Interpreter.evalProg(combined, "main")
+    assertEquals(result, intValue(3))
   }
 
   test("type checker can instantiate generic functions") {
@@ -44,8 +59,9 @@ class MySuite extends munit.FunSuite {
     val ast = AstTransform.program(c)
     val (typed, errors) = TypeChecker.checkProgram(ast)
     assert(errors == List())
-    val result = Interpreter.evalProg(typed, "main")
-    assertEquals(result, Interpreter.Value.IntVal(BigInt(42)))
+    val combined = TypedAst.Program(Standard.typedProgram.items ++ typed.items)(typed.source)
+    val result = Interpreter.evalProg(combined, "main")
+    assertEquals(result, intValue(42))
   }
 
 
@@ -71,7 +87,8 @@ class MySuite extends munit.FunSuite {
     val (typed, errors) = TypeChecker.checkProgram(ast)
     assert(errors.isEmpty, s"Type errors:\n${errors.mkString("\n")}")
     println("Evaluating program...")
-    val result = Interpreter.evalProg(typed, "main")
+    val combined = TypedAst.Program(Standard.typedProgram.items ++ typed.items)(typed.source)
+    val result = Interpreter.evalProg(combined, "main")
     assertEquals(result, Interpreter.Value.UnitVal)
   }
 }

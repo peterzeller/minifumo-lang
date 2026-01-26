@@ -1,0 +1,700 @@
+export data Bool = True | False
+
+export data Nat = Zero | Suc(n Nat)
+
+export data Int = Int(positive Bool, n Nat)
+
+export data List[T] = Nil | Cons(head T, tail List[T])
+
+export data Tree[K, V] = Leaf | Node(key K, value V, left Tree[K, V], right Tree[K, V])
+
+export data Char = Char(rune Nat)
+
+export data String = String(value List[Char])
+
+export typeclass OpNeg[T]
+    // Returns the negated value.
+    fun opNeg(value T) T
+
+export typeclass OpPlus[T]
+    // Adds two values together.
+    fun opPlus(a T, b T) T
+
+export typeclass OpMinus[T]
+    // Subtracts the second value from the first.
+    fun opMinus(a T, b T) T
+
+export typeclass OpTimes[T]
+    // Multiplies two values.
+    fun opTimes(a T, b T) T
+
+export typeclass OpDiv[T]
+    // Divides the first value by the second.
+    fun opDiv(a T, b T) T
+
+export typeclass OpMod[T]
+    // Computes the remainder of the first value divided by the second.
+    fun opMod(a T, b T) T
+
+export typeclass OpLt[T]
+    // Returns True if the first value is less than the second.
+    fun opLt(a T, b T) Bool
+
+export typeclass OpLe[T]
+    // Returns True if the first value is less than or equal to the second.
+    fun opLe(a T, b T) Bool
+
+export typeclass OpAnd[T]
+    // Computes the logical and of two values.
+    fun opAnd(a T, b T) T
+
+export typeclass OpOr[T]
+    // Computes the logical or of two values.
+    fun opOr(a T, b T) T
+
+export typeclass Eq[T]
+    // Returns True when both values are equal.
+    fun eq(a T, b T) Bool
+
+export typeclass Show[T]
+    // Converts a value to a string.
+    fun show(value T) String
+
+export typeclass Sequence[S, T]
+    // Gets the element at the given index.
+    fun get(seq S, index Int) T
+    // Sets the element at the given index.
+    fun set(seq S, index Int, value T) S
+    // Checks whether the sequence contains the value.
+    fun contains(seq S, value T) Bool
+
+export typeclass Map[M, K, V]
+    // Inserts a value at the given key.
+    fun put(map M, key K, value V) M
+    // Looks up the value for the given key.
+    fun lookup(map M, key K) V
+
+export typeclass Set[S, T]
+    // Checks whether the set contains the value.
+    fun contains(set S, value T) Bool
+    // Adds a value to the set.
+    fun add(set S, value T) S
+
+// Returns True when both Bool values match.
+fun boolEq(a Bool, b Bool) Bool
+    match a
+        case True
+            match b
+                case True
+                    True
+                case False
+                    False
+        case False
+            match b
+                case True
+                    False
+                case False
+                    True
+
+// Returns the negation of the Bool value.
+fun opNot(value Bool) Bool
+    match value
+        case True
+            False
+        case False
+            True
+
+// Returns True when the Nat is Zero.
+fun natIsZero(n Nat) Bool
+    match n
+        case Zero
+            True
+        case Suc(_)
+            False
+
+// Returns True when both Nat values are equal.
+fun natEq(a Nat, b Nat) Bool
+    match a
+        case Zero
+            match b
+                case Zero
+                    True
+                case Suc(_)
+                    False
+        case Suc(aTail)
+            match b
+                case Zero
+                    False
+                case Suc(bTail)
+                    natEq(aTail, bTail)
+
+// Returns True when the first Nat is less than the second.
+fun natLt(a Nat, b Nat) Bool
+    match a
+        case Zero
+            match b
+                case Zero
+                    False
+                case Suc(_)
+                    True
+        case Suc(aTail)
+            match b
+                case Zero
+                    False
+                case Suc(bTail)
+                    natLt(aTail, bTail)
+
+// Returns True when the first Nat is less than or equal to the second.
+fun natLe(a Nat, b Nat) Bool
+    if natLt(a, b)
+        True
+    else
+        natEq(a, b)
+
+// Adds two Nat values.
+fun natAdd(a Nat, b Nat) Nat
+    match a
+        case Zero
+            b
+        case Suc(tail)
+            Suc(natAdd(tail, b))
+
+// Subtracts the second Nat from the first, returning Zero when underflowing.
+fun natSub(a Nat, b Nat) Nat
+    match a
+        case Zero
+            Zero
+        case Suc(aTail)
+            match b
+                case Zero
+                    Suc(aTail)
+                case Suc(bTail)
+                    natSub(aTail, bTail)
+
+// Multiplies two Nat values.
+fun natMul(a Nat, b Nat) Nat
+    match a
+        case Zero
+            Zero
+        case Suc(tail)
+            natAdd(b, natMul(tail, b))
+
+// Divides the first Nat by the second.
+fun natDiv(a Nat, b Nat) Nat
+    if natIsZero(b)
+        Zero
+    else
+        if natLt(a, b)
+            Zero
+        else
+            Suc(natDiv(natSub(a, b), b))
+
+// Computes the remainder of the first Nat divided by the second.
+fun natMod(a Nat, b Nat) Nat
+    if natIsZero(b)
+        a
+    else
+        if natLt(a, b)
+            a
+        else
+            natMod(natSub(a, b), b)
+
+// Normalizes an Int so zero is always positive.
+fun intNormalize(positive Bool, n Nat) Int
+    match n
+        case Zero
+            Int(True, Zero)
+        case Suc(_)
+            Int(positive, n)
+
+// Returns True when the Int represents a negative value.
+fun intIsNegative(value Int) Bool
+    match value
+        case Int(positive, n)
+            match positive
+                case True
+                    False
+                case False
+                    match n
+                        case Zero
+                            False
+                        case Suc(_)
+                            True
+
+// Extracts the Nat component from a non-negative Int.
+fun intToNat(value Int) Nat
+    match value
+        case Int(positive, n)
+            match positive
+                case True
+                    n
+                case False
+                    Zero
+
+// Converts a non-negative Int literal into a Nat value.
+fun natFromInt(value Int) Nat
+    intToNat(value)
+
+// Returns True when the two Int values are equal.
+fun intEq(a Int, b Int) Bool
+    match a
+        case Int(positiveA, nA)
+            match b
+                case Int(positiveB, nB)
+                    if natIsZero(nA)
+                        if natIsZero(nB)
+                            True
+                        else
+                            False
+                    else
+                        if boolEq(positiveA, positiveB)
+                            natEq(nA, nB)
+                        else
+                            False
+
+// Negates an Int value.
+fun intNeg(value Int) Int
+    match value
+        case Int(positive, n)
+            match n
+                case Zero
+                    Int(True, Zero)
+                case Suc(_)
+                    match positive
+                        case True
+                            Int(False, n)
+                        case False
+                            Int(True, n)
+
+// Adds two Int values.
+fun intAdd(a Int, b Int) Int
+    match a
+        case Int(positiveA, nA)
+            match b
+                case Int(positiveB, nB)
+                    if boolEq(positiveA, positiveB)
+                        intNormalize(positiveA, natAdd(nA, nB))
+                    else
+                        if natLt(nA, nB)
+                            intNormalize(positiveB, natSub(nB, nA))
+                        else
+                            intNormalize(positiveA, natSub(nA, nB))
+
+// Subtracts one Int from another.
+fun intSub(a Int, b Int) Int
+    intAdd(a, intNeg(b))
+
+// Multiplies two Int values.
+fun intMul(a Int, b Int) Int
+    match a
+        case Int(positiveA, nA)
+            match b
+                case Int(positiveB, nB)
+                    if natIsZero(nA)
+                        Int(True, Zero)
+                    else
+                        if natIsZero(nB)
+                            Int(True, Zero)
+                        else
+                            intNormalize(boolEq(positiveA, positiveB), natMul(nA, nB))
+
+// Divides one Int by another.
+fun intDiv(a Int, b Int) Int
+    match a
+        case Int(positiveA, nA)
+            match b
+                case Int(positiveB, nB)
+                    if natIsZero(nB)
+                        undefined
+                    else
+                        if natIsZero(nA)
+                            Int(True, Zero)
+                        else
+                            intNormalize(boolEq(positiveA, positiveB), natDiv(nA, nB))
+
+// Computes the remainder of dividing one Int by another.
+fun intMod(a Int, b Int) Int
+    match a
+        case Int(positiveA, nA)
+            match b
+                case Int(_, nB)
+                    if natIsZero(nB)
+                        undefined
+                    else
+                        intNormalize(positiveA, natMod(nA, nB))
+
+// Returns True when the first Int is less than the second.
+fun intLt(a Int, b Int) Bool
+    match a
+        case Int(positiveA, nA)
+            match b
+                case Int(positiveB, nB)
+                    match positiveA
+                        case True
+                            match positiveB
+                                case True
+                                    natLt(nA, nB)
+                                case False
+                                    False
+                        case False
+                            match positiveB
+                                case True
+                                    True
+                                case False
+                                    natLt(nB, nA)
+
+// Returns True when the first Int is less than or equal to the second.
+fun intLe(a Int, b Int) Bool
+    if intLt(a, b)
+        True
+    else
+        intEq(a, b)
+
+// Returns True when two Char values are equal.
+fun charEq(a Char, b Char) Bool
+    match a
+        case Char(left)
+            match b
+                case Char(right)
+                    natEq(left, right)
+
+// Returns True when the first Char is less than the second.
+fun charLt(a Char, b Char) Bool
+    match a
+        case Char(left)
+            match b
+                case Char(right)
+                    natLt(left, right)
+
+// Appends two lists together.
+fun listAppend[T](left List[T], right List[T]) List[T]
+    match left
+        case Nil
+            right
+        case Cons(head, tail)
+            Cons(head, listAppend(tail, right))
+
+// Returns the element at the given Nat index.
+fun listGetNat[T](values List[T], index Nat) T
+    match values
+        case Nil
+            undefined
+        case Cons(head, tail)
+            match index
+                case Zero
+                    head
+                case Suc(rest)
+                    listGetNat(tail, rest)
+
+// Updates the element at the given Nat index.
+fun listSetNat[T](values List[T], index Nat, value T) List[T]
+    match values
+        case Nil
+            Nil
+        case Cons(head, tail)
+            match index
+                case Zero
+                    Cons(value, tail)
+                case Suc(rest)
+                    Cons(head, listSetNat(tail, rest, value))
+
+// Checks whether a list contains the given value.
+fun listContains[T](values List[T], value T) Bool given (eq Eq[T])
+    match values
+        case Nil
+            False
+        case Cons(head, tail)
+            if value == head
+                True
+            else
+                listContains(tail, value)
+
+// Returns True when two lists are equal.
+fun listEq[T](left List[T], right List[T]) Bool given (eq Eq[T])
+    match left
+        case Nil
+            match right
+                case Nil
+                    True
+                case Cons(_, _)
+                    False
+        case Cons(leftHead, leftTail)
+            match right
+                case Nil
+                    False
+                case Cons(rightHead, rightTail)
+                    if leftHead == rightHead
+                        listEq(leftTail, rightTail)
+                    else
+                        False
+
+// Returns True when the first list of Char is less than the second.
+fun charListLt(left List[Char], right List[Char]) Bool
+    match left
+        case Nil
+            match right
+                case Nil
+                    False
+                case Cons(_, _)
+                    True
+        case Cons(leftHead, leftTail)
+            match right
+                case Nil
+                    False
+                case Cons(rightHead, rightTail)
+                    if charEq(leftHead, rightHead)
+                        charListLt(leftTail, rightTail)
+                    else
+                        charLt(leftHead, rightHead)
+
+// Returns True when the first list of Char is less than or equal to the second.
+fun charListLe(left List[Char], right List[Char]) Bool
+    if charListLt(left, right)
+        True
+    else
+        if listEq(left, right)
+            True
+        else
+            False
+
+// Appends two String values.
+fun stringAppend(a String, b String) String
+    match a
+        case String(left)
+            match b
+                case String(right)
+                    String(listAppend(left, right))
+
+// Builds a single-character String.
+fun stringFromChar(value Char) String
+    String(Cons(value, Nil))
+
+// Builds a Char from a digit Nat (0-9).
+fun digitChar(value Nat) Char
+    Char(natAdd(natFromInt(48), value))
+
+// Converts a Nat into a base-10 String.
+fun natToString(value Nat) String
+    if natLt(value, natFromInt(10))
+        stringFromChar(digitChar(value))
+    else
+        stringAppend(
+            natToString(natDiv(value, natFromInt(10))),
+            stringFromChar(digitChar(natMod(value, natFromInt(10))))
+        )
+
+// Converts an Int into a base-10 String.
+fun intToString(value Int) String
+    match value
+        case Int(positive, n)
+            if natIsZero(n)
+                "0"
+            else
+                match positive
+                    case True
+                        natToString(n)
+                    case False
+                        stringAppend("-", natToString(n))
+
+// Returns True when the first String is less than the second.
+fun stringLt(a String, b String) Bool
+    match a
+        case String(left)
+            match b
+                case String(right)
+                    charListLt(left, right)
+
+// Returns True when the first String is less than or equal to the second.
+fun stringLe(a String, b String) Bool
+    match a
+        case String(left)
+            match b
+                case String(right)
+                    charListLe(left, right)
+
+// Converts a list into a String using Cons/Nil notation.
+fun listToString[T](values List[T]) String given (s Show[T])
+    match values
+        case Nil
+            "Nil"
+        case Cons(head, tail)
+            stringAppend(
+                "Cons(",
+                stringAppend(show(head), stringAppend(", ", stringAppend(listToString(tail), ")")))
+            )
+
+// Defines a stub println that returns unit.
+fun println[T](value T) unit
+    unit
+
+instance eqBool for Eq[Bool]
+    // Compares two Bool values.
+    fun eq(a Bool, b Bool) Bool
+        boolEq(a, b)
+
+instance eqNat for Eq[Nat]
+    // Compares two Nat values.
+    fun eq(a Nat, b Nat) Bool
+        natEq(a, b)
+
+instance eqInt for Eq[Int]
+    // Compares two Int values.
+    fun eq(a Int, b Int) Bool
+        intEq(a, b)
+
+instance eqChar for Eq[Char]
+    // Compares two Char values.
+    fun eq(a Char, b Char) Bool
+        charEq(a, b)
+
+instance eqString for Eq[String]
+    // Compares two String values.
+    fun eq(a String, b String) Bool
+        match a
+            case String(left)
+                match b
+                    case String(right)
+                        listEq(left, right)
+
+
+instance opNegInt for OpNeg[Int]
+    // Negates an Int value.
+    fun opNeg(value Int) Int
+        intNeg(value)
+
+instance opPlusInt for OpPlus[Int]
+    // Adds two Int values.
+    fun opPlus(a Int, b Int) Int
+        intAdd(a, b)
+
+instance opMinusInt for OpMinus[Int]
+    // Subtracts two Int values.
+    fun opMinus(a Int, b Int) Int
+        intSub(a, b)
+
+instance opTimesInt for OpTimes[Int]
+    // Multiplies two Int values.
+    fun opTimes(a Int, b Int) Int
+        intMul(a, b)
+
+instance opDivInt for OpDiv[Int]
+    // Divides two Int values.
+    fun opDiv(a Int, b Int) Int
+        intDiv(a, b)
+
+instance opModInt for OpMod[Int]
+    // Computes the remainder of dividing two Int values.
+    fun opMod(a Int, b Int) Int
+        intMod(a, b)
+
+instance opLtInt for OpLt[Int]
+    // Compares two Int values for ordering.
+    fun opLt(a Int, b Int) Bool
+        intLt(a, b)
+
+instance opLeInt for OpLe[Int]
+    // Compares two Int values for ordering.
+    fun opLe(a Int, b Int) Bool
+        intLe(a, b)
+
+instance opAndBool for OpAnd[Bool]
+    // Computes the logical and of two Bool values.
+    fun opAnd(a Bool, b Bool) Bool
+        match a
+            case True
+                b
+            case False
+                False
+
+instance opOrBool for OpOr[Bool]
+    // Computes the logical or of two Bool values.
+    fun opOr(a Bool, b Bool) Bool
+        match a
+            case True
+                True
+            case False
+                b
+
+instance opPlusString for OpPlus[String]
+    // Concatenates two String values.
+    fun opPlus(a String, b String) String
+        stringAppend(a, b)
+
+instance opLtString for OpLt[String]
+    // Compares two String values for ordering.
+    fun opLt(a String, b String) Bool
+        stringLt(a, b)
+
+instance opLeString for OpLe[String]
+    // Compares two String values for ordering.
+    fun opLe(a String, b String) Bool
+        stringLe(a, b)
+
+instance opPlusList[T] for OpPlus[List[T]]
+    // Concatenates two lists.
+    fun opPlus(a List[T], b List[T]) List[T]
+        listAppend(a, b)
+
+instance listSequence[T] for Sequence[List[T], T] given (eq Eq[T])
+    // Gets a list element by index.
+    fun get(seq List[T], index Int) T
+        if intIsNegative(index)
+            undefined
+        else
+            listGetNat(seq, intToNat(index))
+    // Sets a list element by index.
+    fun set(seq List[T], index Int, value T) List[T]
+        if intIsNegative(index)
+            seq
+        else
+            listSetNat(seq, intToNat(index), value)
+    // Checks whether a list contains the value.
+    fun contains(seq List[T], value T) Bool
+        listContains(seq, value)
+
+instance listSet[T] for Set[List[T], T] given (eq Eq[T])
+    // Checks whether a list-based set contains the value.
+    fun contains(set List[T], value T) Bool
+        listContains(set, value)
+    // Adds a value to a list-based set.
+    fun add(set List[T], value T) List[T]
+        if listContains(set, value)
+            set
+        else
+            Cons(value, set)
+
+// Inserts a key/value pair into the tree.
+fun treePut[K, V](tree Tree[K, V], key K, value V) Tree[K, V] given (lt OpLt[K], eq Eq[K])
+    match tree
+        case Leaf
+            Node(key, value, Leaf, Leaf)
+        case Node(k, v, left, right)
+            if key == k
+                Node(k, value, left, right)
+            else
+                if key < k
+                    Node(k, v, treePut(left, key, value), right)
+                else
+                    Node(k, v, left, treePut(right, key, value))
+
+// Looks up a key in the tree.
+fun treeLookup[K, V](tree Tree[K, V], key K) V given (lt OpLt[K], eq Eq[K])
+    match tree
+        case Leaf
+            undefined
+        case Node(k, v, left, right)
+            if key == k
+                v
+            else
+                if key < k
+                    treeLookup(left, key)
+                else
+                    treeLookup(right, key)
+
+instance treeMap[K, V] for Map[Tree[K, V], K, V] given (lt OpLt[K], eq Eq[K])
+    // Inserts a key/value pair into a tree map.
+    fun put(tree Tree[K, V], key K, value V) Tree[K, V]
+        treePut(tree, key, value)
+    // Looks up a value in a tree map.
+    fun lookup(tree Tree[K, V], key K) V
+        treeLookup(tree, key)
