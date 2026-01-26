@@ -80,22 +80,6 @@ export typeclass Set[S, T]
     // Adds a value to the set.
     fun add(set S, value T) S
 
-// Returns True when both Bool values match.
-fun boolEq(a Bool, b Bool) Bool
-    match a
-        case True
-            match b
-                case True
-                    True
-                case False
-                    False
-        case False
-            match b
-                case True
-                    False
-                case False
-                    True
-
 // Returns the negation of the Bool value.
 fun opNot(value Bool) Bool
     match value
@@ -247,7 +231,7 @@ fun intEq(a Int, b Int) Bool
                         else
                             False
                     else
-                        if boolEq(positiveA, positiveB)
+                        if positiveA == positiveB
                             natEq(nA, nB)
                         else
                             False
@@ -272,7 +256,7 @@ fun intAdd(a Int, b Int) Int
         case Int(positiveA, nA)
             match b
                 case Int(positiveB, nB)
-                    if boolEq(positiveA, positiveB)
+                    if positiveA == positiveB
                         intNormalize(positiveA, natAdd(nA, nB))
                     else
                         if natLt(nA, nB)
@@ -296,7 +280,7 @@ fun intMul(a Int, b Int) Int
                         if natIsZero(nB)
                             Int(True, Zero)
                         else
-                            intNormalize(boolEq(positiveA, positiveB), natMul(nA, nB))
+                            intNormalize(positiveA == positiveB, natMul(nA, nB))
 
 // Divides one Int by another.
 fun intDiv(a Int, b Int) Int
@@ -310,7 +294,7 @@ fun intDiv(a Int, b Int) Int
                         if natIsZero(nA)
                             Int(True, Zero)
                         else
-                            intNormalize(boolEq(positiveA, positiveB), natDiv(nA, nB))
+                            intNormalize(positiveA == positiveB, natDiv(nA, nB))
 
 // Computes the remainder of dividing one Int by another.
 fun intMod(a Int, b Int) Int
@@ -524,13 +508,28 @@ fun listToString[T](values List[T]) String given (s Show[T])
             )
 
 // Defines a stub println that returns unit.
-fun println[T](value T) unit
-    unit
+fun println[T](value T) unit given (s Show[T])
+    printlnString(show(value))
+
+fun printlnString(value String) unit
+    ()
 
 instance eqBool for Eq[Bool]
     // Compares two Bool values.
     fun eq(a Bool, b Bool) Bool
-        boolEq(a, b)
+        match a
+            case True
+                match b
+                    case True
+                        True
+                    case False
+                        False
+            case False
+                match b
+                    case True
+                        False
+                    case False
+                        True
 
 instance eqNat for Eq[Nat]
     // Compares two Nat values.
@@ -556,6 +555,29 @@ instance eqString for Eq[String]
                     case String(right)
                         listEq(left, right)
 
+instance showBool for Show[Bool]
+    // Converts a Bool value to a String.
+    fun show(value Bool) String
+        match value
+            case True
+                "True"
+            case False
+                "False"
+
+instance showNat for Show[Nat]
+    // Converts a Nat value to a String.
+    fun show(value Nat) String
+        natToString(value)
+
+instance showInt for Show[Int]
+    // Converts an Int value to a String.
+    fun show(value Int) String
+        intToString(value)
+
+instance showString for Show[String]
+    // Converts a String value to a String.
+    fun show(value String) String
+        value
 
 instance opNegInt for OpNeg[Int]
     // Negates an Int value.

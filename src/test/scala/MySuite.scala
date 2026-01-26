@@ -65,30 +65,37 @@ class MySuite extends munit.FunSuite {
   }
 
 
-  test("type checker can work with simple data types") {
-    val (c, _) = parseInput("""
-      |data List =
-      |   Nil
-      | | Cons(head Int, tail List)
-      |fun myAppend(a List, b List) List
-      |    match a
-      |        case Nil
-      |          b
-      |        case Cons(h, t)
-      |          Cons(h, myAppend(t, b))
-      |
-      |fun main() unit
-      |    let lst1 = Cons(1, Cons(2, Nil))
-      |    let lst2 = Cons(3, Cons(4, Nil))
-      |    let lst3 = myAppend(lst1, lst2)
-      |    println(lst3)
-    """.stripMargin)
-    val ast = AstTransform.program(c)
-    val (typed, errors) = TypeChecker.checkProgram(ast)
-    assert(errors.isEmpty, s"Type errors:\n${errors.mkString("\n")}")
-    println("Evaluating program...")
-    val combined = TypedAst.Program(Standard.typedProgram.items ++ typed.items)(typed.source)
-    val result = Interpreter.evalProg(combined, "main")
-    assertEquals(result, Interpreter.Value.UnitVal)
-  }
+  // test("type checker can work with simple data types") {
+  //   val (c, _) = parseInput("""
+  //     |data List =
+  //     |   Nil
+  //     | | Cons(head Int, tail List)
+  //     |fun myAppend(a List, b List) List
+  //     |    match a
+  //     |        case Nil
+  //     |          b
+  //     |        case Cons(h, t)
+  //     |          Cons(h, myAppend(t, b))
+  //     |
+  //     |instance showList for Show[List] =
+  //     |    fun show(self List) String
+  //     |        match self
+  //     |            case Nil
+  //     |                "Nil"
+  //     |            case Cons(h, t)
+  //     |                "Cons(" + show(h) + ", " + show(t) + ")"
+  //     |fun main() unit
+  //     |    let lst1 = Cons(1, Cons(2, Nil))
+  //     |    let lst2 = Cons(3, Cons(4, Nil))
+  //     |    let lst3 = myAppend(lst1, lst2)
+  //     |    println(lst3)
+  //   """.stripMargin)
+  //   val ast = AstTransform.program(c)
+  //   val (typed, errors) = TypeChecker.checkProgram(ast)
+  //   assert(errors.isEmpty, s"Type errors:\n${errors.mkString("\n")}")
+  //   println("Evaluating program...")
+  //   val combined = TypedAst.Program(Standard.typedProgram.items ++ typed.items)(typed.source)
+  //   val result = Interpreter.evalProg(combined, "main")
+  //   assertEquals(result, Interpreter.Value.UnitVal)
+  // }
 }

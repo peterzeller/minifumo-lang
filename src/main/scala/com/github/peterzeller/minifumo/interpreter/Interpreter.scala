@@ -16,9 +16,9 @@ object Interpreter:
     case MapVal(value: Map[Value, Value])
     case AdtVal(name: String, args: List[Value])
     // Maps member names to their implementation plus any captured given arguments.
-    case InstanceVal(members: Map[String, InstanceMemberValue])
+    case InstanceVal(name: String, members: Map[String, InstanceMemberValue])
     case UnitVal
-    case FuncVal(fn: (List[Value], Env) => (Value, Env))
+    case FuncVal(name: String, fn: (List[Value], Env) => (Value, Env))
     case UndefinedVal
 
     override def toString(): String =
@@ -81,19 +81,13 @@ object Interpreter:
     value
 
   def evalFunc(symbol: Symbol, args: List[Value], env: Env): (Value, Env) =
-    symbol match
-      case builtin: BuiltinFunctionSymbol =>
-        builtins.get(builtin.name) match
-          case Some(fn) => fn(args, env)
-          case None => throw new IllegalArgumentException(s"Unknown builtin: ${builtin.name}")
-      case ctor: CtorSymbol =>
-        if args.length != ctor.arity then
-          throw new IllegalArgumentException(s"Constructor ${ctor.name} expects ${ctor.arity} args, got ${args.length}")
-        (Value.AdtVal(ctor.name, args), env)
-      case fun: FunctionSymbol =>
-        if fun.name == "println" then
-          builtinPrintln(args, env)
-        else
+    try
+      symbol match
+        case ctor: CtorSymbol =>
+          if args.length != ctor.arity then
+            throw new IllegalArgumentException(s"Constructor ${ctor.name} expects ${ctor.arity} args, got ${args.length}")
+          (Value.AdtVal(ctor.name, args), env)
+        case fun: FunctionSymbol =>
           env.functions.get(fun) match
             case Some(funDef) =>
               if args.length != funDef.params.length then
@@ -110,10 +104,13 @@ object Interpreter:
                   (value, envAfter.popScope)
             case None =>
               throw new IllegalArgumentException(s"Unknown function: ${fun.name}")
-      case err: ErrorSymbol =>
-        throw new IllegalArgumentException(s"Unknown symbol: ${err.name}")
-      case term: TermSymbol =>
-        throw new IllegalArgumentException(s"Expected function symbol, got term: ${term.name}")
+        case err: ErrorSymbol =>
+          throw new IllegalArgumentException(s"Unknown symbol: ${err.name}")
+        case term: TermSymbol =>
+          throw new IllegalArgumentException(s"Expected function symbol, got term: ${term.name}")
+    catch
+      case e: Exception =>
+        throw new Exception(s"In function ${symbol.name}:\n${e.getMessage}", e)
 
   def evalExpr(expr: Expr, env: Env): (Value, Env) =
     expr match
@@ -127,7 +124,7 @@ object Interpreter:
                 val members = instanceDecl.members.map { member =>
                   member.memberName -> InstanceMemberValue(member.symbol, Nil)
                 }.toMap
-                Value.InstanceVal(members)
+                Value.InstanceVal(instanceDecl.symbol.name, members)
               case Some(_) =>
                 throw new IllegalArgumentException(s"Instance ${instance.name} requires given arguments")
               case None =>
@@ -135,12 +132,15 @@ object Interpreter:
           case term: TermSymbol =>
             env.resolve(term).getOrElse(throw new IllegalArgumentException(s"Unknown variable: ${term.name}"))
           case fun: FunctionSymbol =>
-            Value.FuncVal((args: List[Value], env: Env) => evalFunc(fun, args, env))
+            builtins.get(fun.name) match
+              case Some(builtin) =>
+                // Override function with builtin implementation
+                Value.FuncVal(fun.name, builtin)
+              case None =>
+                Value.FuncVal(fun.name, (args: List[Value], env: Env) => evalFunc(fun, args, env))
           case ctor: CtorSymbol =>
             if ctor.arity == 0 then Value.AdtVal(ctor.name, Nil)
-            else Value.FuncVal((args: List[Value], env: Env) => evalFunc(ctor, args, env))
-          case builtin: BuiltinFunctionSymbol =>
-            Value.FuncVal((args: List[Value], env: Env) => evalFunc(builtin, args, env))
+            else Value.FuncVal(ctor.name, (args: List[Value], env: Env) => evalFunc(ctor, args, env))
           case err: ErrorSymbol =>
             throw new IllegalArgumentException(s"Unknown symbol: ${err.name}")
         (value, env)
@@ -156,21 +156,12 @@ object Interpreter:
         }
         (lastValue, currentEnv)
       case Expr.CallFun(callee, args, givenArgs, _) =>
-        callee match
-          case Expr.Var(symbol, _) if symbol.name == "." && args.length == 2 =>
-            val (target, envAfterTarget) = evalExpr(args.head, env)
-            val fieldName = args(1) match
-              case Expr.Var(fieldSymbol, _) => fieldSymbol.name
-              case Expr.Lit(Literal.StringLit(value), _) => value
-              case other => throw new IllegalArgumentException(s"Expected field name, got: $other")
-            builtinDot(List(target, stringToValue(fieldName)), envAfterTarget)
-          case _ =>
-            val (calleeValue, envAfterCallee) = evalExpr(callee, env)
-            val (argValues, envAfterArgs) = evalArgs(args, envAfterCallee)
-            val (givenValues, envAfterGivens) = evalArgs(givenArgs, envAfterArgs)
-            calleeValue match
-              case Value.FuncVal(fn) => fn(argValues ++ givenValues, envAfterGivens)
-              case other => throw new IllegalArgumentException(s"Call target must be a function, got: $other")
+        val (calleeValue, envAfterCallee) = evalExpr(callee, env)
+        val (argValues, envAfterArgs) = evalArgs(args, envAfterCallee)
+        val (givenValues, envAfterGivens) = evalArgs(givenArgs, envAfterArgs)
+        calleeValue match
+          case Value.FuncVal(_, fn) => fn(argValues ++ givenValues, envAfterGivens)
+          case other => throw new IllegalArgumentException(s"Call target must be a function, got: $other")
       case Expr.CallCtor(symbol, args, _) =>
         val (argValues, envAfterArgs) = evalArgs(args, env)
         if argValues.length != symbol.arity then
@@ -185,14 +176,14 @@ object Interpreter:
             val members = instanceDecl.members.map { member =>
               member.memberName -> InstanceMemberValue(member.symbol, givenValues)
             }.toMap
-            (Value.InstanceVal(members), envAfterGivens)
+            (Value.InstanceVal(instanceDecl.symbol.name, members), envAfterGivens)
           case None =>
             throw new IllegalArgumentException(s"Unknown instance: ${symbol.name}")
       case Expr.CallTypeClassMember(instanceExpr, memberName, args, _) =>
         val (instanceValue, envAfterInstance) = evalExpr(instanceExpr, env)
         val (argValues, envAfterArgs) = evalArgs(args, envAfterInstance)
         instanceValue match
-          case Value.InstanceVal(members) =>
+          case Value.InstanceVal(_, members) =>
             members.get(memberName) match
               case Some(InstanceMemberValue(memberSymbol, captured)) =>
                 evalFunc(memberSymbol, argValues ++ captured, envAfterArgs)
@@ -416,6 +407,7 @@ object Interpreter:
       case Literal.IntLit(value) => intToValue(BigInt(value))
       case Literal.BoolLit(value) => boolToValue(value)
       case Literal.StringLit(value) => stringToValue(value)
+      case Literal.UnitLit() => Value.UnitVal
 
   private def matchPattern(pattern: Pattern, value: Value, env: Env): Option[Map[TermSymbol, Value]] =
     val res = pattern match
@@ -456,33 +448,7 @@ object Interpreter:
 
   private def builtins: Map[String, Builtin] =
     Map(
-      "println" -> builtinPrintln,
-      "nativePrintln" -> builtinPrintln,
-      "nativeIntPlus" -> builtinPlus,
-      "nativeIntMinus" -> builtinMinus,
-      "nativeIntTimes" -> builtinMul,
-      "nativeIntDiv" -> builtinDiv,
-      "nativeIntMod" -> builtinMod,
-      "nativeIntNeg" -> builtinNeg,
-      "nativeIntLt" -> builtinCompare(_ < 0),
-      "nativeIntLe" -> builtinCompare(_ <= 0),
-      "nativeBoolAnd" -> builtinBool(_ && _),
-      "nativeBoolOr" -> builtinBool(_ || _),
-      "nativeBoolNot" -> builtinNot,
-      "nativeStringPlus" -> builtinStringPlus,
-      "nativeStringLt" -> builtinStringCompare(_ < 0),
-      "nativeStringLe" -> builtinStringCompare(_ <= 0),
-      "nativeEq" -> builtinEq,
-      "nativeShow" -> builtinShow,
-      "nativeListConcat" -> builtinConcat,
-      "nativeListGet" -> builtinGet,
-      "nativeListSet" -> builtinSetIndex,
-      "nativeListContains" -> builtinContains,
-      "nativeSetContains" -> builtinContains,
-      "nativeSetAdd" -> builtinAdd,
-      "nativeMapPut" -> builtinPut,
-      "nativeMapGet" -> builtinGet,
-      "." -> builtinDot
+      "printlnString" -> builtinPrintln,
     )
 
   private def builtinPrintln(args: List[Value], env: Env): (Value, Env) =
@@ -493,257 +459,7 @@ object Interpreter:
         System.out.println(text)
         (Value.UnitVal, env)
       case other =>
-        throw new IllegalArgumentException(s"nativePrintln expects 1 arg, got: $other")
-
-  private def builtinPlus(args: List[Value], env: Env): (Value, Env) =
-    args match
-      case List(a, b) =>
-        (valueToInt(a), valueToInt(b)) match
-          case (Some(left), Some(right)) => (intToValue(left + right), env)
-          case _ => throw new IllegalArgumentException(s"Unsupported nativeIntPlus args: $args")
-      case other => throw new IllegalArgumentException(s"Unsupported nativeIntPlus args: $other")
-
-  private def builtinMinus(args: List[Value], env: Env): (Value, Env) =
-    args match
-      case List(a, b) =>
-        (valueToInt(a), valueToInt(b)) match
-          case (Some(left), Some(right)) => (intToValue(left - right), env)
-          case _ => throw new IllegalArgumentException(s"Unsupported nativeIntMinus args: $args")
-      case other => throw new IllegalArgumentException(s"Unsupported nativeIntMinus args: $other")
-
-  private def builtinMul(args: List[Value], env: Env): (Value, Env) =
-    args match
-      case List(a, b) =>
-        (valueToInt(a), valueToInt(b)) match
-          case (Some(left), Some(right)) => (intToValue(left * right), env)
-          case _ => throw new IllegalArgumentException(s"Unsupported nativeIntTimes args: $args")
-      case other => throw new IllegalArgumentException(s"Unsupported nativeIntTimes args: $other")
-
-  private def builtinDiv(args: List[Value], env: Env): (Value, Env) =
-    args match
-      case List(a, b) =>
-        (valueToInt(a), valueToInt(b)) match
-          case (Some(left), Some(right)) => (intToValue(left / right), env)
-          case _ => throw new IllegalArgumentException(s"Unsupported nativeIntDiv args: $args")
-      case other => throw new IllegalArgumentException(s"Unsupported nativeIntDiv args: $other")
-
-  private def builtinMod(args: List[Value], env: Env): (Value, Env) =
-    args match
-      case List(a, b) =>
-        (valueToInt(a), valueToInt(b)) match
-          case (Some(left), Some(right)) => (intToValue(left % right), env)
-          case _ => throw new IllegalArgumentException(s"Unsupported nativeIntMod args: $args")
-      case other => throw new IllegalArgumentException(s"Unsupported nativeIntMod args: $other")
-
-  // Negates an integer value.
-  private def builtinNeg(args: List[Value], env: Env): (Value, Env) =
-    args match
-      case List(a) =>
-        valueToInt(a) match
-          case Some(value) => (intToValue(-value), env)
-          case None => throw new IllegalArgumentException(s"Unsupported nativeIntNeg args: $args")
-      case other => throw new IllegalArgumentException(s"Unsupported nativeIntNeg args: $other")
-
-  private def builtinCompare(pred: Int => Boolean): Builtin =
-    (args, env) =>
-      args match
-        case List(a, b) =>
-          (valueToInt(a), valueToInt(b)) match
-            case (Some(left), Some(right)) => (boolToValue(pred(left.compare(right))), env)
-            case _ => throw new IllegalArgumentException(s"Unsupported nativeInt comparison args: $args")
-        case other => throw new IllegalArgumentException(s"Unsupported nativeInt comparison args: $other")
-
-  // Concatenates two strings.
-  private def builtinStringPlus(args: List[Value], env: Env): (Value, Env) =
-    args match
-      case List(a, b) =>
-        (valueToString(a), valueToString(b)) match
-          case (Some(left), Some(right)) => (stringToValue(left + right), env)
-          case _ => throw new IllegalArgumentException(s"Unsupported nativeStringPlus args: $args")
-      case other => throw new IllegalArgumentException(s"Unsupported nativeStringPlus args: $other")
-
-  // Compares two strings using the supplied predicate.
-  private def builtinStringCompare(pred: Int => Boolean): Builtin =
-    (args, env) =>
-      args match
-        case List(a, b) =>
-          (valueToString(a), valueToString(b)) match
-            case (Some(left), Some(right)) => (boolToValue(pred(left.compareTo(right))), env)
-            case _ => throw new IllegalArgumentException(s"Unsupported nativeString comparison args: $args")
-        case other => throw new IllegalArgumentException(s"Unsupported nativeString comparison args: $other")
-
-  private def builtinEq(args: List[Value], env: Env): (Value, Env) =
-    args match
-      case List(a, b) => (boolToValue(valueEquals(a, b)), env)
-      case other => throw new IllegalArgumentException(s"Unsupported equality args: $other")
-
-  private def builtinBool(op: (Boolean, Boolean) => Boolean): Builtin =
-    (args, env) =>
-      args match
-        case List(a, b) =>
-          (valueToBool(a), valueToBool(b)) match
-            case (Some(left), Some(right)) => (boolToValue(op(left, right)), env)
-            case _ => throw new IllegalArgumentException(s"Unsupported boolean args: $args")
-        case other => throw new IllegalArgumentException(s"Unsupported boolean args: $other")
-
-  // Negates a boolean value.
-  private def builtinNot(args: List[Value], env: Env): (Value, Env) =
-    args match
-      case List(a) =>
-        valueToBool(a) match
-          case Some(value) => (boolToValue(!value), env)
-          case None => throw new IllegalArgumentException(s"Unsupported nativeBoolNot args: $args")
-      case other => throw new IllegalArgumentException(s"Unsupported nativeBoolNot args: $other")
-
-  private def builtinList(args: List[Value], env: Env): (Value, Env) =
-    (listToValue(args.toVector), env)
-
-  private def builtinSet(args: List[Value], env: Env): (Value, Env) =
-    (Value.SetVal(args.toSet), env)
-
-  private def builtinMap(args: List[Value], env: Env): (Value, Env) =
-    if args.length % 2 != 0 then
-      throw new IllegalArgumentException("map expects an even number of args (key/value pairs)")
-    val entries = args.grouped(2).map(listToPair).toMap
-    (Value.MapVal(entries), env)
-
-  private def listToPair(list: List[Value]): (Value, Value) =
-    list match
-      case List(a, b) => (a, b)
-      case other => throw new IllegalArgumentException(s"Expected list of length 2 for pair, got: $other")
-
-  private def builtinLen(args: List[Value], env: Env): (Value, Env) =
-    args match
-      case List(value) =>
-        valueToList(value) match
-          case Some(values) => (intToValue(values.length), env)
-          case None =>
-            valueToString(value) match
-              case Some(text) => (intToValue(text.length), env)
-              case None =>
-                value match
-                  case Value.SetVal(values) => (intToValue(values.size), env)
-                  case Value.MapVal(values) => (intToValue(values.size), env)
-                  case other => throw new IllegalArgumentException(s"Unsupported len args: $other")
-
-  private def builtinGet(args: List[Value], env: Env): (Value, Env) =
-    args match
-      case List(collection, indexValue) =>
-        valueToList(collection) match
-          case Some(values) =>
-            valueToInt(indexValue) match
-              case Some(index) =>
-                val i = index.toInt
-                if i < 0 || i >= values.length then
-                  throw new IllegalArgumentException(s"List index out of bounds: $i")
-                (values(i), env)
-              case None =>
-                throw new IllegalArgumentException(s"List index is not an Int: $indexValue")
-          case None =>
-            collection match
-              case Value.MapVal(values) =>
-                values.get(indexValue) match
-                  case Some(value) => (value, env)
-                  case None => throw new IllegalArgumentException(s"Missing key: ${renderValue(indexValue)}")
-              case other => throw new IllegalArgumentException(s"Unsupported get args: $other")
-      case other => throw new IllegalArgumentException(s"Unsupported get args: $other")
-
-  private def builtinPut(args: List[Value], env: Env): (Value, Env) =
-    args match
-      case List(Value.MapVal(values), key, value) =>
-        (Value.MapVal(values + (key -> value)), env)
-      case other => throw new IllegalArgumentException(s"Unsupported put args: $other")
-
-  private def builtinAdd(args: List[Value], env: Env): (Value, Env) =
-    args match
-      case List(Value.SetVal(values), value) =>
-        (Value.SetVal(values + value), env)
-      case other => throw new IllegalArgumentException(s"Unsupported add args: $other")
-
-  private def builtinRemove(args: List[Value], env: Env): (Value, Env) =
-    args match
-      case List(Value.SetVal(values), value) =>
-        (Value.SetVal(values - value), env)
-      case other => throw new IllegalArgumentException(s"Unsupported remove args: $other")
-
-  private def builtinContains(args: List[Value], env: Env): (Value, Env) =
-    args match
-      case List(Value.SetVal(values), value) =>
-        (boolToValue(values.exists(valueEquals(_, value))), env)
-      case List(collection, value) =>
-        valueToList(collection) match
-          case Some(values) => (boolToValue(values.exists(valueEquals(_, value))), env)
-          case None =>
-            collection match
-              case Value.MapVal(values) => (boolToValue(values.contains(value)), env)
-              case other => throw new IllegalArgumentException(s"Unsupported contains args: $other")
-      case other => throw new IllegalArgumentException(s"Unsupported contains args: $other")
-
-  private def builtinKeys(args: List[Value], env: Env): (Value, Env) =
-    args match
-      case List(Value.MapVal(values)) => (listToValue(values.keys.toVector), env)
-      case other => throw new IllegalArgumentException(s"Unsupported keys args: $other")
-
-  private def builtinValues(args: List[Value], env: Env): (Value, Env) =
-    args match
-      case List(Value.MapVal(values)) => (listToValue(values.values.toVector), env)
-      case other => throw new IllegalArgumentException(s"Unsupported values args: $other")
-
-  private def builtinAppend(args: List[Value], env: Env): (Value, Env) =
-    args match
-      case List(collection, value) =>
-        valueToList(collection) match
-          case Some(values) => (listToValue(values :+ value), env)
-          case None => throw new IllegalArgumentException(s"Unsupported append args: $args")
-      case other => throw new IllegalArgumentException(s"Unsupported append args: $other")
-
-  private def builtinConcat(args: List[Value], env: Env): (Value, Env) =
-    args match
-      case List(a, b) =>
-        (valueToList(a), valueToList(b)) match
-          case (Some(left), Some(right)) => (listToValue(left ++ right), env)
-          case _ => throw new IllegalArgumentException(s"Unsupported concat args: $args")
-      case other => throw new IllegalArgumentException(s"Unsupported concat args: $other")
-
-  private def builtinSlice(args: List[Value], env: Env): (Value, Env) =
-    args match
-      case List(collection, startValue, endValue) =>
-        (valueToList(collection), valueToInt(startValue), valueToInt(endValue)) match
-          case (Some(values), Some(start), Some(end)) =>
-            val s = start.toInt
-            val e = end.toInt
-            (listToValue(values.slice(s, e)), env)
-          case _ => throw new IllegalArgumentException(s"Unsupported slice args: $args")
-      case other => throw new IllegalArgumentException(s"Unsupported slice args: $other")
-
-  // Updates a list element at the given index.
-  private def builtinSetIndex(args: List[Value], env: Env): (Value, Env) =
-    args match
-      case List(collection, indexValue, value) =>
-        (valueToList(collection), valueToInt(indexValue)) match
-          case (Some(values), Some(index)) =>
-            val i = index.toInt
-            if i < 0 || i >= values.length then
-              throw new IllegalArgumentException(s"List index out of bounds: $i")
-            val updated = values.updated(i, value)
-            (listToValue(updated), env)
-          case _ => throw new IllegalArgumentException(s"Unsupported nativeListSet args: $args")
-      case other => throw new IllegalArgumentException(s"Unsupported nativeListSet args: $other")
-
-  // Renders a value into a String constructor value.
-  private def builtinShow(args: List[Value], env: Env): (Value, Env) =
-    args match
-      case List(value) => (stringToValue(renderValue(value)), env)
-      case other => throw new IllegalArgumentException(s"Unsupported nativeShow args: $other")
-
-  private def builtinDot(args: List[Value], env: Env): (Value, Env) =
-    args match
-      case List(Value.MapVal(values), fieldValue) =>
-        val key = valueToString(fieldValue).map(Value.StringVal.apply).getOrElse(fieldValue)
-        values.get(key) match
-          case Some(value) => (value, env)
-          case None => throw new IllegalArgumentException(s"Missing map field: ${renderValue(fieldValue)}")
-      case other => throw new IllegalArgumentException(s"Unsupported . args: $other")
+        throw new IllegalArgumentException(s"printlnString expects 1 arg, got: $other")
 
   private def renderValue(value: Value): String =
     valueToInt(value)
@@ -756,12 +472,12 @@ object Interpreter:
           case Value.SetVal(values) => values.map(renderValue).mkString("Set(", ", ", ")")
           case Value.MapVal(values) =>
             values.map { case (k, v) => s"${renderValue(k)}: ${renderValue(v)}" }.mkString("Map(", ", ", ")")
-          case Value.InstanceVal(_) => "<instance>"
+          case Value.InstanceVal(name, _) => s"<instance $name>"
           case Value.AdtVal(name, args) =>
             if args.isEmpty then name else s"$name${args.map(renderValue).mkString("(", ", ", ")")}"
           case Value.UnitVal => "unit"
           case Value.UndefinedVal => "undefined"
-          case Value.FuncVal(_) => "<function>"
+          case Value.FuncVal(name, _) => s"<function $name>"
           case Value.IntVal(v) => v.toString
           case Value.BoolVal(v) => v.toString
           case Value.StringVal(v) => v

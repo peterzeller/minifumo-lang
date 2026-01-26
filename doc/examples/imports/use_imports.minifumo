@@ -1,9 +1,9 @@
 import Pair from "imports/exported_defs"
 import add_one from "imports/exported_defs"
-import Show from "imports/exported_defs"
+import MyShow from "imports/exported_defs"
 
-instance showInt for Show[Int]
-    fun show(value Int) String
+instance myShowInt for MyShow[Int]
+    fun myshow(value Int) String
         "int"
 
 fun main() Int

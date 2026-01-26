@@ -196,6 +196,8 @@ object AstTransform:
         Expr.While(expr(c.expr()), suite(c.suite()))(range(c))
       case c: MinifumoParser.MatchContext =>
         Expr.Match(expr(c.expr()), c.matchCase().asScala.toList.map(matchCase))(range(c))
+      case c: MinifumoParser.UnitContext =>
+        Expr.Lit(Literal.UnitLit()(range(c)))(range(c))
       case other =>
         throw new IllegalArgumentException(s"Unexpected expr context: ${other.getClass.getSimpleName}")
 

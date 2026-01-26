@@ -37,6 +37,14 @@ fun minOf2[T](a T, b T) T given (o Ord[T])
 fun minOf3[T](a T, b T, c T) T given (o Ord[T])
     minOf2(minOf2(a, b), c)
 
+instance myShow[T] for Show[MyList[T]] given (s Show[T])
+    fun show(value MyList[T]) String
+        match value
+            case Nil
+                "Nil"
+            case Cons(head, tail)
+                "Cons(" + show(head) + ", " + show(tail) + ")"
+
 fun main() unit
     println(minOf3(3, 1, 2))
     let list1 MyList[Int] = Cons(1, Cons(2, Nil))
