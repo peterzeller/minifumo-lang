@@ -857,6 +857,16 @@ object TypeChecker:
     val candidates = env.exports.memberIndex.getOrElse(name, Nil).flatMap { tc =>
       tc.members.find(_.name == name).map(member => (tc, member))
     }
+    // Renders a typeclass goal with type parameter names for unresolved meta arguments.
+    def renderTypeClassGoal(tc: TypeClassDef, args: List[Type]): String =
+      if args.isEmpty then tc.name
+      else
+        val renderedArgs = args.zipAll(tc.typeParams, Type.Unknown, "").map {
+          case (Type.Meta(_), paramName) if paramName.nonEmpty => paramName
+          case (arg, _) => renderType(arg)
+        }
+        s"${tc.name}[${renderedArgs.mkString(", ")}]"
+    val failedCandidateErrors = ListBuffer.empty[List[TypeError]]
     val typedCandidates = candidates.flatMap { case (tc, member) =>
       val (envAfterTypeParams, typeParamBindings, typeArgErrors) =
         instantiateTypeParams(tc.typeParams ++ member.typeParams, Nil, env, source)
@@ -898,21 +908,26 @@ object TypeChecker:
           val matchingGivens = env.givens.filter(g => isCompatible(g.tpe, goal))
           matchingGivens match
             case param :: Nil => (List(Expr.Var(param, param.tpe)(source)), Nil, currentEnv)
-            case _ :: _ => (Nil, List(errorAt(source, s"Ambiguous given for ${renderType(goal)}")), currentEnv)
+            case _ :: _ => (Nil, List(errorAt(source, s"Ambiguous given for ${renderTypeClassGoal(tc, typeClassArgs)}")), currentEnv)
             case Nil => resolveGivenArguments(List(goal), usingArgs, currentEnv, source, idSupply, Nil)
         else
           resolveGivenArguments(List(goal), usingArgs, currentEnv, source, idSupply, Nil)
       candidateErrors ++= instanceErrors
-      instanceArgs.headOption.map { instanceExpr =>
-        val finalResultType = applySubstitutions(unifiedResult, envAfterInstance)
-        (Expr.CallTypeClassMember(instanceExpr, name, typedArgs, finalResultType)(source), candidateErrors.toList, envAfterInstance)
-      }
+      instanceArgs.headOption match
+        case Some(instanceExpr) =>
+          val finalResultType = applySubstitutions(unifiedResult, envAfterInstance)
+          Some((Expr.CallTypeClassMember(instanceExpr, name, typedArgs, finalResultType)(source), candidateErrors.toList, envAfterInstance))
+        case None =>
+          failedCandidateErrors += candidateErrors.toList
+          None
     }
     typedCandidates.distinct match
       case Nil =>
         val missingSymbol = ErrorSymbol(name, Type.Unknown)
         val baseErrors =
-          if candidates.isEmpty || errors.isEmpty then
+          if failedCandidateErrors.nonEmpty then
+            failedCandidateErrors.flatten.toList
+          else if candidates.isEmpty || errors.isEmpty then
             errors.toList :+ errorAt(source, s"No typeclass member found: $name")
           else
             errors.toList
@@ -1699,7 +1714,19 @@ object TypeChecker:
       case Some(expected) =>
         val (updatedEnv, unifiedType, errors) =
           unifyTypes(expected, actualType, env, source, "expected type")
-        (updatedEnv, unifiedType, errors)
+        val normalizedActual = applySubstitutions(actualType, updatedEnv)
+        val normalizedExpected = applySubstitutions(expected, updatedEnv)
+        val refinedErrors =
+          if errors.nonEmpty && !isCompatible(normalizedExpected, normalizedActual) then
+            List(
+              errorAt(
+                source,
+                s"Expression has type ${renderType(normalizedActual)}, expected ${renderType(normalizedExpected)}"
+              )
+            )
+          else
+            errors
+        (updatedEnv, unifiedType, refinedErrors)
       case None => (env, actualType, Nil)
 
   // Applies the current type substitutions to a type.

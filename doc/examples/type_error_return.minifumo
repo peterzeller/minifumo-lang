@@ -1,2 +1,2 @@
 fun returnString(x String) Int
-    x // error: Type mismatch in expected type: Int vs String
+    x // error: Expression has type String, expected Int

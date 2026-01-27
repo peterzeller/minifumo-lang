@@ -24,4 +24,4 @@ instance badShow for Show[String] // error: Missing member show in instance badS
 
 instance badReturn for Show[Bool]
     fun show(value Bool) Int // error: Member show returns Int, expected String
-        0 // error: Type mismatch in expected type: String vs Int
+        0 // error: Expression has type Int, expected String
