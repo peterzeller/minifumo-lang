@@ -41,6 +41,6 @@ object Standard:
   lazy val typedProgram: TypedAst.Program =
     val (typed, errors) = TypeChecker.checkProgramWithoutStandard(standardProgram, TypeChecker.emptyExportEnv)
     if errors.nonEmpty then
-      val message = errors.map(_.message).mkString("\n")
+      val message = errors.map(e => s"standard.minifumo:${e.source.start.line}:${e.source.start.column}: ${e.message}").mkString("\n")
       throw new IllegalStateException(s"Failed to type-check standard library:\n$message")
     typed
