@@ -6,10 +6,6 @@ import java.util
 
 import com.github.peterzeller.minifumo.antlr.MinifumoLexer
 import com.github.peterzeller.minifumo.antlr.MinifumoParser
-import org.antlr.v4.runtime.atn.ATNConfigSet
-import org.antlr.v4.runtime.dfa.DFA
-
-import scala.annotation.tailrec
 import scala.collection.mutable
 import scala.jdk.CollectionConverters.ListHasAsScala
 import com.github.peterzeller.minifumo.lexer.ExtendedLexer.ExtendedMinifumoLexer.State
@@ -42,10 +38,7 @@ object ExtendedLexer:
     //    private val lineOffsets: LineOffsets = new LineOffsets
     private val debug: Boolean = false
     private var lastCharWasWrap: Boolean = false
-    private var lastToken: Option[Token] = None
     // which character is used for indentation
-    // counts the number of open parentheses
-    private var parenthesesLevel: Int = 0
 
     override def getCharPositionInLine: Int =
       orig.getCharPositionInLine
@@ -64,7 +57,6 @@ object ExtendedLexer:
 
     override def nextToken: Token =
       val t: Token = nextTokenIntern
-      lastToken = Some(t)
       if debug then
         WLogger.trace(
           "     new token  = " + MinifumoParser.VOCABULARY.getSymbolicName(t.getType) + " '" + t.getText + "'"
@@ -91,24 +83,13 @@ object ExtendedLexer:
         if token1 == null then
           return null
         val token: Token = token1
-        if token.getType == MinifumoParser.NL then
-          var line: Int = 0
-          for i <- 0 until token.getText.length do
-            val c: Char = token.getText.charAt(i)
-            if c == '\n' then
-              line += 1
-        else
-          if token.getType == MinifumoParser.PAREN_LEFT then
-            parenthesesLevel += 1
-          else if token.getType == MinifumoParser.PAREN_RIGHT then
-            parenthesesLevel -= 1
-          else if token.getType == Token.EOF then
-            handleIndent(0, token, token.getStartIndex, token.getStopIndex, Some(token))
-            eof = Some(token)
-            // if inside Minifumo, add a closing newline
-            nextTokens.add(makeToken(MinifumoParser.NL, "$NL", token.getStartIndex, token.getStopIndex))
-            // add a single newline
-            return makeToken(MinifumoParser.NL, "$NL", token.getStartIndex, token.getStopIndex)
+        if token.getType == Token.EOF then
+          handleIndent(0, token, token.getStartIndex, token.getStopIndex, Some(token))
+          eof = Some(token)
+          // if inside Minifumo, add a closing newline
+          val _ = nextTokens.add(makeToken(MinifumoParser.NL, "$NL", token.getStartIndex, token.getStopIndex))
+          // add a single newline
+          return makeToken(MinifumoParser.NL, "$NL", token.getStartIndex, token.getStopIndex)
         state match
           case State.INIT =>
             if token.getType == MinifumoParser.NL then
@@ -184,11 +165,11 @@ object ExtendedLexer:
         if spacesPerIndent < 0 then
           spacesPerIndent = n
         indentationLevels.push(n)
-        nextTokens.add(makeToken(MinifumoParser.BEGIN, "$begin", start, stop))
+        val _ = nextTokens.add(makeToken(MinifumoParser.BEGIN, "$begin", start, stop))
       else
         while n < indentationLevels.top do
           indentationLevels.pop
-          nextTokens.add(
+          val _ = nextTokens.add(
             makeToken(
               MinifumoParser.END,
               "$end",
@@ -246,6 +227,7 @@ object ExtendedLexer:
       val source: Pair[TokenSource, CharStream] = sourcePair
       val channel: Int = 0
       val t: CommonToken = new CommonToken(source, `type`, channel, start, stop)
+      t.setText(text)
       t
 
     override def setTokenFactory(factory: TokenFactory[?]): Unit =

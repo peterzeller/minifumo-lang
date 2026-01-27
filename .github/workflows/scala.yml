@@ -31,6 +31,8 @@ jobs:
       uses: sbt/setup-sbt@v1
       with:
         sbt-version: '1.12.0'
+    - name: Run scalafix checks
+      run: sbt "scalafixAll --check"
     - name: Run tests
       run: sbt test
       # Optional: This step uploads information to the GitHub dependency graph and unblocking Dependabot alerts for the repository

@@ -529,7 +529,7 @@ object TypeChecker:
         synthWhile(cond, body, expr.source, env, idSupply)
       case ast.Expr.Match(scrutinee, cases) =>
         synthMatch(scrutinee, cases, expr.source, env, idSupply)
-      case ast.Expr.Return(valueExpr) =>
+      case ast.Expr.Return(_) =>
         val symbol = ErrorSymbol("<return>", Type.Unknown)
         (
           Expr.Return(Expr.Var(symbol, Type.Unknown)(expr.source), Type.Unknown)(expr.source),
@@ -1303,7 +1303,7 @@ object TypeChecker:
     val (typedCond, condErrors) = checkExpr(cond, env, expectedReturn, boolType, idSupply)
     val (typedThen, thenErrors) = checkExpr(thenExpr, env, expectedReturn, expectedType, idSupply)
     val (typedElse, elseErrors) = checkExpr(elseExpr, env, expectedReturn, expectedType, idSupply)
-    val (resultType, branchErrors) = unifyBranchTypes("if", typedThen.tpe, typedElse.tpe, source)
+    val (_, branchErrors) = unifyBranchTypes("if", typedThen.tpe, typedElse.tpe, source)
     (
       Expr.IfThenElse(typedCond, typedThen, typedElse, expectedType)(source),
       errors.toList ++ condErrors ++ thenErrors ++ elseErrors ++ branchErrors
@@ -1563,7 +1563,7 @@ object TypeChecker:
       source: ast.SourceRange
     ): Map[String, TermSymbol] =
     bindingSets.foldLeft(Map.empty[String, TermSymbol]) { (acc, bindings) =>
-      bindings.foreach { case (name, symbol) =>
+      bindings.foreach { case (name, _) =>
         if acc.contains(name) then
           errors += errorAt(source, s"Duplicate pattern binder: $name")
       }
@@ -1674,7 +1674,7 @@ object TypeChecker:
       source: ast.SourceRange
     ): (Type, List[TypeError]) =
     expectedType match
-      case Some(expected) if actualType == Type.Unknown =>
+      case Some(_) if actualType == Type.Unknown =>
         (actualType, Nil)
       case Some(expected) if !isCompatible(expected, actualType) =>
         (

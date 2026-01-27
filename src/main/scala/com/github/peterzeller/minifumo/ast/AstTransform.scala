@@ -303,9 +303,6 @@ object AstTransform:
   private def range(ctx: ParserRuleContext): SourceRange =
     rangeFromTokens(ctx.getStart, ctx.getStop)
 
-  private def range(node: TerminalNode): SourceRange =
-    rangeFromToken(node.getSymbol)
-
   private def rangeFromTokens(start: Token, stop: Token): SourceRange =
     val startToken = Option(start).getOrElse(stop)
     val endToken = Option(stop).getOrElse(start)
@@ -313,8 +310,7 @@ object AstTransform:
     val endPos = SourcePos(endToken.getLine, endToken.getCharPositionInLine + tokenTextLength(endToken) + 1)
     SourceRange(startPos, endPos)
 
-  private def rangeFromToken(token: Token): SourceRange =
-    rangeFromTokens(token, token)
+  
 
   private def tokenTextLength(token: Token): Int =
     Option(token.getText).fold(0)(_.length)

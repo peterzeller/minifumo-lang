@@ -436,7 +436,7 @@ fun charListLe(left List[Char], right List[Char]) Bool
     if charListLt(left, right)
         True
     else
-        if listEq(left, right)
+        if listEq[Char](left, right)
             True
         else
             False
@@ -553,7 +553,7 @@ instance eqString for Eq[String]
             case String(left)
                 match b
                     case String(right)
-                        listEq(left, right)
+                        listEq[Char](left, right) // TODO type checker should be able to infer the generic type parameter
 
 instance showBool for Show[Bool]
     // Converts a Bool value to a String.
