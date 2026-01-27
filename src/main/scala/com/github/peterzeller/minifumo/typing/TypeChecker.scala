@@ -795,7 +795,7 @@ object TypeChecker:
                 val (envAfterTypeParams, typeParamBindings, typeArgErrors) =
                   instantiateTypeParams(typeParams, typeArgs, envAfterCallee, source)
                 errors ++= typeArgErrors
-                val instantiatedFunType = instantiateType(funType, typeParamBindings) match
+                val instantiatedFunType: Type.Fun = instantiateType(funType, typeParamBindings) match
                   case fun: Type.Fun => fun
                   case _ => Type.Fun(Nil, Type.Unknown)
                 val (envAfterResult, unifiedResult, resultErrors) =
@@ -1112,7 +1112,7 @@ object TypeChecker:
     val (envAfterTypeParams, typeParamBindings, typeArgErrors) =
       instantiateTypeParams(ctor.typeParams, Nil, env, source)
     errors ++= typeArgErrors
-    val instantiatedCtorType = instantiateType(ctor.tpe, typeParamBindings) match
+    val instantiatedCtorType: Type.Fun = instantiateType(ctor.tpe, typeParamBindings) match
       case fun: Type.Fun => fun
       case _ => Type.Fun(Nil, Type.Unknown)
     val (envAfterResult, unifiedResult, resultErrors) =
@@ -1725,14 +1725,7 @@ object TypeChecker:
       case _ => false
 
   // Replaces a meta variable in a type with a concrete type.
-  private def substituteMeta(tpe: Type, id: Int, replacement: Type): Type =
-    tpe match
-      case Type.Meta(otherId) if otherId == id => replacement
-      case Type.App(base, args) =>
-        Type.App(substituteMeta(base, id, replacement), args.map(substituteMeta(_, id, replacement)))
-      case Type.Fun(params, result) =>
-        Type.Fun(params.map(substituteMeta(_, id, replacement)), substituteMeta(result, id, replacement))
-      case other => other
+  
 
   // Unifies two types and updates the type environment substitutions.
   private def unifyTypes(

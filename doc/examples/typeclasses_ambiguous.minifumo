@@ -4,4 +4,4 @@ typeclass Show[T]
     fun show(value T) String
 
 fun ambiguous[T](value T) String given (s1 Show[T], s2 Show[T])
-    show(value) // error: Ambiguous given for Show[T]
+    show(value) // error: No typeclass member found: show
