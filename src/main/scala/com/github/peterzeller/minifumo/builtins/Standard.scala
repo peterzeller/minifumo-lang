@@ -39,5 +39,5 @@ object Standard:
 
   // Provides the typed standard library program for runtime evaluation.
   lazy val typedProgram: TypedAst.Program =
-    val (typed, errors) = TypeChecker.checkProgramWithoutStandard(standardProgram, TypeChecker.emptyExportEnv)
+    val (typed, _) = TypeChecker.checkProgramWithoutStandard(standardProgram, TypeChecker.emptyExportEnv)
     typed

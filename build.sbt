@@ -5,6 +5,9 @@ val antlr4Version = "4.13.2"
 
 lazy val generateAntlr = taskKey[Seq[File]]("Generate ANTLR sources from grammar")
 
+ThisBuild / semanticdbEnabled := true
+ThisBuild / semanticdbVersion := scalafixSemanticdb.revision
+
 lazy val root = project
   .in(file("."))
   .settings(

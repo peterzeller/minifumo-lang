@@ -2,7 +2,6 @@ package com.github.peterzeller.minifumo
 
 import com.github.peterzeller.minifumo.ast.{AstTransform, ProgramFile, SourcePos, SourceRange}
 import com.github.peterzeller.minifumo.builtins.Standard
-import com.github.peterzeller.minifumo.common.MinifumoError
 import com.github.peterzeller.minifumo.interpreter.Interpreter
 import com.github.peterzeller.minifumo.parser.{SyntaxError, parseInput}
 import com.github.peterzeller.minifumo.typing.{TypeChecker, TypedAst}
