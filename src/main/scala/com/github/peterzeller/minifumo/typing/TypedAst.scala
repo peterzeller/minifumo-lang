@@ -8,6 +8,7 @@ object TypedAst:
     case Name(value: String)
     case App(base: Type, args: List[Type])
     case Fun(params: List[Type], result: Type)
+    case Meta(id: Int)
     case Unknown
 
   sealed trait Symbol:

@@ -553,7 +553,7 @@ instance eqString for Eq[String]
             case String(left)
                 match b
                     case String(right)
-                        listEq[Char](left, right) // TODO type checker should be able to infer the generic type parameter
+                        listEq(left, right)
 
 instance showBool for Show[Bool]
     // Converts a Bool value to a String.
