@@ -159,6 +159,7 @@ expr
 
   // assignment statement
   | ID ':=' expr                              #Assign
+  | 'return' expr                             #Return
 
   // if
   | 'if' expr 'then' expr 'else' expr  #IfThenElse
@@ -231,6 +232,7 @@ IN      : 'in';
 WHILE   : 'while';
 LET     : 'let';
 VAR     : 'var';
+RETURN  : 'return';
 IF_UP   : 'IF';
 
 // Operators & punctuation

@@ -80,6 +80,10 @@ export typeclass Set[S, T]
     // Adds a value to the set.
     fun add(set S, value T) S
 
+export typeclass Iterable[C, T]
+    // Iterates over the collection elements.
+    fun iter(value C) List[T]
+
 // Returns the negation of the Bool value.
 fun opNot(value Bool) Bool
     match value
@@ -684,6 +688,11 @@ instance listSet[T] for Set[List[T], T] given (eq Eq[T])
             set
         else
             Cons(value, set)
+
+instance iterableList[T] for Iterable[List[T], T]
+    // Returns the list elements as-is.
+    fun iter(value List[T]) List[T]
+        value
 
 // Inserts a key/value pair into the tree.
 fun treePut[K, V](tree Tree[K, V], key K, value V) Tree[K, V] given (lt OpLt[K], eq Eq[K])

@@ -109,6 +109,14 @@ object TypedAst:
         tpe: Type
       )(val source: SourceRange) extends Expr
     final case class Assign(symbol: LocalSymbol, value: Expr, tpe: Type)(val source: SourceRange) extends Expr
+    final case class FieldAccess(
+        target: Expr,
+        ctor: CtorSymbol,
+        fieldName: String,
+        fieldIndex: Int,
+        tpe: Type
+      )(val source: SourceRange) extends Expr
+    final case class Uninitialized(tpe: Type)(val source: SourceRange) extends Expr
     final case class IfThenElse(cond: Expr, thenExpr: Expr, elseExpr: Expr, tpe: Type)(val source: SourceRange) extends Expr
     final case class For(symbol: LocalSymbol, inExpr: Expr, body: Suite, tpe: Type)(val source: SourceRange) extends Expr
     final case class While(cond: Expr, body: Suite, tpe: Type)(val source: SourceRange) extends Expr

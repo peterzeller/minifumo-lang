@@ -388,13 +388,13 @@ object Main:
           else
             val dataType = exportEnv.types(stmt.name)
             val ctorErrors = dataType.ctors.collect {
-              case ctor if currentImports.ctors.contains(ctor.name) =>
-                TypeError(s"Duplicate constructor: ${ctor.name}", stmt.source)
+              case ctor if currentImports.ctors.contains(ctor.symbol.name) =>
+                TypeError(s"Duplicate constructor: ${ctor.symbol.name}", stmt.source)
             }
             errors ++= ctorErrors
-            val mergedCtors = currentImports.ctors ++ dataType.ctors.filterNot(ctor => currentImports.ctors.contains(ctor.name)).map(
-              ctor => ctor.name -> ctor
-            )
+            val mergedCtors = currentImports.ctors ++ dataType.ctors
+              .filterNot(ctor => currentImports.ctors.contains(ctor.symbol.name))
+              .map(ctor => ctor.symbol.name -> ctor.symbol)
             (
               currentImports.copy(types = currentImports.types + (stmt.name -> dataType), ctors = mergedCtors),
               errors.toList

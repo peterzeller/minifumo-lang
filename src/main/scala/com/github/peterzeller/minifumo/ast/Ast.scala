@@ -72,6 +72,8 @@ enum Expr:
   case LetIn(name: String, isConstant: Boolean, tpe: Option[Type], value: Expr, body: Expr)(val source: SourceRange)
   case Bind(name: String, isConstant: Boolean, tpe: Option[Type], value: Expr)(val source: SourceRange)
   case Assign(name: String, value: Expr)(val source: SourceRange)
+  case FieldAccess(target: Expr, field: String)(val source: SourceRange)
+  case Uninitialized()(val source: SourceRange)
   case IfThenElse(cond: Expr, thenExpr: Expr, elseExpr: Expr)(val source: SourceRange)
   case For(name: String, inExpr: Expr, body: Suite)(val source: SourceRange)
   case While(cond: Expr, body: Suite)(val source: SourceRange)

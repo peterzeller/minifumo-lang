@@ -197,11 +197,26 @@ object Interpreter:
         val (result, envAfterBody) = evalExpr(bodyExpr, envWithBinding)
         (result, envAfterBody.popScope)
       case Expr.Bind(symbol, _, _, valueExpr, _) =>
-        val (value, envAfterValue) = evalExpr(valueExpr, env)
-        (Value.UnitVal, envAfterValue.withBinding(symbol, value))
+        valueExpr match
+          case Expr.Uninitialized(_) =>
+            (Value.UnitVal, env.withBinding(symbol, Value.UndefinedVal))
+          case _ =>
+            val (value, envAfterValue) = evalExpr(valueExpr, env)
+            (Value.UnitVal, envAfterValue.withBinding(symbol, value))
       case Expr.Assign(symbol, valueExpr, _) =>
         val (value, envAfterValue) = evalExpr(valueExpr, env)
         (Value.UnitVal, envAfterValue.updateBinding(symbol, value))
+      case Expr.FieldAccess(target, ctor, fieldName, fieldIndex, _) =>
+        val (targetValue, envAfterTarget) = evalExpr(target, env)
+        targetValue match
+          case Value.AdtVal(name, args) if name == ctor.name && fieldIndex < args.length =>
+            (args(fieldIndex), envAfterTarget)
+          case Value.AdtVal(name, _) =>
+            throw new IllegalArgumentException(s"Field access $fieldName expects ${ctor.name}, got: $name")
+          case other =>
+            throw new IllegalArgumentException(s"Field access $fieldName expects ${ctor.name}, got: $other")
+      case Expr.Uninitialized(_) =>
+        throw new IllegalArgumentException("Encountered uninitialized value at runtime")
       case Expr.IfThenElse(cond, thenExpr, elseExpr, _) =>
         val (condValue, envAfterCond) = evalExpr(cond, env)
         valueToBool(condValue) match

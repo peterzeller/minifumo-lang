@@ -133,8 +133,15 @@ object AstTransform:
         val usingArgs = Option(c.usingClause()).map(usingClause).getOrElse(Nil)
         Expr.Call(expr(c.expr()), tArgs, args, usingArgs)(range(c))
       case c: MinifumoParser.DotContext =>
-        // The expression x.f(a,b,c) is short for f(x,a,b,c)
-        opCall(c.ID().getText(), expr(c.expr()) :: argList(c.argList()), range(c))
+        val target = expr(c.expr())
+        val fieldName = c.ID().getText()
+        val hasParens = c.getToken(MinifumoParser.PAREN_LEFT, 0) != null
+        // The expression x.f(a,b,c) is short for f(x,a,b,c) when parentheses are present.
+        if hasParens then
+          val args = Option(c.argList()).map(argList).getOrElse(Nil)
+          opCall(fieldName, target :: args, range(c))
+        else
+          Expr.FieldAccess(target, fieldName)(range(c))
       case c: MinifumoParser.NegContext =>
         opCall("opNeg", List(expr(c.expr())), range(c))
       case c: MinifumoParser.MulDivContext =>
@@ -183,6 +190,8 @@ object AstTransform:
         Expr.Bind(c.ID().getText, false, tpe, uninitializedValue(range(c)))(range(c))
       case c: MinifumoParser.AssignContext =>
         Expr.Assign(c.ID().getText, expr(c.expr()))(range(c))
+      case c: MinifumoParser.ReturnContext =>
+        Expr.Return(expr(c.expr()))(range(c))
       case c: MinifumoParser.IfThenElseContext =>
         Expr.IfThenElse(expr(c.expr(0)), expr(c.expr(1)), expr(c.expr(2)))(range(c))
       case c: MinifumoParser.IfSuiteContext =>
@@ -295,7 +304,7 @@ object AstTransform:
           case _ => Expr.Block(exprs)(suiteSource(s))
 
   private def uninitializedValue(source: SourceRange): Expr =
-    Expr.Var("undefined")(source)
+    Expr.Uninitialized()(source)
 
   private def suiteSource(suite: Suite): SourceRange =
     suite.source
