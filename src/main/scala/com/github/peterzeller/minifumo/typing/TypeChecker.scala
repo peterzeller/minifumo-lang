@@ -1532,7 +1532,7 @@ object TypeChecker:
       mergedEnv
     )
 
-  // T-For: Γ ⊢ xs ⇒ Iterable[T]  and  Γ,x:T ⊢ e ⇒ U  ⇒  Γ ⊢ for x in xs do e ⇒ U
+  // T-For: Γ ⊢ xs ⇒ C  and  Iterable[C, I, T]  and  Γ,x:T ⊢ e ⇒ U  ⇒  Γ ⊢ for x in xs do e ⇒ U
   private def synthFor(
       name: String,
       inExpr: ast.Expr,
@@ -1556,7 +1556,7 @@ object TypeChecker:
       envAfterBody.copy(flow = mergedFlow)
     )
 
-  // T-For-Check: Γ ⊢ xs ⇒ Iterable[T]  and  Γ,x:T ⊢ e ⇐ U  ⇒  Γ ⊢ for x in xs do e ⇐ U
+  // T-For-Check: Γ ⊢ xs ⇒ C  and  Iterable[C, I, T]  and  Γ,x:T ⊢ e ⇐ U  ⇒  Γ ⊢ for x in xs do e ⇐ U
   private def checkFor(
       name: String,
       inExpr: ast.Expr,
@@ -1915,13 +1915,14 @@ object TypeChecker:
       case Type.Unknown => (Type.Unknown, Nil, env)
       case Type.Meta(_) => (Type.Unknown, Nil, env)
       case _ =>
-        val (envWithMeta, elemMeta) = env.freshMeta()
-        val goal = Type.App(Type.Name("Iterable"), List(tpe, elemMeta))
-        val (instanceExprOpt, errors, envAfter) = resolveInstance(goal, envWithMeta, source, idSupply, Nil, None)
+        val (envWithIterMeta, iterMeta) = env.freshMeta()
+        val (envWithElemMeta, elemMeta) = envWithIterMeta.freshMeta()
+        val goal = Type.App(Type.Name("Iterable"), List(tpe, iterMeta, elemMeta))
+        val (instanceExprOpt, errors, envAfter) = resolveInstance(goal, envWithElemMeta, source, idSupply, Nil, None)
         val elemType = instanceExprOpt match
           case Some(expr) =>
             expr.tpe match
-              case Type.App(Type.Name("Iterable"), List(_, elem)) => elem
+              case Type.App(Type.Name("Iterable"), List(_, _, elem)) => elem
               case _ => applySubstitutions(elemMeta, envAfter)
           case None =>
             applySubstitutions(elemMeta, envAfter)

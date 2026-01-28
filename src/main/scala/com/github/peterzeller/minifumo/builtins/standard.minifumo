@@ -6,6 +6,10 @@ export data Int = Int(positive Bool, n Nat)
 
 export data List[T] = Nil | Cons(head T, tail List[T])
 
+export data Pair[A, B] = Pair(first A, second B)
+
+export data Option[T] = None | Some(value T)
+
 export data Tree[K, V] = Leaf | Node(key K, value V, left Tree[K, V], right Tree[K, V])
 
 export data Char = Char(rune Nat)
@@ -80,9 +84,11 @@ export typeclass Set[S, T]
     // Adds a value to the set.
     fun add(set S, value T) S
 
-export typeclass Iterable[C, T]
-    // Iterates over the collection elements.
-    fun iter(value C) List[T]
+export typeclass Iterable[C, I, T]
+    // Returns an iterator for the collection.
+    fun iterator(value C) I
+    // Returns the next element (and updated iterator) if available.
+    fun next(it I) Option[Pair[I, T]]
 
 // Returns the negation of the Bool value.
 fun opNot(value Bool) Bool
@@ -689,10 +695,17 @@ instance listSet[T] for Set[List[T], T] given (eq Eq[T])
         else
             Cons(value, set)
 
-instance iterableList[T] for Iterable[List[T], T]
-    // Returns the list elements as-is.
-    fun iter(value List[T]) List[T]
+instance iterableList[T] for Iterable[List[T], List[T], T]
+    // Returns the list itself as the iterator.
+    fun iterator(value List[T]) List[T]
         value
+    // Returns the next element from the list iterator.
+    fun next(it List[T]) Option[Pair[List[T], T]]
+        match it
+            case Nil
+                None
+            case Cons(head, tail)
+                Some(Pair(tail, head))
 
 // Inserts a key/value pair into the tree.
 fun treePut[K, V](tree Tree[K, V], key K, value V) Tree[K, V] given (lt OpLt[K], eq Eq[K])

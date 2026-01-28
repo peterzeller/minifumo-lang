@@ -114,6 +114,32 @@ class MySuite extends munit.FunSuite {
     assert(errors.exists(_.message.contains("initialized on multiple branches")))
   }
 
+  test("mutable vars can be initialized on multiple branches") {
+    val (typed, errors) = typeCheckSource("""
+      |fun main() unit
+      |    var x Int
+      |    if True
+      |        x := 1
+      |    else
+      |        x := 2
+      |    println(x)
+    """.stripMargin)
+    assertEquals(errors, List())
+    val combined = TypedAst.Program(Standard.typedProgram.items ++ typed.items)(typed.source)
+    val result = Interpreter.evalProg(combined, "main")
+    assertEquals(result, Interpreter.Value.UnitVal)
+  }
+
+  test("reassigning immutable locals is rejected") {
+    val (_, errors) = typeCheckSource("""
+      |fun main() Int
+      |    let x = 1
+      |    x := 2
+      |    x
+    """.stripMargin)
+    assert(errors.exists(_.message.contains("Cannot assign to immutable variable")))
+  }
+
   test("return exits the function") {
     val (typed, errors) = typeCheckSource("""
       |fun main() Int
