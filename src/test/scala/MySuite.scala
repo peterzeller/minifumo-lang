@@ -130,14 +130,17 @@ class MySuite extends munit.FunSuite {
     assertEquals(result, Interpreter.Value.UnitVal)
   }
 
-  test("reassigning immutable locals is rejected") {
-    val (_, errors) = typeCheckSource("""
+  test("assignment shadows immutable locals") {
+    val (typed, errors) = typeCheckSource("""
       |fun main() Int
       |    let x = 1
       |    x := 2
       |    x
     """.stripMargin)
-    assert(errors.exists(_.message.contains("Cannot assign to immutable variable")))
+    assertEquals(errors, List())
+    val combined = TypedAst.Program(Standard.typedProgram.items ++ typed.items)(typed.source)
+    val result = Interpreter.evalProg(combined, "main")
+    assertEquals(result, intValue(2))
   }
 
   test("return exits the function") {

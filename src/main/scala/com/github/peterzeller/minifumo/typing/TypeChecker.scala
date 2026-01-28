@@ -1366,17 +1366,27 @@ object TypeChecker:
     ): (Expr, List[TypeError], TypeEnv) =
     env.resolveLocal(name) match
       case Some(symbol: LocalSymbol) =>
-        val (typedValue, valueErrors, envAfterValue) = checkExpr(valueExpr, env, expectedReturn, symbol.tpe, idSupply)
-        val currentState = envAfterValue.localState(symbol).getOrElse(VarState(isConstant = false, InitState.Initialized))
-        val assignmentErrors =
-          if currentState.isConstant && currentState.initState != InitState.Uninitialized then
-            List(errorAt(source, s"Cannot assign to immutable variable: ${symbol.name}"))
-          else
-            Nil
-        val updatedState = currentState.copy(initState = InitState.Initialized)
-        val envWithState = envAfterValue.withLocalState(symbol, updatedState)
-        val (updatedEnv, checkedType, expectedErrors) = ensureExpectedType(baseTypes("unit"), expectedType, source, envWithState)
-        (Expr.Assign(symbol, typedValue, checkedType)(source), valueErrors ++ assignmentErrors ++ expectedErrors, updatedEnv)
+        val currentState = env.localState(symbol).getOrElse(VarState(isConstant = false, InitState.Initialized))
+        if currentState.isConstant && currentState.initState != InitState.Uninitialized then
+          // Shadows immutable bindings with a new local instead of mutating in place.
+          val (typedValue, valueErrors, envAfterValue) = synthesizeExpr(valueExpr, env, idSupply)
+          val bindingType = applySubstitutions(typedValue.tpe, envAfterValue)
+          val shadowSymbol = LocalSymbol(name, bindingType, idSupply.freshId())
+          val (updatedEnv, checkedType, expectedErrors) =
+            ensureExpectedType(baseTypes("unit"), expectedType, source, envAfterValue)
+          val varState = VarState(isConstant = true, initState = InitState.Initialized)
+          (
+            Expr.Bind(shadowSymbol, isConstant = true, declaredType = None, typedValue, checkedType)(source),
+            valueErrors ++ expectedErrors,
+            updatedEnv.withBinding(shadowSymbol, Some(varState))
+          )
+        else
+          val (typedValue, valueErrors, envAfterValue) = checkExpr(valueExpr, env, expectedReturn, symbol.tpe, idSupply)
+          val updatedState = currentState.copy(initState = InitState.Initialized)
+          val envWithState = envAfterValue.withLocalState(symbol, updatedState)
+          val (updatedEnv, checkedType, expectedErrors) =
+            ensureExpectedType(baseTypes("unit"), expectedType, source, envWithState)
+          (Expr.Assign(symbol, typedValue, checkedType)(source), valueErrors ++ expectedErrors, updatedEnv)
       case Some(symbol) =>
         val (typedValue, valueErrors, envAfterValue) = synthesizeExpr(valueExpr, env, idSupply)
         val (updatedEnv, checkedType, expectedErrors) = ensureExpectedType(baseTypes("unit"), expectedType, source, envAfterValue)

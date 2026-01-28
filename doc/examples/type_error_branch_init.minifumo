@@ -1,0 +1,4 @@
+fun main() Int
+    var x Int
+    if true then x := 1 else unit
+    x // error: may be uninitialized
