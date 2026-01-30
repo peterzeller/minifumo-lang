@@ -96,22 +96,26 @@ object Interpreter:
             throw new IllegalArgumentException(s"Constructor ${ctor.name} expects ${ctor.arity} args, got ${args.length}")
           (Value.AdtVal(ctor.name, args), env)
         case fun: FunctionSymbol =>
-          env.functions.get(fun) match
-            case Some(funDef) =>
-              if args.length != funDef.params.length then
-                throw new IllegalArgumentException(
-                  s"Function ${fun.name} expects ${funDef.params.length} args, got ${args.length}"
-                )
-              val bindings: Map[TermSymbol, Value] = funDef.params.zip(args).toMap
-              val envWithParams = env.pushScope(bindings)
-              try
-                val (result, envAfter) = evalSuite(funDef.body, envWithParams)
-                (result, envAfter.popScope)
-              catch
-                case ReturnSignal(value, envAfter) =>
-                  (value, envAfter.popScope)
+          builtins.get(fun.name) match
+            case Some(BuiltinDef(_, builtin)) =>
+              builtin(args, env)
             case None =>
-              throw new IllegalArgumentException(s"Unknown function: ${fun.name}")
+              env.functions.get(fun) match
+                case Some(funDef) =>
+                  if args.length != funDef.params.length then
+                    throw new IllegalArgumentException(
+                      s"Function ${fun.name} expects ${funDef.params.length} args, got ${args.length}"
+                    )
+                  val bindings: Map[TermSymbol, Value] = funDef.params.zip(args).toMap
+                  val envWithParams = env.pushScope(bindings)
+                  try
+                    val (result, envAfter) = evalSuite(funDef.body, envWithParams)
+                    (result, envAfter.popScope)
+                  catch
+                    case ReturnSignal(value, envAfter) =>
+                      (value, envAfter.popScope)
+                case None =>
+                  throw new IllegalArgumentException(s"Unknown function: ${fun.name}")
         case err: ErrorSymbol =>
           throw new IllegalArgumentException(s"Unknown symbol: ${err.name}")
         case term: TermSymbol =>
@@ -221,7 +225,29 @@ object Interpreter:
           case Value.InstanceVal(_, members) =>
             members.get(memberName) match
               case Some(InstanceMemberValue(memberSymbol, captured)) =>
-                evalFunc(memberSymbol, argValues ++ captured, envAfterArgs)
+                val expectedArity = memberSymbol.tpe.params.length
+                val givenCount = captured.length
+                val explicitCount = expectedArity - givenCount
+                if explicitCount < 0 then
+                  throw new IllegalArgumentException(
+                    s"Typeclass member ${memberSymbol.name} expects $expectedArity args, got ${argValues.length}"
+                  )
+                if argValues.length > explicitCount then
+                  throw new IllegalArgumentException(
+                    s"Typeclass member ${memberSymbol.name} expects at most $explicitCount explicit args, got ${argValues.length}"
+                  )
+                if argValues.length == explicitCount then
+                  evalFunc(memberSymbol, argValues ++ captured, envAfterArgs)
+                else
+                  val remaining = explicitCount - argValues.length
+                  val fn = (moreArgs: List[Value], env: Env) =>
+                    val combinedArgs = argValues ++ moreArgs ++ captured
+                    if combinedArgs.length != expectedArity then
+                      throw new IllegalArgumentException(
+                        s"Typeclass member ${memberSymbol.name} expects $expectedArity args, got ${combinedArgs.length}"
+                      )
+                    evalFunc(memberSymbol, combinedArgs, env)
+                  (Value.FuncVal(memberSymbol.name, remaining, 0, Nil, Nil, fn), envAfterArgs)
               case None =>
                 throw new IllegalArgumentException(s"Unknown instance member: $memberName")
           case other =>
@@ -477,6 +503,12 @@ object Interpreter:
   private def builtins: Map[String, BuiltinDef] =
     Map(
       "printlnString" -> BuiltinDef(1, builtinPrintln),
+      "natToString" -> BuiltinDef(1, builtinNatToString),
+      "intToString" -> BuiltinDef(1, builtinIntToString),
+      "opPlusInt.opPlus" -> BuiltinDef(2, builtinIntAdd),
+      "opMinusInt.opMinus" -> BuiltinDef(2, builtinIntSub),
+      "opLtInt.opLt" -> BuiltinDef(2, builtinIntLt),
+      "opLeInt.opLe" -> BuiltinDef(2, builtinIntLe)
     )
 
   private def builtinPrintln(args: List[Value], env: Env): (Value, Env) =
@@ -488,6 +520,66 @@ object Interpreter:
         (Value.UnitVal, env)
       case other =>
         throw new IllegalArgumentException(s"printlnString expects 1 arg, got: $other")
+
+  // Converts a Nat value to a String constructor.
+  private def builtinNatToString(args: List[Value], env: Env): (Value, Env) =
+    args match
+      case List(value) =>
+        valueToNat(value) match
+          case Some(nat) => (stringToValue(nat.toString), env)
+          case None => throw new IllegalArgumentException(s"natToString expects Nat, got: $value")
+      case other =>
+        throw new IllegalArgumentException(s"natToString expects 1 arg, got: $other")
+
+  // Converts an Int value to a String constructor.
+  private def builtinIntToString(args: List[Value], env: Env): (Value, Env) =
+    args match
+      case List(value) =>
+        valueToInt(value) match
+          case Some(intValue) => (stringToValue(intValue.toString), env)
+          case None => throw new IllegalArgumentException(s"intToString expects Int, got: $value")
+      case other =>
+        throw new IllegalArgumentException(s"intToString expects 1 arg, got: $other")
+
+  // Adds two Int values using host arithmetic.
+  private def builtinIntAdd(args: List[Value], env: Env): (Value, Env) =
+    args match
+      case List(left, right) =>
+        (valueToInt(left), valueToInt(right)) match
+          case (Some(a), Some(b)) => (intToValue(a + b), env)
+          case _ => throw new IllegalArgumentException(s"opPlusInt.opPlus expects Int args, got: $left, $right")
+      case other =>
+        throw new IllegalArgumentException(s"opPlusInt.opPlus expects 2 args, got: $other")
+
+  // Subtracts two Int values using host arithmetic.
+  private def builtinIntSub(args: List[Value], env: Env): (Value, Env) =
+    args match
+      case List(left, right) =>
+        (valueToInt(left), valueToInt(right)) match
+          case (Some(a), Some(b)) => (intToValue(a - b), env)
+          case _ => throw new IllegalArgumentException(s"opMinusInt.opMinus expects Int args, got: $left, $right")
+      case other =>
+        throw new IllegalArgumentException(s"opMinusInt.opMinus expects 2 args, got: $other")
+
+  // Compares two Int values for strictly-less-than.
+  private def builtinIntLt(args: List[Value], env: Env): (Value, Env) =
+    args match
+      case List(left, right) =>
+        (valueToInt(left), valueToInt(right)) match
+          case (Some(a), Some(b)) => (boolToValue(a < b), env)
+          case _ => throw new IllegalArgumentException(s"opLtInt.opLt expects Int args, got: $left, $right")
+      case other =>
+        throw new IllegalArgumentException(s"opLtInt.opLt expects 2 args, got: $other")
+
+  // Compares two Int values for less-than-or-equal.
+  private def builtinIntLe(args: List[Value], env: Env): (Value, Env) =
+    args match
+      case List(left, right) =>
+        (valueToInt(left), valueToInt(right)) match
+          case (Some(a), Some(b)) => (boolToValue(a <= b), env)
+          case _ => throw new IllegalArgumentException(s"opLeInt.opLe expects Int args, got: $left, $right")
+      case other =>
+        throw new IllegalArgumentException(s"opLeInt.opLe expects 2 args, got: $other")
 
   private def renderValue(value: Value): String =
     valueToInt(value)

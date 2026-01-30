@@ -903,7 +903,7 @@ object TypeChecker:
           (currentEnv, resultAfterArgs, Nil)
       candidateErrors ++= resultErrors
       val typeClassArgs = tc.typeParams.map { param =>
-        typeParamBindings.getOrElse(param, Type.Unknown)
+        applySubstitutions(typeParamBindings.getOrElse(param, Type.Unknown), currentEnv)
       }
       val goal = if typeClassArgs.isEmpty then Type.Name(tc.name) else Type.App(Type.Name(tc.name), typeClassArgs)
       val preferGiven =
@@ -924,29 +924,9 @@ object TypeChecker:
       candidateErrors ++= instanceErrors
       instanceArgs.headOption match
         case Some(instanceExpr) =>
-          val finalResultType = applySubstitutions(baseResultType, envAfterInstance)
-          val fullCallExpr = Expr.CallTypeClassMember(instanceExpr, name, typedArgs, finalResultType)(source)
-          val expr =
-            if remainingParamTypes.nonEmpty then
-              val paramSymbols = remainingParamTypes.map(tpe => LocalSymbol(s"_arg${idSupply.freshId()}", tpe, idSupply.freshId()))
-              val paramVars = paramSymbols.map(sym => Expr.Var(sym, sym.tpe)(source))
-              val callWithRemaining = Expr.CallTypeClassMember(
-                instanceExpr,
-                name,
-                typedArgs ++ paramVars,
-                finalResultType
-              )(source)
-              buildLambdaChain(paramSymbols, callWithRemaining, source)
-            else
-              fullCallExpr
           val checkedType = applySubstitutions(unifiedResult, envAfterInstance)
-          val resolvedExpr = expr match
-            case Expr.Lambda(param, body, _) =>
-              Expr.Lambda(param, body, checkedType)(source)
-            case Expr.CallTypeClassMember(instance, memberName, callArgs, _) =>
-              Expr.CallTypeClassMember(instance, memberName, callArgs, checkedType)(source)
-            case _ => expr
-          Some((resolvedExpr, candidateErrors.toList, envAfterInstance))
+          val expr = Expr.CallTypeClassMember(instanceExpr, name, typedArgs, checkedType)(source)
+          Some((expr, candidateErrors.toList, envAfterInstance))
         case None =>
           failedCandidateErrors += candidateErrors.toList
           None
