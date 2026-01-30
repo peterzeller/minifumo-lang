@@ -1,5 +1,4 @@
 fun main() unit
-    while false
-        println("never")
+    if false then println("never") else unit
 
 // Output:

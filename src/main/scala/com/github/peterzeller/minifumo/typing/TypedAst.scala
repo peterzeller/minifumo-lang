@@ -93,6 +93,7 @@ object TypedAst:
     final case class CallTypeClassMember(instance: Expr, memberName: String, args: List[Expr], tpe: Type)(
         val source: SourceRange
       ) extends Expr
+    final case class Lambda(param: LocalSymbol, body: Expr, tpe: Type)(val source: SourceRange) extends Expr
     final case class LetIn(
         symbol: LocalSymbol,
         isConstant: Boolean,
@@ -108,11 +109,6 @@ object TypedAst:
         value: Expr,
         tpe: Type
       )(val source: SourceRange) extends Expr
-    final case class Assign(symbol: LocalSymbol, value: Expr, tpe: Type)(val source: SourceRange) extends Expr
-    final case class IfThenElse(cond: Expr, thenExpr: Expr, elseExpr: Expr, tpe: Type)(val source: SourceRange) extends Expr
-    final case class For(symbol: LocalSymbol, inExpr: Expr, body: Suite, tpe: Type)(val source: SourceRange) extends Expr
-    final case class While(cond: Expr, body: Suite, tpe: Type)(val source: SourceRange) extends Expr
-    final case class Match(scrutinee: Expr, cases: List[MatchCase], tpe: Type)(val source: SourceRange) extends Expr
     final case class Return(expr: Expr, tpe: Type)(val source: SourceRange) extends Expr
 
   final case class MatchCase(pattern: Pattern, body: Suite)(val source: SourceRange)

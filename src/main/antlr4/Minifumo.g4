@@ -125,6 +125,7 @@ expr
   | ID                                        #Var
   | '(' expr ')'                              #Paren
   | '(' ')' # Unit
+  | lambdaParams '->' expr                    #Lambda
 
   // postfix
   | expr typeArgs? '(' argList? ')' usingClause?                    #Call
@@ -149,27 +150,25 @@ expr
 
   // let/var with "in"
   | 'let' ID type? '=' expr 'in' expr         #LetIn
-  | 'var' ID type? '=' expr 'in' expr         #VarIn
 
-  // let/var binding statements
+  // let binding statements
   | 'let' ID type? '=' expr                   #LetStmt
-  | 'let' ID type?                            #LetStmtNoInit
-  | 'var' ID type? '=' expr                   #VarStmt
-  | 'var' ID type?                            #VarStmtNoInit
-
-  // assignment statement
-  | ID ':=' expr                              #Assign
 
   // if
   | 'if' expr 'then' expr 'else' expr  #IfThenElse
-  | 'if' expr suite ('else' suite)?    #IfSuite
-
-  // loops
-  | 'for' ID 'in' expr suite                  #For
-  | 'while' expr suite                        #While
+  | 'if' expr suite 'else' suite       #IfSuite
 
   // match
   | 'match' expr NL BEGIN matchCase+ END      #Match
+  ;
+
+lambdaParams
+  : ID type?                                  #LambdaSingle
+  | '(' lambdaParam (',' lambdaParam)* ')'    #LambdaMulti
+  ;
+
+lambdaParam
+  : ID type?
   ;
 
 argList
