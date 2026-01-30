@@ -30,7 +30,7 @@ object Interpreter:
     override def toString(): String =
       renderValue(this)
 
-  final case class FunDef(params: List[ParamSymbol], body: Suite)
+  final case class FunDef(params: List[ParamSymbol], body: Expr)
 
   // Captured holds resolved given arguments for the instance member.
   final case class InstanceMemberValue(symbol: FunctionSymbol, captured: List[Value])
@@ -109,7 +109,7 @@ object Interpreter:
                   val bindings: Map[TermSymbol, Value] = funDef.params.zip(args).toMap
                   val envWithParams = env.pushScope(bindings)
                   try
-                    val (result, envAfter) = evalSuite(funDef.body, envWithParams)
+                    val (result, envAfter) = evalExpr(funDef.body, envWithParams)
                     (result, envAfter.popScope)
                   catch
                     case ReturnSignal(value, envAfter) =>
@@ -177,15 +177,6 @@ object Interpreter:
         (value, env)
       case Expr.Paren(inner, _) =>
         evalExpr(inner, env)
-      case Expr.Block(exprs, _) =>
-        var currentEnv = env
-        var lastValue: Value = Value.UnitVal
-        exprs.foreach { expr =>
-          val (value, envAfter) = evalExpr(expr, currentEnv)
-          lastValue = value
-          currentEnv = envAfter
-        }
-        (lastValue, currentEnv)
       case Expr.CallFun(callee, args, givenArgs, _) =>
         val (calleeValue, envAfterCallee) = evalExpr(callee, env)
         val (argValues, envAfterArgs) = evalArgs(args, envAfterCallee)
@@ -274,20 +265,6 @@ object Interpreter:
       case Expr.Return(valueExpr, _) =>
         val (value, envAfterValue) = evalExpr(valueExpr, env)
         throw ReturnSignal(value, envAfterValue)
-
-  def evalSuite(suite: Suite, env: Env): (Value, Env) =
-    suite match
-      case Suite.Single(expr) =>
-        evalExpr(expr, env)
-      case Suite.Block(exprs, _) =>
-        var currentEnv = env
-        var lastValue: Value = Value.UnitVal
-        exprs.foreach { expr =>
-          val (value, envAfter) = evalExpr(expr, currentEnv)
-          lastValue = value
-          currentEnv = envAfter
-        }
-        (lastValue, currentEnv)
 
   private def evalArgs(args: List[Expr], env: Env): (List[Value], Env) =
     var currentEnv = env

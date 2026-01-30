@@ -98,9 +98,11 @@ object AstTransform:
   def givenClause(ctx: MinifumoParser.GivenClauseContext): List[FunParam] =
     funParams(ctx.funParams())
 
-  def suite(ctx: MinifumoParser.SuiteContext): Suite =
-    Suite.Block(block(ctx.block()))(range(ctx))
+  // Parses a suite and desugars it into a single expression.
+  def suite(ctx: MinifumoParser.SuiteContext): Expr =
+    desugarBlock(block(ctx.block()), range(ctx))
 
+  // Parses a block into a list of expressions.
   def block(ctx: MinifumoParser.BlockContext): List[Expr] =
     ctx.expr().asScala.toList.map(expr)
 
@@ -175,8 +177,8 @@ object AstTransform:
       case c: MinifumoParser.IfThenElseContext =>
         boolMatch(expr(c.expr(0)), expr(c.expr(1)), expr(c.expr(2)), range(c))
       case c: MinifumoParser.IfSuiteContext =>
-        val thenExpr = suiteToExpr(suite(c.suite(0)))
-        val elseExpr = suiteToExpr(suite(c.suite(1)))
+        val thenExpr = suite(c.suite(0))
+        val elseExpr = suite(c.suite(1))
         boolMatch(expr(c.expr()), thenExpr, elseExpr, range(c))
       case c: MinifumoParser.MatchContext =>
         Expr.Match(expr(c.expr()), c.matchCase().asScala.toList.map(matchCase))(range(c))
@@ -262,8 +264,8 @@ object AstTransform:
 
   // Desugars an if-then-else expression into a Bool match.
   private def boolMatch(cond: Expr, thenExpr: Expr, elseExpr: Expr, source: SourceRange): Expr =
-    val trueCase = MatchCase(Pattern.BinderOrCtor0("True")(source), Suite.Single(thenExpr)(source))(source)
-    val falseCase = MatchCase(Pattern.BinderOrCtor0("False")(source), Suite.Single(elseExpr)(source))(source)
+    val trueCase = MatchCase(Pattern.BinderOrCtor0("True")(source), thenExpr)(source)
+    val falseCase = MatchCase(Pattern.BinderOrCtor0("False")(source), elseExpr)(source)
     Expr.Match(cond, List(trueCase, falseCase))(source)
 
   // Parses a lambda expression context into parameters and a body expression.
@@ -296,14 +298,23 @@ object AstTransform:
       case Nil =>
         body
 
-  // Converts a suite into an expression for if-expression desugaring.
-  private def suiteToExpr(s: Suite): Expr =
-    s match
-      case Suite.Single(e) => e
-      case Suite.Block(exprs) =>
-        exprs match
-          case Nil => Expr.Var("unit")(s.source)
-          case _ => Expr.Block(exprs)(s.source)
+  // Desugars a block of expressions into nested let-bindings.
+  private def desugarBlock(exprs: List[Expr], source: SourceRange): Expr =
+    val unitLiteral = Literal.UnitLit()(source)
+    val unitExpr = Expr.Lit(unitLiteral)(source)
+    exprs match
+      case Nil =>
+        unitExpr
+      case head :: tail =>
+        head match
+          case Expr.Bind(name, isConstant, tpe, value) =>
+            val bodyExpr = if tail.isEmpty then unitExpr else desugarBlock(tail, source)
+            Expr.LetIn(name, isConstant, tpe, value, bodyExpr)(head.source)
+          case other =>
+            if tail.isEmpty then
+              other
+            else
+              Expr.LetIn("_", true, None, other, desugarBlock(tail, source))(head.source)
 
   private def typeClassHead(name: String, args: List[Type], source: SourceRange): Type =
     if args.isEmpty then Type.Name(name)(source) else Type.App(Type.Name(name)(source), args)(source)

@@ -376,7 +376,7 @@ object TypeChecker:
       TypeEnv(List(scopeBindings), exports, funDecl.typeParams.toSet, funSymbol.tpe.result, givens, Map.empty, 1)
     val expectedBodyType =
       if funSymbol.tpe.result == Type.Unknown then None else Some(funSymbol.tpe.result)
-    val (typedBody, bodyErrors, _) = typeSuite(funDecl.body, env, funSymbol.tpe.result, expectedBodyType, idSupply)
+    val (typedBody, bodyErrors, _) = typeExpr(funDecl.body, env, funSymbol.tpe.result, expectedBodyType, idSupply)
     errors ++= bodyErrors
     val typedFun: TopLevel.FunDecl =
       TopLevel.FunDecl(funSymbol, funDecl.typeParams, params, givens, typedBody)(funDecl.source)
@@ -482,7 +482,7 @@ object TypeChecker:
         val expectedBodyType =
           if memberSymbol.tpe.result == Type.Unknown then None else Some(memberSymbol.tpe.result)
         val (typedBody, bodyErrors, _) =
-          typeSuite(memberDecl.body, env, memberSymbol.tpe.result, expectedBodyType, idSupply)
+          typeExpr(memberDecl.body, env, memberSymbol.tpe.result, expectedBodyType, idSupply)
         errors ++= bodyErrors
         Some(InstanceMember(memberDecl.name, memberSymbol, allParams, typedBody)(memberDecl.source))
     }
@@ -490,32 +490,6 @@ object TypeChecker:
       InstanceSymbol(instanceDecl.name, instanceDecl.typeParams, headType, givenParams.map(_.tpe), Map.empty)
     )
     (TopLevel.InstanceDecl(instanceSymbol, instanceDecl.typeParams, givenParams, typedMembers)(instanceDecl.source), errors.toList)
-
-  private def typeSuite(
-      suite: ast.Suite,
-      env: TypeEnv,
-      expectedReturn: Type,
-      expectedType: Option[Type],
-      idSupply: IdSupply
-    ): (Suite, List[TypeError], TypeEnv) =
-    suite match
-      case ast.Suite.Single(expr) =>
-        val (typedExpr, errors, updatedEnv) = typeExpr(expr, env, expectedReturn, expectedType, idSupply)
-        (Suite.Single(typedExpr)(suite.source), errors, updatedEnv)
-      case ast.Suite.Block(exprs) =>
-        val errors = ListBuffer.empty[TypeError]
-        val lastIndex = exprs.length - 1
-        var currentEnv = env
-        val typedExprs = exprs.zipWithIndex.map { case (expr, index) =>
-          val exprExpectedType = if index == lastIndex then expectedType else None
-          val (typedExpr, exprErrors, updatedEnv) =
-            typeExprWithEnv(expr, currentEnv, expectedReturn, exprExpectedType, idSupply)
-          errors ++= exprErrors
-          currentEnv = updatedEnv
-          typedExpr
-        }
-        val tpe = typedExprs.lastOption.map(_.tpe).getOrElse(baseTypes("unit"))
-        (Suite.Block(typedExprs, tpe)(suite.source), errors.toList, currentEnv)
 
   private def typeExpr(
       expr: ast.Expr,
@@ -548,7 +522,6 @@ object TypeChecker:
       case ast.Expr.Lit(value) => synthLit(value, expr.source, env)
       case ast.Expr.Var(name) => synthVar(name, expr.source, env)
       case ast.Expr.Paren(inner) => synthParen(inner, expr.source, env, idSupply)
-      case ast.Expr.Block(exprs) => synthBlock(exprs, expr.source, env, idSupply)
       case ast.Expr.Call(callee, typeArgs, args, usingArgs) =>
         synthCall(callee, typeArgs, args, usingArgs, expr.source, env, idSupply)
       case ast.Expr.Lambda(param, body) =>
@@ -578,8 +551,6 @@ object TypeChecker:
       case ast.Expr.Lit(value) => checkLit(value, expectedType, expr.source, env)
       case ast.Expr.Var(name) => checkVar(name, expectedType, expr.source, env)
       case ast.Expr.Paren(inner) => checkParen(inner, expectedType, expr.source, env, expectedReturn, idSupply)
-      case ast.Expr.Block(exprs) =>
-        checkBlock(exprs, expectedType, expr.source, env, expectedReturn, idSupply)
       case ast.Expr.Call(callee, typeArgs, args, usingArgs) =>
         checkCall(callee, typeArgs, args, usingArgs, expectedType, expr.source, env, expectedReturn, idSupply)
       case ast.Expr.Lambda(param, body) =>
@@ -690,64 +661,6 @@ object TypeChecker:
     ): (Expr, List[TypeError], TypeEnv) =
     val (typedInner, errors, updatedEnv) = checkExpr(inner, env, expectedReturn, expectedType, idSupply)
     (Expr.Paren(typedInner, typedInner.tpe)(source), errors, updatedEnv)
-
-  private def synthBlock(
-      exprs: List[ast.Expr],
-      source: ast.SourceRange,
-      env: TypeEnv,
-      idSupply: IdSupply
-    ): (Expr, List[TypeError], TypeEnv) =
-    typeBlockExpr(exprs, None, source, env, env.expectedReturn, idSupply)
-
-  private def checkBlock(
-      exprs: List[ast.Expr],
-      expectedType: Type,
-      source: ast.SourceRange,
-      env: TypeEnv,
-      expectedReturn: Type,
-      idSupply: IdSupply
-    ): (Expr, List[TypeError], TypeEnv) =
-    typeBlockExpr(exprs, Some(expectedType), source, env, expectedReturn, idSupply)
-
-  private def typeBlockExpr(
-      exprs: List[ast.Expr],
-      expectedType: Option[Type],
-      source: ast.SourceRange,
-      env: TypeEnv,
-      expectedReturn: Type,
-      idSupply: IdSupply
-    ): (Expr, List[TypeError], TypeEnv) =
-    val errors = ListBuffer.empty[TypeError]
-    val lastIndex = exprs.length - 1
-    var currentEnv = env
-    val typedExprs = exprs.zipWithIndex.map { case (expr, index) =>
-      val exprExpectedType = if index == lastIndex then expectedType else None
-      val (typedExpr, exprErrors, updatedEnv) =
-        typeExprWithEnv(expr, currentEnv, expectedReturn, exprExpectedType, idSupply)
-      errors ++= exprErrors
-      currentEnv = updatedEnv
-      typedExpr
-    }
-    val tpe = typedExprs.lastOption.map(_.tpe).getOrElse(baseTypes("unit"))
-    (Expr.Block(typedExprs, tpe)(source), errors.toList, currentEnv)
-
-  private def typeExprWithEnv(
-      expr: ast.Expr,
-      env: TypeEnv,
-      expectedReturn: Type,
-      expectedType: Option[Type],
-      idSupply: IdSupply
-    ): (Expr, List[TypeError], TypeEnv) =
-    expr match
-      case ast.Expr.Bind(name, isConstant, declaredTypeAst, valueExpr) =>
-        val (typedExpr, errors, updatedEnv) =
-          typeBindWithEnv(name, isConstant, declaredTypeAst, valueExpr, expectedType, expr.source, env, expectedReturn, idSupply)
-        (typedExpr, errors, updatedEnv)
-      case _ =>
-        val (typedExpr, errors, updatedEnv) = expectedType match
-          case Some(tpe) => checkExpr(expr, env, expectedReturn, tpe, idSupply)
-          case None => synthesizeExpr(expr, env, idSupply)
-        (typedExpr, errors, updatedEnv)
 
   // T-App: Γ ⊢ f ⇒ T1 → T2  and  Γ ⊢ a ⇐ T1  ⇒  Γ ⊢ f a ⇒ T2
   private def synthCall(
@@ -1345,7 +1258,7 @@ object TypeChecker:
     val (typedCases, caseErrors, envAfterCases) =
       typeMatchCases(cases, typedScrutinee.tpe, None, source, envAfterScrutinee, idSupply)
     errors ++= caseErrors
-    val caseTypes = typedCases.map(c => suiteType(c.body))
+    val caseTypes = typedCases.map(c => c.body.tpe)
     val (envAfterResult, resultType, resultErrors) =
       caseTypes.drop(1).foldLeft((envAfterCases, caseTypes.headOption.getOrElse(Type.Unknown), List.empty[TypeError])) {
         case ((envAcc, accType, accErrors), nextType) =>
@@ -1377,7 +1290,7 @@ object TypeChecker:
     val (typedCases, caseErrors, envAfterCases) =
       typeMatchCases(cases, typedScrutinee.tpe, Some(expectedType), source, envAfterScrutinee, idSupply)
     errors ++= caseErrors
-    val caseTypes = typedCases.map(c => suiteType(c.body))
+    val caseTypes = typedCases.map(c => c.body.tpe)
     val mismatchErrors = caseTypes.sliding(2).collect {
       case List(a, b) if !isCompatible(a, b) =>
         errorAt(source, s"Match case types do not agree: ${renderType(a)} vs ${renderType(b)}")
@@ -1391,7 +1304,7 @@ object TypeChecker:
     errors ++= elimErrors
     (elimExpr, errors.toList, envAfterElim)
 
-  private final case class TypedMatchCase(pattern: Pattern, body: Suite, source: ast.SourceRange)
+  private final case class TypedMatchCase(pattern: Pattern, body: Expr, source: ast.SourceRange)
 
   // Types match cases against the scrutinee type and optional expected type.
   private def typeMatchCases(
@@ -1410,7 +1323,7 @@ object TypeChecker:
       errors ++= patternErrors
       val envWithBindings = bindings.values.foldLeft(currentEnv) { case (current, symbol) => current.withBinding(symbol) }
       val (typedBody, bodyErrors, envAfterBody) =
-        typeSuite(matchCase.body, envWithBindings, env.expectedReturn, expectedType, idSupply)
+        typeExpr(matchCase.body, envWithBindings, env.expectedReturn, expectedType, idSupply)
       errors ++= bodyErrors
       currentEnv = envAfterBody
       TypedMatchCase(typedPattern, typedBody, matchCase.source)
@@ -1517,7 +1430,7 @@ object TypeChecker:
       case fun: Type.Fun => fun
       case _ => Type.Fun(Nil, Type.Unknown)
     val fieldTypes = instantiatedCtorType.params
-    val baseBody = suiteToExpr(caseInfo.body)
+    val baseBody = caseInfo.body
     caseInfo.pattern match
       case Pattern.Ctor(_, args) =>
         val params = handlerParamsFromPattern(args, fieldTypes, source, idSupply, errors)
@@ -1535,12 +1448,6 @@ object TypeChecker:
       case Pattern.Lit(_) =>
         val params = wildcardParams(fieldTypes, idSupply)
         buildLambdaChain(params, baseBody, source)
-
-  // Converts a suite into an expression for handler construction.
-  private def suiteToExpr(suite: Suite): Expr =
-    suite match
-      case Suite.Single(expr) => expr
-      case block @ Suite.Block(exprs, tpe) => Expr.Block(exprs, tpe)(block.source)
 
   // Builds handler parameters for constructor patterns.
   private def handlerParamsFromPattern(
@@ -1785,11 +1692,6 @@ object TypeChecker:
         params.exists(containsTypeParam(_, name)) || containsTypeParam(result, name)
       case Type.Meta(_) => false
       case Type.Unknown => false
-
-  private def suiteType(suite: Suite): Type =
-    suite match
-      case Suite.Single(expr) => expr.tpe
-      case Suite.Block(_, tpe) => tpe
 
   private def ensureExpectedType(
       actualType: Type,
