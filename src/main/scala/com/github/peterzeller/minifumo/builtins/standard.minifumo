@@ -462,8 +462,7 @@ fun natToString(value Nat) String
     if natLt(value, natFromInt(10))
         stringFromChar(digitChar(value))
     else
-        stringAppend(
-            natToString(natDiv(value, natFromInt(10))),
+        stringAppend(natToString(natDiv(value, natFromInt(10))))(
             stringFromChar(digitChar(natMod(value, natFromInt(10))))
         )
 

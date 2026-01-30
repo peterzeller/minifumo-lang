@@ -1,9 +1,16 @@
 data List[A] = Nil | Cons(head A, tail List[A])
 
+fun printIncrement(values List[Int]) unit
+    match values
+        case Nil
+            unit
+        case Cons(head, tail)
+            println(head + 1)
+            printIncrement(tail)
+
 fun main() unit
     let numbers List[Int] = Cons(1, Cons(2, Cons(3, Nil)))
-    for n in numbers
-        println(n + 1)
+    printIncrement(numbers)
 
 // Output:
 // 2

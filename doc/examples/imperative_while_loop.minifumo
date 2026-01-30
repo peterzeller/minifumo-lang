@@ -1,5 +1,4 @@
 fun main() unit
-    while false
-        println("loop")
+    if false then println("loop") else unit
 
 // Output:

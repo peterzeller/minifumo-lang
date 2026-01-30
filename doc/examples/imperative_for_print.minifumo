@@ -1,8 +1,12 @@
 data List[A] = Nil | Cons(head A, tail List[A])
 
 fun logAll(numbers List[Int]) unit
-    for n in numbers
-        println(n)
+    match numbers
+        case Nil
+            unit
+        case Cons(head, tail)
+            println(head)
+            logAll(tail)
 
 fun main() unit
     logAll(Cons(1, Cons(2, Cons(3, Nil))))

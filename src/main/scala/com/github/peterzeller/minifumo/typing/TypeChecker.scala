@@ -235,6 +235,25 @@ object TypeChecker:
             errors ++= validateAstType(field.tpe, typeParams.toSet, ExportEnv(functions, ctors, types, typeClasses, instances, memberIndex))
           }
         }
+        val eliminatorName = buildEliminatorName(name)
+        val allowEliminatorOverride = shadowedTypes.contains(name)
+        if functions.contains(eliminatorName) && !allowEliminatorOverride then
+          errors += errorAt(item.source, s"Duplicate function: $eliminatorName")
+        else
+          val returnTypeParam = "R"
+          val returnType = Type.Name(returnTypeParam)
+          val scrutineeType = resultType
+          val handlerTypes = ctorSymbols.map { ctor =>
+            val handlerParams =
+              if ctor.tpe.params.isEmpty then List(baseTypes("unit")) else ctor.tpe.params
+            Type.Fun(handlerParams, returnType)
+          }
+          val eliminatorTypeParams = typeParams :+ returnTypeParam
+          val eliminatorParams = scrutineeType +: handlerTypes
+          val eliminatorType: Type.Fun = Type.Fun(eliminatorParams, returnType)
+          val eliminatorSymbol =
+            FunctionSymbol(eliminatorName, eliminatorTypeParams, eliminatorType, givenParams = Nil)
+          functions = functions + (eliminatorName -> eliminatorSymbol)
       case funDecl @ ast.TopLevel.FunDecl(name, typeParams, params, returnType, _, _, exported) if includeNonExported || exported =>
         if functions.contains(name) then
           errors += errorAt(item.source, s"Duplicate function: $name")
@@ -357,7 +376,7 @@ object TypeChecker:
       TypeEnv(List(scopeBindings), exports, funDecl.typeParams.toSet, funSymbol.tpe.result, givens, Map.empty, 1)
     val expectedBodyType =
       if funSymbol.tpe.result == Type.Unknown then None else Some(funSymbol.tpe.result)
-    val (typedBody, bodyErrors, _) = typeSuite(funDecl.body, env, funSymbol.tpe.result, expectedBodyType, idSupply)
+    val (typedBody, bodyErrors, _) = typeExpr(funDecl.body, env, funSymbol.tpe.result, expectedBodyType, idSupply)
     errors ++= bodyErrors
     val typedFun: TopLevel.FunDecl =
       TopLevel.FunDecl(funSymbol, funDecl.typeParams, params, givens, typedBody)(funDecl.source)
@@ -463,7 +482,7 @@ object TypeChecker:
         val expectedBodyType =
           if memberSymbol.tpe.result == Type.Unknown then None else Some(memberSymbol.tpe.result)
         val (typedBody, bodyErrors, _) =
-          typeSuite(memberDecl.body, env, memberSymbol.tpe.result, expectedBodyType, idSupply)
+          typeExpr(memberDecl.body, env, memberSymbol.tpe.result, expectedBodyType, idSupply)
         errors ++= bodyErrors
         Some(InstanceMember(memberDecl.name, memberSymbol, allParams, typedBody)(memberDecl.source))
     }
@@ -471,32 +490,6 @@ object TypeChecker:
       InstanceSymbol(instanceDecl.name, instanceDecl.typeParams, headType, givenParams.map(_.tpe), Map.empty)
     )
     (TopLevel.InstanceDecl(instanceSymbol, instanceDecl.typeParams, givenParams, typedMembers)(instanceDecl.source), errors.toList)
-
-  private def typeSuite(
-      suite: ast.Suite,
-      env: TypeEnv,
-      expectedReturn: Type,
-      expectedType: Option[Type],
-      idSupply: IdSupply
-    ): (Suite, List[TypeError], TypeEnv) =
-    suite match
-      case ast.Suite.Single(expr) =>
-        val (typedExpr, errors, updatedEnv) = typeExpr(expr, env, expectedReturn, expectedType, idSupply)
-        (Suite.Single(typedExpr)(suite.source), errors, updatedEnv)
-      case ast.Suite.Block(exprs) =>
-        val errors = ListBuffer.empty[TypeError]
-        val lastIndex = exprs.length - 1
-        var currentEnv = env
-        val typedExprs = exprs.zipWithIndex.map { case (expr, index) =>
-          val exprExpectedType = if index == lastIndex then expectedType else None
-          val (typedExpr, exprErrors, updatedEnv) =
-            typeExprWithEnv(expr, currentEnv, expectedReturn, exprExpectedType, idSupply)
-          errors ++= exprErrors
-          currentEnv = updatedEnv
-          typedExpr
-        }
-        val tpe = typedExprs.lastOption.map(_.tpe).getOrElse(baseTypes("unit"))
-        (Suite.Block(typedExprs, tpe)(suite.source), errors.toList, currentEnv)
 
   private def typeExpr(
       expr: ast.Expr,
@@ -529,23 +522,16 @@ object TypeChecker:
       case ast.Expr.Lit(value) => synthLit(value, expr.source, env)
       case ast.Expr.Var(name) => synthVar(name, expr.source, env)
       case ast.Expr.Paren(inner) => synthParen(inner, expr.source, env, idSupply)
-      case ast.Expr.Block(exprs) => synthBlock(exprs, expr.source, env, idSupply)
       case ast.Expr.Call(callee, typeArgs, args, usingArgs) =>
         synthCall(callee, typeArgs, args, usingArgs, expr.source, env, idSupply)
+      case ast.Expr.Lambda(param, body) =>
+        synthLambda(param, body, expr.source, env, idSupply)
       case ast.Expr.LetIn(name, isConstant, declaredTypeAst, valueExpr, bodyExpr) =>
         synthLetIn(name, isConstant, declaredTypeAst, valueExpr, bodyExpr, expr.source, env, idSupply)
       case ast.Expr.Bind(name, isConstant, declaredTypeAst, valueExpr) =>
         synthBind(name, isConstant, declaredTypeAst, valueExpr, expr.source, env, idSupply)
-      case ast.Expr.Assign(name, valueExpr) =>
-        synthAssign(name, valueExpr, expr.source, env, idSupply)
-      case ast.Expr.IfThenElse(cond, thenExpr, elseExpr) =>
-        synthIfThenElse(cond, thenExpr, elseExpr, expr.source, env, idSupply)
-      case ast.Expr.For(name, inExpr, body) =>
-        synthFor(name, inExpr, body, expr.source, env, idSupply)
-      case ast.Expr.While(cond, body) =>
-        synthWhile(cond, body, expr.source, env, idSupply)
       case ast.Expr.Match(scrutinee, cases) =>
-        synthMatch(scrutinee, cases, expr.source, env, idSupply)
+        synthMatchElim(scrutinee, cases, expr.source, env, idSupply)
       case ast.Expr.Return(_) =>
         val symbol = ErrorSymbol("<return>", Type.Unknown)
         (
@@ -565,10 +551,10 @@ object TypeChecker:
       case ast.Expr.Lit(value) => checkLit(value, expectedType, expr.source, env)
       case ast.Expr.Var(name) => checkVar(name, expectedType, expr.source, env)
       case ast.Expr.Paren(inner) => checkParen(inner, expectedType, expr.source, env, expectedReturn, idSupply)
-      case ast.Expr.Block(exprs) =>
-        checkBlock(exprs, expectedType, expr.source, env, expectedReturn, idSupply)
       case ast.Expr.Call(callee, typeArgs, args, usingArgs) =>
         checkCall(callee, typeArgs, args, usingArgs, expectedType, expr.source, env, expectedReturn, idSupply)
+      case ast.Expr.Lambda(param, body) =>
+        checkLambda(param, body, expectedType, expr.source, env, expectedReturn, idSupply)
       case ast.Expr.LetIn(name, isConstant, declaredTypeAst, valueExpr, bodyExpr) =>
         checkLetIn(
           name,
@@ -584,16 +570,8 @@ object TypeChecker:
         )
       case ast.Expr.Bind(name, isConstant, declaredTypeAst, valueExpr) =>
         checkBind(name, isConstant, declaredTypeAst, valueExpr, expectedType, expr.source, env, expectedReturn, idSupply)
-      case ast.Expr.Assign(name, valueExpr) =>
-        checkAssign(name, valueExpr, expectedType, expr.source, env, expectedReturn, idSupply)
-      case ast.Expr.IfThenElse(cond, thenExpr, elseExpr) =>
-        checkIfThenElse(cond, thenExpr, elseExpr, expectedType, expr.source, env, expectedReturn, idSupply)
-      case ast.Expr.For(name, inExpr, body) =>
-        checkFor(name, inExpr, body, expectedType, expr.source, env, expectedReturn, idSupply)
-      case ast.Expr.While(cond, body) =>
-        checkWhile(cond, body, expectedType, expr.source, env, expectedReturn, idSupply)
       case ast.Expr.Match(scrutinee, cases) =>
-        checkMatch(scrutinee, cases, expectedType, expr.source, env, expectedReturn, idSupply)
+        checkMatchElim(scrutinee, cases, expectedType, expr.source, env, idSupply)
       case ast.Expr.Return(valueExpr) =>
         checkReturn(valueExpr, expectedType, expr.source, env, expectedReturn, idSupply)
 
@@ -684,69 +662,6 @@ object TypeChecker:
     val (typedInner, errors, updatedEnv) = checkExpr(inner, env, expectedReturn, expectedType, idSupply)
     (Expr.Paren(typedInner, typedInner.tpe)(source), errors, updatedEnv)
 
-  private def synthBlock(
-      exprs: List[ast.Expr],
-      source: ast.SourceRange,
-      env: TypeEnv,
-      idSupply: IdSupply
-    ): (Expr, List[TypeError], TypeEnv) =
-    typeBlockExpr(exprs, None, source, env, env.expectedReturn, idSupply)
-
-  private def checkBlock(
-      exprs: List[ast.Expr],
-      expectedType: Type,
-      source: ast.SourceRange,
-      env: TypeEnv,
-      expectedReturn: Type,
-      idSupply: IdSupply
-    ): (Expr, List[TypeError], TypeEnv) =
-    typeBlockExpr(exprs, Some(expectedType), source, env, expectedReturn, idSupply)
-
-  private def typeBlockExpr(
-      exprs: List[ast.Expr],
-      expectedType: Option[Type],
-      source: ast.SourceRange,
-      env: TypeEnv,
-      expectedReturn: Type,
-      idSupply: IdSupply
-    ): (Expr, List[TypeError], TypeEnv) =
-    val errors = ListBuffer.empty[TypeError]
-    val lastIndex = exprs.length - 1
-    var currentEnv = env
-    val typedExprs = exprs.zipWithIndex.map { case (expr, index) =>
-      val exprExpectedType = if index == lastIndex then expectedType else None
-      val (typedExpr, exprErrors, updatedEnv) =
-        typeExprWithEnv(expr, currentEnv, expectedReturn, exprExpectedType, idSupply)
-      errors ++= exprErrors
-      currentEnv = updatedEnv
-      typedExpr
-    }
-    val tpe = typedExprs.lastOption.map(_.tpe).getOrElse(baseTypes("unit"))
-    (Expr.Block(typedExprs, tpe)(source), errors.toList, currentEnv)
-
-  private def typeExprWithEnv(
-      expr: ast.Expr,
-      env: TypeEnv,
-      expectedReturn: Type,
-      expectedType: Option[Type],
-      idSupply: IdSupply
-    ): (Expr, List[TypeError], TypeEnv) =
-    expr match
-      case ast.Expr.Bind(name, isConstant, declaredTypeAst, valueExpr) =>
-        val (typedExpr, errors, updatedEnv) =
-          typeBindWithEnv(name, isConstant, declaredTypeAst, valueExpr, expectedType, expr.source, env, expectedReturn, idSupply)
-        (typedExpr, errors, updatedEnv)
-      case ast.Expr.Assign(name, valueExpr) =>
-        val (typedExpr, errors, updatedEnv) = expectedType match
-          case Some(tpe) => checkAssign(name, valueExpr, tpe, expr.source, env, expectedReturn, idSupply)
-          case None => synthAssign(name, valueExpr, expr.source, env, idSupply)
-        (typedExpr, errors, updatedEnv)
-      case _ =>
-        val (typedExpr, errors, updatedEnv) = expectedType match
-          case Some(tpe) => checkExpr(expr, env, expectedReturn, tpe, idSupply)
-          case None => synthesizeExpr(expr, env, idSupply)
-        (typedExpr, errors, updatedEnv)
-
   // T-App: Γ ⊢ f ⇒ T1 → T2  and  Γ ⊢ a ⇐ T1  ⇒  Γ ⊢ f a ⇒ T2
   private def synthCall(
       callee: ast.Expr,
@@ -798,38 +713,41 @@ object TypeChecker:
                 val instantiatedFunType: Type.Fun = instantiateType(funType, typeParamBindings) match
                   case fun: Type.Fun => fun
                   case _ => Type.Fun(Nil, Type.Unknown)
-                val (envAfterResult, unifiedResult, resultErrors) =
-                  if expectedType != Type.Unknown then
-                    unifyTypes(instantiatedFunType.result, expectedType, envAfterTypeParams, source, "call result")
-                  else
-                    (envAfterTypeParams, instantiatedFunType.result, Nil)
-                errors ++= resultErrors
-                var currentEnv = envAfterResult
-                val typedArgs = args.zipWithIndex.map { case (arg, index) =>
+                var currentEnv = envAfterTypeParams
+                var remainingParams = instantiatedFunType.params
+                val typedArgs = args.map { arg =>
                   val expectedParamType =
-                    if index < instantiatedFunType.params.length then
-                      applySubstitutions(instantiatedFunType.params(index), currentEnv)
-                    else Type.Unknown
+                    remainingParams.headOption
+                      .map(applySubstitutions(_, currentEnv))
+                      .getOrElse(Type.Unknown)
                   val (typedArg, argErrors, updatedEnv) =
                     checkExpr(arg, currentEnv, expectedReturn, expectedParamType, idSupply)
                   errors ++= argErrors
                   currentEnv = updatedEnv
+                  remainingParams = remainingParams.drop(1)
                   typedArg
                 }
-                if instantiatedFunType.params.length != args.length then
+                if args.length > instantiatedFunType.params.length then
                   errors += errorAt(
                     callee.source,
-                    s"Call expects ${instantiatedFunType.params.length} args, got ${args.length}"
+                    s"Call expects at most ${instantiatedFunType.params.length} args, got ${args.length}"
                   )
+                val resultAfterArgs =
+                  if remainingParams.nonEmpty then
+                    Type.Fun(remainingParams, instantiatedFunType.result)
+                  else instantiatedFunType.result
                 val instantiatedGivenTypes = givenTypes.map(tpe => instantiateType(tpe, typeParamBindings))
                 val (givenArgsResolved, givenErrors, envAfterGiven) =
                   resolveGivenArguments(instantiatedGivenTypes, usingArgs, currentEnv, source, idSupply, Nil)
                 errors ++= givenErrors
-                val finalResultType = applySubstitutions(unifiedResult, envAfterGiven)
+                val resultWithGivens = applySubstitutions(resultAfterArgs, envAfterGiven)
+                val (envAfterExpected, checkedType, expectedErrors) =
+                  ensureExpectedType(resultWithGivens, Some(expectedType), source, envAfterGiven)
+                errors ++= expectedErrors
                 (
-                  Expr.CallFun(typedCallee, typedArgs, givenArgsResolved, finalResultType)(source),
+                  Expr.CallFun(typedCallee, typedArgs, givenArgsResolved, checkedType)(source),
                   errors.toList,
-                  envAfterGiven
+                  envAfterExpected
                 )
               case None =>
                 val (typedArgs, argsErrors, envAfterArgs) = typeExprs(args, envAfterCallee, expectedReturn, None, idSupply)
@@ -872,18 +790,12 @@ object TypeChecker:
         instantiateTypeParams(tc.typeParams ++ member.typeParams, Nil, env, source)
       val candidateErrors = ListBuffer.empty[TypeError]
       candidateErrors ++= errors ++ typeArgErrors
-      val instantiatedResultType = instantiateType(member.result, typeParamBindings)
-      val (envAfterResult, unifiedResult, resultErrors) =
-        if expectedType != Type.Unknown then
-          unifyTypes(instantiatedResultType, expectedType, envAfterTypeParams, source, "typeclass member result")
-        else
-          (envAfterTypeParams, instantiatedResultType, Nil)
-      candidateErrors ++= resultErrors
-      var currentEnv = envAfterResult
+      val instantiatedParamTypes = member.params.map(param => instantiateType(param, typeParamBindings))
+      var currentEnv = envAfterTypeParams
       val typedArgs = args.zipWithIndex.map { case (arg, index) =>
         val expectedParamType =
-          if index < member.params.length then
-            applySubstitutions(instantiateType(member.params(index), typeParamBindings), currentEnv)
+          if index < instantiatedParamTypes.length then
+            applySubstitutions(instantiatedParamTypes(index), currentEnv)
           else Type.Unknown
         val (typedArg, argErrors, updatedEnv) =
           checkExpr(arg, currentEnv, expectedReturn, expectedParamType, idSupply)
@@ -891,10 +803,20 @@ object TypeChecker:
         currentEnv = updatedEnv
         typedArg
       }
-      if member.params.length != args.length then
-        candidateErrors += errorAt(source, s"Call expects ${member.params.length} args, got ${args.length}")
+      if args.length > instantiatedParamTypes.length then
+        candidateErrors += errorAt(source, s"Call expects at most ${instantiatedParamTypes.length} args, got ${args.length}")
+      val remainingParamTypes = instantiatedParamTypes.drop(args.length)
+      val baseResultType = instantiateType(member.result, typeParamBindings)
+      val resultAfterArgs =
+        if remainingParamTypes.nonEmpty then Type.Fun(remainingParamTypes, baseResultType) else baseResultType
+      val (envAfterResult, unifiedResult, resultErrors) =
+        if expectedType != Type.Unknown then
+          unifyTypes(resultAfterArgs, expectedType, currentEnv, source, "typeclass member result")
+        else
+          (currentEnv, resultAfterArgs, Nil)
+      candidateErrors ++= resultErrors
       val typeClassArgs = tc.typeParams.map { param =>
-        typeParamBindings.getOrElse(param, Type.Unknown)
+        applySubstitutions(typeParamBindings.getOrElse(param, Type.Unknown), currentEnv)
       }
       val goal = if typeClassArgs.isEmpty then Type.Name(tc.name) else Type.App(Type.Name(tc.name), typeClassArgs)
       val preferGiven =
@@ -907,16 +829,17 @@ object TypeChecker:
         if preferGiven then
           val matchingGivens = env.givens.filter(g => isCompatible(g.tpe, goal))
           matchingGivens match
-            case param :: Nil => (List(Expr.Var(param, param.tpe)(source)), Nil, currentEnv)
-            case _ :: _ => (Nil, List(errorAt(source, s"Ambiguous given for ${renderTypeClassGoal(tc, typeClassArgs)}")), currentEnv)
-            case Nil => resolveGivenArguments(List(goal), usingArgs, currentEnv, source, idSupply, Nil)
+            case param :: Nil => (List(Expr.Var(param, param.tpe)(source)), Nil, envAfterResult)
+            case _ :: _ => (Nil, List(errorAt(source, s"Ambiguous given for ${renderTypeClassGoal(tc, typeClassArgs)}")), envAfterResult)
+            case Nil => resolveGivenArguments(List(goal), usingArgs, envAfterResult, source, idSupply, Nil)
         else
-          resolveGivenArguments(List(goal), usingArgs, currentEnv, source, idSupply, Nil)
+          resolveGivenArguments(List(goal), usingArgs, envAfterResult, source, idSupply, Nil)
       candidateErrors ++= instanceErrors
       instanceArgs.headOption match
         case Some(instanceExpr) =>
-          val finalResultType = applySubstitutions(unifiedResult, envAfterInstance)
-          Some((Expr.CallTypeClassMember(instanceExpr, name, typedArgs, finalResultType)(source), candidateErrors.toList, envAfterInstance))
+          val checkedType = applySubstitutions(unifiedResult, envAfterInstance)
+          val expr = Expr.CallTypeClassMember(instanceExpr, name, typedArgs, checkedType)(source)
+          Some((expr, candidateErrors.toList, envAfterInstance))
         case None =>
           failedCandidateErrors += candidateErrors.toList
           None
@@ -1130,31 +1053,33 @@ object TypeChecker:
     val instantiatedCtorType: Type.Fun = instantiateType(ctor.tpe, typeParamBindings) match
       case fun: Type.Fun => fun
       case _ => Type.Fun(Nil, Type.Unknown)
-    val (envAfterResult, unifiedResult, resultErrors) =
-      if expectedType != Type.Unknown then
-        unifyTypes(instantiatedCtorType.result, expectedType, envAfterTypeParams, source, "constructor result")
-      else
-        (envAfterTypeParams, instantiatedCtorType.result, Nil)
-    errors ++= resultErrors
-    var currentEnv = envAfterResult
-    val typedArgs = args.zipWithIndex.map { case (arg, index) =>
+    var currentEnv = envAfterTypeParams
+    var remainingParams = instantiatedCtorType.params
+    val typedArgs = args.map { arg =>
       val expectedParamType =
-        if index < instantiatedCtorType.params.length then
-          applySubstitutions(instantiatedCtorType.params(index), currentEnv)
-        else Type.Unknown
+        remainingParams.headOption
+          .map(applySubstitutions(_, currentEnv))
+          .getOrElse(Type.Unknown)
       val (typedArg, argErrors, updatedEnv) =
         checkExpr(arg, currentEnv, expectedReturn, expectedParamType, idSupply)
       errors ++= argErrors
       currentEnv = updatedEnv
+      remainingParams = remainingParams.drop(1)
       typedArg
     }
-    if instantiatedCtorType.params.length != args.length then
+    if args.length > instantiatedCtorType.params.length then
       errors += errorAt(
         source,
-        s"Constructor ${ctor.name} expects ${instantiatedCtorType.params.length} args, got ${args.length}"
+        s"Constructor ${ctor.name} expects at most ${instantiatedCtorType.params.length} args, got ${args.length}"
       )
-    val finalResultType = applySubstitutions(unifiedResult, currentEnv)
-    (Expr.CallCtor(ctor, typedArgs, finalResultType)(source), errors.toList, currentEnv)
+    val resultAfterArgs =
+      if remainingParams.nonEmpty then
+        Type.Fun(remainingParams, instantiatedCtorType.result)
+      else instantiatedCtorType.result
+    val (envAfterExpected, checkedType, expectedErrors) =
+      ensureExpectedType(resultAfterArgs, Some(expectedType), source, currentEnv)
+    errors ++= expectedErrors
+    (Expr.CallCtor(ctor, typedArgs, checkedType)(source), errors.toList, envAfterExpected)
 
   // T-Let: Γ ⊢ v ⇐ T1  and  Γ,x:T1 ⊢ e ⇒ T2  ⇒  Γ ⊢ let x=v in e ⇒ T2
   private def synthLetIn(
@@ -1254,189 +1179,73 @@ object TypeChecker:
     val typedExpr = Expr.Bind(symbol, isConstant, declaredType, typedValue, checkedType)(source)
     (typedExpr, valueErrors ++ typeErrors ++ expectedErrors, updatedEnv.withBinding(symbol))
 
-  private def synthAssign(
-      name: String,
-      valueExpr: ast.Expr,
+  // T-Lam: Γ,x:T1 ⊢ e ⇒ T2  ⇒  Γ ⊢ (x -> e) ⇒ T1 → T2
+  private def synthLambda(
+      param: ast.LambdaParam,
+      body: ast.Expr,
       source: ast.SourceRange,
       env: TypeEnv,
       idSupply: IdSupply
     ): (Expr, List[TypeError], TypeEnv) =
-    val (typedExpr, errors, updatedEnv) = typeAssign(name, valueExpr, None, source, env, env.expectedReturn, idSupply)
-    (typedExpr, errors, updatedEnv)
+    val errors = ListBuffer.empty[TypeError]
+    val declaredType = param.tpe.map(fromAstType)
+    errors ++= param.tpe.toList.flatMap(tpe => validateAstType(tpe, env.typeParams, env.exports))
+    val (envAfterParam, paramType) = declaredType match
+      case Some(tpe) => (env, tpe)
+      case None => env.freshMeta()
+    val symbol = LocalSymbol(param.name, paramType, idSupply.freshId())
+    val (typedBody, bodyErrors, envAfterBody) =
+      synthesizeExpr(body, envAfterParam.withBinding(symbol), idSupply)
+    errors ++= bodyErrors
+    val lamType = Type.Fun(List(paramType), typedBody.tpe)
+    (Expr.Lambda(symbol, typedBody, lamType)(source), errors.toList, envAfterBody)
 
-  private def checkAssign(
-      name: String,
-      valueExpr: ast.Expr,
+  // T-Lam-Check: Γ ⊢ (x -> e) ⇐ T1 → T2  if  Γ,x:T1 ⊢ e ⇐ T2
+  private def checkLambda(
+      param: ast.LambdaParam,
+      body: ast.Expr,
       expectedType: Type,
       source: ast.SourceRange,
       env: TypeEnv,
       expectedReturn: Type,
       idSupply: IdSupply
     ): (Expr, List[TypeError], TypeEnv) =
-    val (typedExpr, errors, updatedEnv) = typeAssign(name, valueExpr, Some(expectedType), source, env, expectedReturn, idSupply)
-    (typedExpr, errors, updatedEnv)
-
-  private def typeAssign(
-      name: String,
-      valueExpr: ast.Expr,
-      expectedType: Option[Type],
-      source: ast.SourceRange,
-      env: TypeEnv,
-      expectedReturn: Type,
-      idSupply: IdSupply
-    ): (Expr, List[TypeError], TypeEnv) =
-    env.resolveLocal(name) match
-      case Some(symbol: LocalSymbol) =>
-        val (typedValue, valueErrors, envAfterValue) = checkExpr(valueExpr, env, expectedReturn, symbol.tpe, idSupply)
-        val (updatedEnv, checkedType, expectedErrors) = ensureExpectedType(baseTypes("unit"), expectedType, source, envAfterValue)
-        (Expr.Assign(symbol, typedValue, checkedType)(source), valueErrors ++ expectedErrors, updatedEnv)
-      case Some(symbol) =>
-        val (typedValue, valueErrors, envAfterValue) = synthesizeExpr(valueExpr, env, idSupply)
-        val (updatedEnv, checkedType, expectedErrors) = ensureExpectedType(baseTypes("unit"), expectedType, source, envAfterValue)
-        val errors = valueErrors ++ expectedErrors :+ errorAt(source, s"Cannot assign to ${symbol.name}")
-        val fallbackSymbol = LocalSymbol(name, Type.Unknown, idSupply.freshId())
-        (Expr.Assign(fallbackSymbol, typedValue, checkedType)(source), errors, updatedEnv)
-      case None =>
-        val (typedValue, valueErrors, envAfterValue) = synthesizeExpr(valueExpr, env, idSupply)
-        val (updatedEnv, checkedType, expectedErrors) = ensureExpectedType(baseTypes("unit"), expectedType, source, envAfterValue)
-        val symbol = LocalSymbol(name, Type.Unknown, idSupply.freshId())
+    expectedType match
+      case Type.Fun(params, result) if params.nonEmpty =>
+        val errors = ListBuffer.empty[TypeError]
+        val declaredType = param.tpe.map(fromAstType)
+        errors ++= param.tpe.toList.flatMap(tpe => validateAstType(tpe, env.typeParams, env.exports))
+        val expectedParamType = params.head
+        val (envAfterParam, paramType, paramErrors) =
+          declaredType match
+            case Some(tpe) => unifyTypes(tpe, expectedParamType, env, source, "lambda param")
+            case None => (env, expectedParamType, Nil)
+        errors ++= paramErrors
+        val expectedBodyType = if params.length > 1 then Type.Fun(params.tail, result) else result
+        val symbol = LocalSymbol(param.name, paramType, idSupply.freshId())
+        val (typedBody, bodyErrors, envAfterBody) =
+          checkExpr(body, envAfterParam.withBinding(symbol), expectedReturn, expectedBodyType, idSupply)
+        errors ++= bodyErrors
+        val lamType = Type.Fun(List(paramType), typedBody.tpe)
+        val (envAfterExpected, checkedType, expectedErrors) =
+          ensureExpectedType(lamType, Some(expectedType), source, envAfterBody)
+        errors ++= expectedErrors
         (
-          Expr.Assign(symbol, typedValue, checkedType)(source),
-          valueErrors ++ expectedErrors :+ errorAt(source, s"Unknown variable: $name"),
-          updatedEnv
+          Expr.Lambda(symbol, typedBody, checkedType)(source),
+          errors.toList,
+          envAfterExpected
         )
+      case _ =>
+        val (typed, errors, envAfter) = synthLambda(param, body, source, env, idSupply)
+        val (envAfterExpected, checkedType, expectedErrors) =
+          ensureExpectedType(typed.tpe, Some(expectedType), source, envAfter)
+        val updatedExpr = typed match
+          case Expr.Lambda(symbol, typedBody, _) => Expr.Lambda(symbol, typedBody, checkedType)(source)
+          case other => other
+        (updatedExpr, errors ++ expectedErrors, envAfterExpected)
 
-  // T-If: Γ ⊢ c ⇐ Bool  and  Γ ⊢ t ⇒ T  and  Γ ⊢ e ⇒ T  ⇒  Γ ⊢ if c then t else e ⇒ T
-  private def synthIfThenElse(
-      cond: ast.Expr,
-      thenExpr: ast.Expr,
-      elseExpr: ast.Expr,
-      source: ast.SourceRange,
-      env: TypeEnv,
-      idSupply: IdSupply
-    ): (Expr, List[TypeError], TypeEnv) =
-    val errors = ListBuffer.empty[TypeError]
-    val boolType = resolveTypeName("Bool", source, env, errors)
-    val (typedCond, condErrors, envAfterCond) = checkExpr(cond, env, env.expectedReturn, boolType, idSupply)
-    val (typedThen, thenErrors, envAfterThen) = synthesizeExpr(thenExpr, envAfterCond, idSupply)
-    val (typedElse, elseErrors, envAfterElse) = synthesizeExpr(elseExpr, envAfterThen, idSupply)
-    val (envAfterBranches, resultType, branchErrors) =
-      unifyBranchTypes("if", typedThen.tpe, typedElse.tpe, source, envAfterElse)
-    (
-      Expr.IfThenElse(typedCond, typedThen, typedElse, resultType)(source),
-      errors.toList ++ condErrors ++ thenErrors ++ elseErrors ++ branchErrors,
-      envAfterBranches
-    )
-
-  // T-If-Check: Γ ⊢ c ⇐ Bool  and  Γ ⊢ t ⇐ T  and  Γ ⊢ e ⇐ T  ⇒  Γ ⊢ if c then t else e ⇐ T
-  private def checkIfThenElse(
-      cond: ast.Expr,
-      thenExpr: ast.Expr,
-      elseExpr: ast.Expr,
-      expectedType: Type,
-      source: ast.SourceRange,
-      env: TypeEnv,
-      expectedReturn: Type,
-      idSupply: IdSupply
-    ): (Expr, List[TypeError], TypeEnv) =
-    val errors = ListBuffer.empty[TypeError]
-    val boolType = resolveTypeName("Bool", source, env, errors)
-    val (typedCond, condErrors, envAfterCond) = checkExpr(cond, env, expectedReturn, boolType, idSupply)
-    val (typedThen, thenErrors, envAfterThen) = checkExpr(thenExpr, envAfterCond, expectedReturn, expectedType, idSupply)
-    val (typedElse, elseErrors, envAfterElse) = checkExpr(elseExpr, envAfterThen, expectedReturn, expectedType, idSupply)
-    val (envAfterBranches, _, branchErrors) = unifyBranchTypes("if", typedThen.tpe, typedElse.tpe, source, envAfterElse)
-    (
-      Expr.IfThenElse(typedCond, typedThen, typedElse, expectedType)(source),
-      errors.toList ++ condErrors ++ thenErrors ++ elseErrors ++ branchErrors,
-      envAfterBranches
-    )
-
-  // T-For: Γ ⊢ xs ⇒ Iterable[T]  and  Γ,x:T ⊢ e ⇒ U  ⇒  Γ ⊢ for x in xs do e ⇒ U
-  private def synthFor(
-      name: String,
-      inExpr: ast.Expr,
-      body: ast.Suite,
-      source: ast.SourceRange,
-      env: TypeEnv,
-      idSupply: IdSupply
-    ): (Expr, List[TypeError], TypeEnv) =
-    val (typedIn, inErrors, envAfterIn) = synthesizeExpr(inExpr, env, idSupply)
-    val (elemType, elemErrors) = iterableElementType(typedIn.tpe, typedIn.source)
-    val symbol = LocalSymbol(name, elemType, idSupply.freshId())
-    val (typedBody, bodyErrors, envAfterBody) =
-      typeSuite(body, envAfterIn.withBinding(symbol), env.expectedReturn, None, idSupply)
-    val resultType = suiteType(typedBody)
-    (
-      Expr.For(symbol, typedIn, typedBody, resultType)(source),
-      inErrors ++ elemErrors ++ bodyErrors,
-      envAfterBody
-    )
-
-  // T-For-Check: Γ ⊢ xs ⇒ Iterable[T]  and  Γ,x:T ⊢ e ⇐ U  ⇒  Γ ⊢ for x in xs do e ⇐ U
-  private def checkFor(
-      name: String,
-      inExpr: ast.Expr,
-      body: ast.Suite,
-      expectedType: Type,
-      source: ast.SourceRange,
-      env: TypeEnv,
-      expectedReturn: Type,
-      idSupply: IdSupply
-    ): (Expr, List[TypeError], TypeEnv) =
-    val (typedIn, inErrors, envAfterIn) = synthesizeExpr(inExpr, env, idSupply)
-    val (elemType, elemErrors) = iterableElementType(typedIn.tpe, typedIn.source)
-    val symbol = LocalSymbol(name, elemType, idSupply.freshId())
-    val (typedBody, bodyErrors, envAfterBody) =
-      typeSuite(body, envAfterIn.withBinding(symbol), expectedReturn, Some(expectedType), idSupply)
-    (
-      Expr.For(symbol, typedIn, typedBody, expectedType)(source),
-      inErrors ++ elemErrors ++ bodyErrors,
-      envAfterBody
-    )
-
-  // T-While: Γ ⊢ c ⇐ Bool  and  Γ ⊢ e ⇒ unit  ⇒  Γ ⊢ while c do e ⇒ unit
-  private def synthWhile(
-      cond: ast.Expr,
-      body: ast.Suite,
-      source: ast.SourceRange,
-      env: TypeEnv,
-      idSupply: IdSupply
-    ): (Expr, List[TypeError], TypeEnv) =
-    val errors = ListBuffer.empty[TypeError]
-    val boolType = resolveTypeName("Bool", source, env, errors)
-    val (typedCond, condErrors, envAfterCond) = checkExpr(cond, env, env.expectedReturn, boolType, idSupply)
-    val (typedBody, bodyErrors, envAfterBody) = typeSuite(body, envAfterCond, env.expectedReturn, None, idSupply)
-    val (updatedEnv, checkedType, expectedErrors) =
-      ensureExpectedType(baseTypes("unit"), Some(baseTypes("unit")), source, envAfterBody)
-    (
-      Expr.While(typedCond, typedBody, checkedType)(source),
-      errors.toList ++ condErrors ++ bodyErrors ++ expectedErrors,
-      updatedEnv
-    )
-
-  // T-While-Check: Γ ⊢ c ⇐ Bool  and  Γ ⊢ e ⇐ unit  ⇒  Γ ⊢ while c do e ⇐ unit
-  private def checkWhile(
-      cond: ast.Expr,
-      body: ast.Suite,
-      expectedType: Type,
-      source: ast.SourceRange,
-      env: TypeEnv,
-      expectedReturn: Type,
-      idSupply: IdSupply
-    ): (Expr, List[TypeError], TypeEnv) =
-    val errors = ListBuffer.empty[TypeError]
-    val boolType = resolveTypeName("Bool", source, env, errors)
-    val (typedCond, condErrors, envAfterCond) = checkExpr(cond, env, expectedReturn, boolType, idSupply)
-    val (typedBody, bodyErrors, envAfterBody) = typeSuite(body, envAfterCond, expectedReturn, Some(baseTypes("unit")), idSupply)
-    val (updatedEnv, checkedType, expectedErrors) = ensureExpectedType(baseTypes("unit"), Some(expectedType), source, envAfterBody)
-    (
-      Expr.While(typedCond, typedBody, checkedType)(source),
-      errors.toList ++ condErrors ++ bodyErrors ++ expectedErrors,
-      updatedEnv
-    )
-
-  // T-Match: Γ ⊢ e ⇒ T and Γ ⊢ cases ⇒ U  ⇒  Γ ⊢ match e with cases ⇒ U
-  private def synthMatch(
+  // Desugars match expressions into eliminator calls.
+  private def synthMatchElim(
       scrutinee: ast.Expr,
       cases: List[ast.MatchCase],
       source: ast.SourceRange,
@@ -1446,61 +1255,263 @@ object TypeChecker:
     val (typedScrutinee, scrutineeErrors, envAfterScrutinee) = synthesizeExpr(scrutinee, env, idSupply)
     val errors = ListBuffer.empty[TypeError]
     errors ++= scrutineeErrors
-    var currentEnv = envAfterScrutinee
-    val typedCases = cases.map { matchCase =>
-      val (typedPattern, bindings, patternErrors) =
-        typePattern(matchCase.pattern, typedScrutinee.tpe, currentEnv, idSupply)
-      errors ++= patternErrors
-      val envWithBindings = bindings.values.foldLeft(currentEnv) { case (current, symbol) => current.withBinding(symbol) }
-      val (typedBody, bodyErrors, envAfterBody) =
-        typeSuite(matchCase.body, envWithBindings, env.expectedReturn, None, idSupply)
-      errors ++= bodyErrors
-      currentEnv = envAfterBody
-      MatchCase(typedPattern, typedBody)(matchCase.source)
-    }
-    val caseTypes = typedCases.map(c => suiteType(c.body))
-    val (envAfterCases, resultType, caseErrors) =
-      caseTypes.drop(1).foldLeft((currentEnv, caseTypes.headOption.getOrElse(Type.Unknown), List.empty[TypeError])) {
+    val (typedCases, caseErrors, envAfterCases) =
+      typeMatchCases(cases, typedScrutinee.tpe, None, source, envAfterScrutinee, idSupply)
+    errors ++= caseErrors
+    val caseTypes = typedCases.map(c => c.body.tpe)
+    val (envAfterResult, resultType, resultErrors) =
+      caseTypes.drop(1).foldLeft((envAfterCases, caseTypes.headOption.getOrElse(Type.Unknown), List.empty[TypeError])) {
         case ((envAcc, accType, accErrors), nextType) =>
           val (nextEnv, unified, nextErrors) =
             unifyTypes(accType, nextType, envAcc, source, "match cases")
           (nextEnv, unified, accErrors ++ nextErrors)
       }
-    errors ++= caseErrors
-    (Expr.Match(typedScrutinee, typedCases, resultType)(source), errors.toList, envAfterCases)
+    errors ++= resultErrors
+    val (handlerArgs, handlerErrors) =
+      buildMatchHandlers(typedScrutinee, typedCases, source, envAfterResult, idSupply)
+    errors ++= handlerErrors
+    val (elimExpr, elimErrors, envAfterElim) =
+      buildEliminatorCall(typedScrutinee, handlerArgs, resultType, source, envAfterResult)
+    errors ++= elimErrors
+    (elimExpr, errors.toList, envAfterElim)
 
-  // T-Match-Check: Γ ⊢ e ⇒ T and Γ ⊢ cases ⇐ U  ⇒  Γ ⊢ match e with cases ⇐ U
-  private def checkMatch(
+  // Desugars match expressions into eliminator calls with an expected result type.
+  private def checkMatchElim(
       scrutinee: ast.Expr,
       cases: List[ast.MatchCase],
       expectedType: Type,
       source: ast.SourceRange,
       env: TypeEnv,
-      expectedReturn: Type,
       idSupply: IdSupply
     ): (Expr, List[TypeError], TypeEnv) =
     val (typedScrutinee, scrutineeErrors, envAfterScrutinee) = synthesizeExpr(scrutinee, env, idSupply)
     val errors = ListBuffer.empty[TypeError]
     errors ++= scrutineeErrors
-    var currentEnv = envAfterScrutinee
-    val typedCases = cases.map { matchCase =>
-      val (typedPattern, bindings, patternErrors) =
-        typePattern(matchCase.pattern, typedScrutinee.tpe, currentEnv, idSupply)
-      errors ++= patternErrors
-      val envWithBindings = bindings.values.foldLeft(currentEnv) { case (current, symbol) => current.withBinding(symbol) }
-      val (typedBody, bodyErrors, envAfterBody) =
-        typeSuite(matchCase.body, envWithBindings, expectedReturn, Some(expectedType), idSupply)
-      errors ++= bodyErrors
-      currentEnv = envAfterBody
-      MatchCase(typedPattern, typedBody)(matchCase.source)
-    }
-    val caseTypes = typedCases.map(c => suiteType(c.body))
+    val (typedCases, caseErrors, envAfterCases) =
+      typeMatchCases(cases, typedScrutinee.tpe, Some(expectedType), source, envAfterScrutinee, idSupply)
+    errors ++= caseErrors
+    val caseTypes = typedCases.map(c => c.body.tpe)
     val mismatchErrors = caseTypes.sliding(2).collect {
       case List(a, b) if !isCompatible(a, b) =>
         errorAt(source, s"Match case types do not agree: ${renderType(a)} vs ${renderType(b)}")
     }.toList
     errors ++= mismatchErrors
-    (Expr.Match(typedScrutinee, typedCases, expectedType)(source), errors.toList, currentEnv)
+    val (handlerArgs, handlerErrors) =
+      buildMatchHandlers(typedScrutinee, typedCases, source, envAfterCases, idSupply)
+    errors ++= handlerErrors
+    val (elimExpr, elimErrors, envAfterElim) =
+      buildEliminatorCall(typedScrutinee, handlerArgs, expectedType, source, envAfterCases)
+    errors ++= elimErrors
+    (elimExpr, errors.toList, envAfterElim)
+
+  private final case class TypedMatchCase(pattern: Pattern, body: Expr, source: ast.SourceRange)
+
+  // Types match cases against the scrutinee type and optional expected type.
+  private def typeMatchCases(
+      cases: List[ast.MatchCase],
+      scrutineeType: Type,
+      expectedType: Option[Type],
+      source: ast.SourceRange,
+      env: TypeEnv,
+      idSupply: IdSupply
+    ): (List[TypedMatchCase], List[TypeError], TypeEnv) =
+    val errors = ListBuffer.empty[TypeError]
+    var currentEnv = env
+    val typedCases = cases.map { matchCase =>
+      val (typedPattern, bindings, patternErrors) =
+        typePattern(matchCase.pattern, scrutineeType, currentEnv, idSupply)
+      errors ++= patternErrors
+      val envWithBindings = bindings.values.foldLeft(currentEnv) { case (current, symbol) => current.withBinding(symbol) }
+      val (typedBody, bodyErrors, envAfterBody) =
+        typeExpr(matchCase.body, envWithBindings, env.expectedReturn, expectedType, idSupply)
+      errors ++= bodyErrors
+      currentEnv = envAfterBody
+      TypedMatchCase(typedPattern, typedBody, matchCase.source)
+    }
+    if typedCases.isEmpty then
+      errors += errorAt(source, "Match expression requires at least one case")
+    (typedCases, errors.toList, currentEnv)
+
+  // Builds handler expressions for a match by mapping cases to constructors.
+  private def buildMatchHandlers(
+      scrutinee: Expr,
+      cases: List[TypedMatchCase],
+      source: ast.SourceRange,
+      env: TypeEnv,
+      idSupply: IdSupply
+    ): (List[Expr], List[TypeError]) =
+    val errors = ListBuffer.empty[TypeError]
+    val maybeDataType = resolveDataType(scrutinee.tpe, source, env, errors)
+    val handlers = maybeDataType.toList.flatMap { case (dataType, bindings) =>
+      dataType.ctors.map { ctor =>
+        val matchingCase = cases.find(caseMatchesCtor(_, ctor))
+        matchingCase match
+          case Some(caseInfo) =>
+            buildHandlerForCase(scrutinee.tpe, ctor, bindings, caseInfo, source, idSupply, errors)
+          case None =>
+            errors += errorAt(source, s"No match case for constructor ${ctor.name}")
+            buildFallbackHandler(ctor, bindings, source, idSupply)
+      }
+    }
+    (handlers, errors.toList)
+
+  // Builds the eliminator call expression from the scrutinee and handlers.
+  private def buildEliminatorCall(
+      scrutinee: Expr,
+      handlers: List[Expr],
+      resultType: Type,
+      source: ast.SourceRange,
+      env: TypeEnv
+    ): (Expr, List[TypeError], TypeEnv) =
+    val errors = ListBuffer.empty[TypeError]
+    val maybeDataType = resolveDataType(scrutinee.tpe, source, env, errors)
+    val elimExpr =
+      maybeDataType match
+        case Some((dataType, _)) =>
+          val elimName = buildEliminatorName(dataType.name)
+          env.exports.functions.get(elimName) match
+            case Some(elimSymbol) =>
+              val elimVar = Expr.Var(elimSymbol, elimSymbol.tpe)(source)
+              Expr.CallFun(elimVar, scrutinee :: handlers, Nil, resultType)(source)
+            case None =>
+              errors += errorAt(source, s"Unknown eliminator function: $elimName")
+              Expr.Lit(ast.Literal.UnitLit()(source), baseTypes("unit"))(source)
+        case None =>
+          Expr.Lit(ast.Literal.UnitLit()(source), baseTypes("unit"))(source)
+    (elimExpr, errors.toList, env)
+
+  // Resolves a data type and its type parameter bindings from a scrutinee type.
+  private def resolveDataType(
+      scrutineeType: Type,
+      source: ast.SourceRange,
+      env: TypeEnv,
+      errors: ListBuffer[TypeError]
+    ): Option[(DataType, Map[String, Type])] =
+    val dataTypeName = scrutineeType match
+      case Type.Name(name) => Some(name)
+      case Type.App(Type.Name(name), _) => Some(name)
+      case _ =>
+        errors += errorAt(source, s"Expected data type, got ${renderType(scrutineeType)}")
+        None
+    dataTypeName.flatMap { name =>
+      env.exports.types.get(name) match
+        case Some(dataType) =>
+          val template =
+            if dataType.typeParams.isEmpty then
+              Type.Name(dataType.name)
+            else
+              Type.App(Type.Name(dataType.name), dataType.typeParams.map(Type.Name.apply))
+          val bindings = collectTypeParamBindings(template, scrutineeType, dataType.typeParams.toSet, Map.empty)
+          Some((dataType, bindings))
+        case None =>
+          errors += errorAt(source, s"Expected data type, got ${renderType(scrutineeType)}")
+          None
+    }
+
+  // Checks whether a typed case pattern can match a constructor.
+  private def caseMatchesCtor(caseInfo: TypedMatchCase, ctor: CtorSymbol): Boolean =
+    caseInfo.pattern match
+      case Pattern.Ctor(symbol, _) => symbol.name == ctor.name
+      case Pattern.Wildcard() => true
+      case Pattern.Binder(_) => true
+      case Pattern.Lit(lit) => literalMatchesCtor(lit, ctor)
+
+  // Builds a handler expression for a specific constructor case.
+  private def buildHandlerForCase(
+      scrutineeType: Type,
+      ctor: CtorSymbol,
+      bindings: Map[String, Type],
+      caseInfo: TypedMatchCase,
+      source: ast.SourceRange,
+      idSupply: IdSupply,
+      errors: ListBuffer[TypeError]
+    ): Expr =
+    val instantiatedCtorType: Type.Fun = instantiateType(ctor.tpe, bindings) match
+      case fun: Type.Fun => fun
+      case _ => Type.Fun(Nil, Type.Unknown)
+    val fieldTypes = instantiatedCtorType.params
+    val baseBody = caseInfo.body
+    caseInfo.pattern match
+      case Pattern.Ctor(_, args) =>
+        val params = handlerParamsFromPattern(args, fieldTypes, source, idSupply, errors)
+        val handlerBody = baseBody
+        buildLambdaChain(params, handlerBody, source)
+      case Pattern.Wildcard() =>
+        val params = wildcardParams(fieldTypes, idSupply)
+        buildLambdaChain(params, baseBody, source)
+      case Pattern.Binder(symbol) =>
+        val params = wildcardParams(fieldTypes, idSupply)
+        val ctorArgs = params.map(param => Expr.Var(param, param.tpe)(source))
+        val ctorExpr = Expr.CallCtor(ctor, ctorArgs, scrutineeType)(source)
+        val letExpr = Expr.LetIn(symbol, true, Some(scrutineeType), ctorExpr, baseBody, baseBody.tpe)(source)
+        buildLambdaChain(params, letExpr, source)
+      case Pattern.Lit(_) =>
+        val params = wildcardParams(fieldTypes, idSupply)
+        buildLambdaChain(params, baseBody, source)
+
+  // Builds handler parameters for constructor patterns.
+  private def handlerParamsFromPattern(
+      args: List[Pattern],
+      fieldTypes: List[Type],
+      source: ast.SourceRange,
+      idSupply: IdSupply,
+      errors: ListBuffer[TypeError]
+    ): List[LocalSymbol] =
+    val normalizedFieldTypes =
+      if fieldTypes.isEmpty then List(baseTypes("unit")) else fieldTypes
+    val normalizedArgs =
+      if fieldTypes.isEmpty then List(Pattern.Wildcard()(source)) else args
+    if normalizedArgs.length != normalizedFieldTypes.length then
+      errors += errorAt(source, s"Constructor expects ${normalizedFieldTypes.length} args, got ${normalizedArgs.length}")
+    normalizedArgs
+      .zipAll(normalizedFieldTypes, Pattern.Wildcard()(source), Type.Unknown)
+      .map {
+        case (Pattern.Binder(symbol), _) => symbol
+        case (Pattern.Wildcard(), tpe) => LocalSymbol(s"_arg${idSupply.freshId()}", tpe, idSupply.freshId())
+        case (Pattern.Ctor(_, _), tpe) =>
+          errors += errorAt(source, "Nested constructor patterns are not supported in eliminators")
+          LocalSymbol(s"_arg${idSupply.freshId()}", tpe, idSupply.freshId())
+        case (Pattern.Lit(_), tpe) =>
+          errors += errorAt(source, "Literal patterns are not supported in eliminators")
+          LocalSymbol(s"_arg${idSupply.freshId()}", tpe, idSupply.freshId())
+      }
+
+  // Builds wildcard parameters for constructor handlers.
+  private def wildcardParams(
+      fieldTypes: List[Type],
+      idSupply: IdSupply
+    ): List[LocalSymbol] =
+    val normalizedFieldTypes =
+      if fieldTypes.isEmpty then List(baseTypes("unit")) else fieldTypes
+    normalizedFieldTypes.map(tpe => LocalSymbol(s"_arg${idSupply.freshId()}", tpe, idSupply.freshId()))
+
+  // Builds nested lambda expressions from handler parameters.
+  private def buildLambdaChain(params: List[LocalSymbol], body: Expr, source: ast.SourceRange): Expr =
+    params.reverse.foldLeft(body) { (current, param) =>
+      Expr.Lambda(param, current, Type.Fun(List(param.tpe), current.tpe))(source)
+    }
+
+  // Builds a fallback handler when a match case is missing.
+  private def buildFallbackHandler(
+      ctor: CtorSymbol,
+      bindings: Map[String, Type],
+      source: ast.SourceRange,
+      idSupply: IdSupply
+    ): Expr =
+    val instantiatedCtorType: Type.Fun = instantiateType(ctor.tpe, bindings) match
+      case fun: Type.Fun => fun
+      case _ => Type.Fun(Nil, Type.Unknown)
+    val params = wildcardParams(instantiatedCtorType.params, idSupply)
+    val body = Expr.Lit(ast.Literal.UnitLit()(source), baseTypes("unit"))(source)
+    buildLambdaChain(params, body, source)
+
+  // Checks if a literal pattern can match a constructor.
+  private def literalMatchesCtor(literal: ast.Literal, ctor: CtorSymbol): Boolean =
+    literal match
+      case ast.Literal.BoolLit(value) =>
+        val ctorName = if value then "True" else "False"
+        ctor.name == ctorName
+      case _ => false
 
   // T-Return-Check: Γ ⊢ e ⇐ Tret  ⇒  Γ ⊢ return e ⇐ Tret
   private def checkReturn(
@@ -1682,28 +1693,6 @@ object TypeChecker:
       case Type.Meta(_) => false
       case Type.Unknown => false
 
-  private def iterableElementType(tpe: Type, source: ast.SourceRange): (Type, List[TypeError]) =
-    tpe match
-      case Type.App(Type.Name("List"), List(elem)) => (elem, Nil)
-      case Type.App(Type.Name("Set"), List(elem)) => (elem, Nil)
-      case Type.App(Type.Name("Map"), List(key, _)) => (key, Nil)
-      case Type.Unknown => (Type.Unknown, Nil)
-      case _ => (Type.Unknown, List(errorAt(source, s"Expected iterable, got ${renderType(tpe)}")))
-
-  private def suiteType(suite: Suite): Type =
-    suite match
-      case Suite.Single(expr) => expr.tpe
-      case Suite.Block(_, tpe) => tpe
-
-  private def unifyBranchTypes(
-      context: String,
-      left: Type,
-      right: Type,
-      source: ast.SourceRange,
-      env: TypeEnv
-    ): (TypeEnv, Type, List[TypeError]) =
-    unifyTypes(left, right, env, source, s"$context branches")
-
   private def ensureExpectedType(
       actualType: Type,
       expectedType: Option[Type],
@@ -1827,6 +1816,10 @@ object TypeChecker:
         applySubstitutions(callee.tpe, env) match
           case tpe: Type.Fun => Some((tpe, Nil, Nil))
           case _ => None
+
+  // Builds the implicit eliminator name for a data type.
+  private def buildEliminatorName(typeName: String): String =
+    s"${typeName}_elim"
 
   private def isCompatible(expected: Type, actual: Type): Boolean =
     (expected, actual) match

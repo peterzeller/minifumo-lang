@@ -1,5 +1,5 @@
 fun main() unit
-    var x = 2
+    let x = 2
     println(x + 1)
 
 // Output: 3
