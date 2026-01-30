@@ -23,8 +23,6 @@ importStatement: 'import' ID  ('from' from=STRING ('in' in=STRING)?)? NL;
 topLevel
   : dataDecl
   | funDecl
-  | typeClassDecl
-  | typeClassImpl
   ;
 
 // -------- ADTs --------
@@ -60,12 +58,7 @@ funDecl
   ;
 
 funSig
-  : 'fun' ID typeParams? '(' funParams? ')' type? givenClause?
-  ;
-
-// given clause can be used to define required type classes for a function or type class instantiation.
-givenClause
-  : 'given' '(' funParams ')'
+  : 'fun' ID typeParams? '(' funParams? ')' type?
   ;
 
 funParams
@@ -84,28 +77,14 @@ block
   : (NL)* expr (NL+ expr)* (NL)*
   ;
 
-// Type classes
-
-typeClassDecl
-  : 'export'? 'typeclass' ID typeParams? NL BEGIN typeClassSigBlock? END
-  ;
-
-typeClassImpl
-  : 'instance' name=ID typeParams? 'for' ID typeArgs? givenClause? NL BEGIN typeClassImplBlock? END
-  ;
-
-typeClassSigBlock
-  : (NL)* funSig (NL+ funSig)* (NL)*
-  ;
-
-typeClassImplBlock
-  : (NL)* funDecl (NL* funDecl)* (NL)*
-  ;
-
 // -------- Types --------
 
 type
-  : typeAtom typeApp*
+  : base=typeApp ('->' result=type)?
+  ;
+
+typeApp
+  : typeAtom typeAppArgs*
   ;
 
 typeAtom
@@ -113,7 +92,7 @@ typeAtom
   | '(' type ')'
   ;
 
-typeApp
+typeAppArgs
   : '[' type (',' type)* ']'
   ;
 
@@ -128,7 +107,7 @@ expr
   | lambdaParams '->' expr                    #Lambda
 
   // postfix
-  | expr typeArgs? '(' argList? ')' usingClause?                    #Call
+  | expr typeArgs? '(' argList? ')'                                  #Call
   | expr '.' ID ('(' argList? ')')?           #Dot
 
   // unary
@@ -178,12 +157,6 @@ argList
 typeArgs
   : '[' type (',' type)* ']'
   ;
-
-usingClause
-  : 'using' '(' expr (',' expr)* ')'
-  ;
-
-
 
 matchCase
   : 'case' pattern suite

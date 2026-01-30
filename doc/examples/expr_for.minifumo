@@ -5,7 +5,7 @@ fun printIncrement(values List[Int]) unit
         case Nil
             unit
         case Cons(head, tail)
-            println(head + 1)
+            println(head + 1, showInt())
             printIncrement(tail)
 
 fun main() unit

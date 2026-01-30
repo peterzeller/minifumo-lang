@@ -1,26 +1,17 @@
 
 
-typeclass Show[T]
-    fun show(value T) String
+fun showIntLocal() Show[Int]
+    Show((value Int) -> "41")
 
-instance showString for Show[String]
-    fun show(value String) String
-        value
+fun showInt2Local() Show[Int]
+    Show((value Int) -> "42")
 
-instance showInt for Show[Int]
-    fun show(value Int) String
-        "41"
-
-instance showInt2 for Show[Int]
-    fun show(value Int) String
-        "42"
-
-fun printValue[T](value T) given (s Show[T])
-    println(show(value))
+fun printValue[T](value T, s Show[T]) unit
+    println(value, s)
 
 fun main()
-    printValue("Hello World")
-    printValue(42) using (showInt2)
+    printValue("Hello World", showString())
+    printValue(42, showInt2Local())
 
 
 // Output:

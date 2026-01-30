@@ -150,14 +150,13 @@ object Main:
 
   // Represents the kinds of importable symbols without relying on string literals.
   enum ImportKind:
-    case Function, Data, TypeClass
+    case Function, Data
 
     // Returns a human-readable label for the kind.
     def label: String =
       this match
         case Function => "function"
         case Data => "data"
-        case TypeClass => "typeclass"
 
   // Resolves import statements in a program, returning merged exports and errors.
   private def resolveImportsForProgram(
@@ -173,13 +172,7 @@ object Main:
       imports = updatedImports
       errors ++= importErrors
     }
-    val memberIndex = imports.typeClasses.values
-      .flatMap(tc => tc.members.map(_.name).distinct.map(_ -> tc))
-      .groupBy(_._1)
-      .view
-      .mapValues(_.map(_._2).toList)
-      .toMap
-    (imports.copy(memberIndex = memberIndex), errors.toList)
+    (imports, errors.toList)
 
   // Resolves a single import statement with cached exports for local files.
   private def resolveImportStatement(
@@ -225,8 +218,7 @@ object Main:
             TypeChecker.withStandardExports(TypeChecker.emptyExportEnv),
             includeNonExported = false,
             shadowedTypes = Standard.standardExports.types.keySet,
-            shadowedCtors = Standard.standardExports.ctors.keySet,
-            shadowedTypeClasses = Standard.standardExports.typeClasses.keySet
+            shadowedCtors = Standard.standardExports.ctors.keySet
           )._1
         )
       (exports, Nil)
@@ -260,8 +252,7 @@ object Main:
                   TypeChecker.withStandardExports(importedExports),
                   includeNonExported = false,
                   shadowedTypes = Standard.standardExports.types.keySet,
-                  shadowedCtors = Standard.standardExports.ctors.keySet,
-                  shadowedTypeClasses = Standard.standardExports.typeClasses.keySet
+                  shadowedCtors = Standard.standardExports.ctors.keySet
                 )
               errors ++= exportErrors
               resolvedExports
@@ -336,8 +327,7 @@ object Main:
   private def exportedKinds(program: ProgramFile, name: String): List[ImportKind] =
     program.items.flatMap {
       case ast.TopLevel.DataDecl(itemName, _, _, exported) if exported && itemName == name => List(ImportKind.Data)
-      case ast.TopLevel.FunDecl(itemName, _, _, _, _, _, exported) if exported && itemName == name => List(ImportKind.Function)
-      case ast.TopLevel.TypeClassDecl(itemName, _, _, exported) if exported && itemName == name => List(ImportKind.TypeClass)
+      case ast.TopLevel.FunDecl(itemName, _, _, _, _, exported) if exported && itemName == name => List(ImportKind.Function)
       case _ => Nil
     }
 
@@ -350,7 +340,6 @@ object Main:
     typedProgram.items.collectFirst {
       case item: TypedAst.TopLevel.DataDecl if kind == ImportKind.Data && item.name == name => item
       case item: TypedAst.TopLevel.FunDecl if kind == ImportKind.Function && item.symbol.name == name => item
-      case item: TypedAst.TopLevel.TypeClassDecl if kind == ImportKind.TypeClass && item.name == name => item
     }
 
   // Adds an imported symbol into the current import environment, enforcing duplicate checks.
@@ -363,8 +352,7 @@ object Main:
     val matches =
       List(
         exportEnv.functions.get(stmt.name).map(_ => ImportKind.Function),
-        exportEnv.types.get(stmt.name).map(_ => ImportKind.Data),
-        exportEnv.typeClasses.get(stmt.name).map(_ => ImportKind.TypeClass)
+        exportEnv.types.get(stmt.name).map(_ => ImportKind.Data)
       ).flatten
     if matches.isEmpty then
       errors += TypeError(s"Symbol ${stmt.name} is not exported from the imported file.", stmt.source)
@@ -399,13 +387,6 @@ object Main:
               currentImports.copy(types = currentImports.types + (stmt.name -> dataType), ctors = mergedCtors),
               errors.toList
             )
-        case ImportKind.TypeClass =>
-          if currentImports.typeClasses.contains(stmt.name) then
-            errors += TypeError(s"Duplicate typeclass: ${stmt.name}", stmt.source)
-            (currentImports, errors.toList)
-          else
-            val tc = exportEnv.typeClasses(stmt.name)
-            (currentImports.copy(typeClasses = currentImports.typeClasses + (stmt.name -> tc)), errors.toList)
 
   // Resolves an import path relative to the project root, enforcing the .minifumo extension.
   private def resolveImportPath(root: Path, pathText: String): Path =

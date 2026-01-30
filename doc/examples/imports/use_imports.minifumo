@@ -2,13 +2,12 @@ import Pair from "imports/exported_defs"
 import add_one from "imports/exported_defs"
 import MyShow from "imports/exported_defs"
 
-instance myShowInt for MyShow[Int]
-    fun myshow(value Int) String
-        "int"
+fun myShowInt() MyShow[Int]
+    MyShow((value Int) -> "int")
 
 fun main() Int
     let p Pair[Int, Int] = Pair(1, 2)
-    println(add_one(1))
+    println(add_one(1), showInt())
     add_one(1)
 
 // Output:

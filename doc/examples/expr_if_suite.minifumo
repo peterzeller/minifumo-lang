@@ -1,7 +1,7 @@
 fun main() unit
     if true
-        println(1)
+        println(1, showInt())
     else
-        println(2)
+        println(2, showInt())
 
 // Output: 1

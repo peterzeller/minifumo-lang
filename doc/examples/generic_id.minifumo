@@ -3,6 +3,6 @@ fun id[T](x T) T
 
 fun main() unit
     let value Int = id(42)
-    println(value)
+    println(value, showInt())
 
 // Output: 42

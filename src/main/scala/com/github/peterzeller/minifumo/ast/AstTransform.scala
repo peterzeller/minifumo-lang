@@ -22,10 +22,6 @@ object AstTransform:
   def topLevel(ctx: MinifumoParser.TopLevelContext): TopLevel =
     if ctx.dataDecl() != null then
       dataDecl(ctx.dataDecl())
-    else if ctx.typeClassDecl() != null then
-      typeClassDecl(ctx.typeClassDecl())
-    else if ctx.typeClassImpl() != null then
-      typeClassImpl(ctx.typeClassImpl())
     else
       funDecl(ctx.funDecl())
 
@@ -61,7 +57,6 @@ object AstTransform:
       funSigDecl.typeParams,
       funSigDecl.params,
       funSigDecl.returnType,
-      funSigDecl.givenParams,
       body,
       isExported(ctx.EXPORT())
     )(range(ctx))
@@ -71,32 +66,13 @@ object AstTransform:
     val params = Option(ctx.funParams()).map(funParams).getOrElse(Nil)
     val tParams = Option(ctx.typeParams()).map(typeParams).getOrElse(Nil)
     val returnType = Option(ctx.`type`()).map(`type`)
-    val givenParams = Option(ctx.givenClause()).map(givenClause).getOrElse(Nil)
-    FunSig(name, tParams, params, returnType, givenParams)(range(ctx))
-
-  def typeClassDecl(ctx: MinifumoParser.TypeClassDeclContext): TopLevel =
-    val name = ctx.ID().getText
-    val tParams = Option(ctx.typeParams()).map(typeParams).getOrElse(Nil)
-    val members = Option(ctx.typeClassSigBlock()).map(typeClassSigBlock).getOrElse(Nil)
-    TopLevel.TypeClassDecl(name, tParams, members, isExported(ctx.EXPORT()))(range(ctx))
-
-  def typeClassImpl(ctx: MinifumoParser.TypeClassImplContext): TopLevel =
-    val name = ctx.name.getText
-    val tParams = Option(ctx.typeParams()).map(typeParams).getOrElse(Nil)
-    val typeClassName = ctx.ID().get(1).getText
-    val head = typeClassHead(typeClassName, Option(ctx.typeArgs()).map(typeArgs).getOrElse(Nil), range(ctx))
-    val givenParams = Option(ctx.givenClause()).map(givenClause).getOrElse(Nil)
-    val members = Option(ctx.typeClassImplBlock()).map(typeClassImplBlock).getOrElse(Nil)
-    TopLevel.InstanceDecl(name, tParams, head, givenParams, members)(range(ctx))
+    FunSig(name, tParams, params, returnType)(range(ctx))
 
   def funParams(ctx: MinifumoParser.FunParamsContext): List[FunParam] =
     ctx.funParam().asScala.toList.map(funParam)
 
   def funParam(ctx: MinifumoParser.FunParamContext): FunParam =
     FunParam(ctx.ID().getText, `type`(ctx.`type`()))(range(ctx))
-
-  def givenClause(ctx: MinifumoParser.GivenClauseContext): List[FunParam] =
-    funParams(ctx.funParams())
 
   // Parses a suite and desugars it into a single expression.
   def suite(ctx: MinifumoParser.SuiteContext): Expr =
@@ -107,8 +83,12 @@ object AstTransform:
     ctx.expr().asScala.toList.map(expr)
 
   def `type`(ctx: MinifumoParser.TypeContext): Type =
+    val base = typeApp(ctx.base)
+    Option(ctx.result).map(result => Type.Fun(base, `type`(result))(range(ctx))).getOrElse(base)
+
+  def typeApp(ctx: MinifumoParser.TypeAppContext): Type =
     val base = typeAtom(ctx.typeAtom())
-    ctx.typeApp().asScala.toList.map(typeApp).foldLeft(base) { (acc, args) =>
+    ctx.typeAppArgs().asScala.toList.map(typeAppArgs).foldLeft(base) { (acc, args) =>
       Type.App(acc, args)(range(ctx))
     }
 
@@ -118,7 +98,7 @@ object AstTransform:
     else
       Type.Paren(`type`(ctx.`type`()))(range(ctx))
 
-  def typeApp(ctx: MinifumoParser.TypeAppContext): List[Type] =
+  def typeAppArgs(ctx: MinifumoParser.TypeAppArgsContext): List[Type] =
     ctx.`type`().asScala.toList.map(`type`)
 
   def expr(ctx: MinifumoParser.ExprContext): Expr =
@@ -135,11 +115,10 @@ object AstTransform:
       case c: MinifumoParser.CallContext =>
         val args = Option(c.argList()).map(argList).getOrElse(Nil)
         val tArgs = Option(c.typeArgs()).map(typeArgs).getOrElse(Nil)
-        val usingArgs = Option(c.usingClause()).map(usingClause).getOrElse(Nil)
-        curriedCall(expr(c.expr()), tArgs, args, usingArgs, range(c))
+        curriedCall(expr(c.expr()), tArgs, args, range(c))
       case c: MinifumoParser.DotContext =>
         // The expression x.f(a,b,c) is short for f(x,a,b,c)
-        curriedCall(Expr.Var(c.ID().getText)(range(c)), Nil, expr(c.expr()) :: argList(c.argList()), Nil, range(c))
+        curriedCall(Expr.Var(c.ID().getText)(range(c)), Nil, expr(c.expr()) :: argList(c.argList()), range(c))
       case c: MinifumoParser.NegContext =>
         opCall("opNeg", List(expr(c.expr())), range(c))
       case c: MinifumoParser.MulDivContext =>
@@ -161,7 +140,7 @@ object AstTransform:
         val right = expr(c.expr(1))
         if c.op.getText == "!=" then
           val eqExpr = opCall("eq", List(left, right), range(c))
-          Expr.Call(Expr.Var("opNot")(range(c)), Nil, List(eqExpr), Nil)(range(c))
+          Expr.Call(Expr.Var("opNot")(range(c)), Nil, List(eqExpr))(range(c))
         else
           opCall("eq", List(left, right), range(c))
       case c: MinifumoParser.AndContext =>
@@ -193,9 +172,6 @@ object AstTransform:
   def typeArgs(ctx: MinifumoParser.TypeArgsContext): List[Type] =
     ctx.`type`().asScala.toList.map(`type`)
 
-  def usingClause(ctx: MinifumoParser.UsingClauseContext): List[Expr] =
-    ctx.expr().asScala.toList.map(expr)
-
   def matchCase(ctx: MinifumoParser.MatchCaseContext): MatchCase =
     MatchCase(pattern(ctx.pattern()), suite(ctx.suite()))(range(ctx))
 
@@ -226,39 +202,19 @@ object AstTransform:
   def patternArgs(ctx: MinifumoParser.PatternArgsContext): List[Pattern] =
     ctx.pattern().asScala.toList.map(pattern)
 
-  def typeClassSigBlock(ctx: MinifumoParser.TypeClassSigBlockContext): List[FunSig] =
-    ctx.funSig().asScala.toList.map(funSig)
-
-  def typeClassImplBlock(ctx: MinifumoParser.TypeClassImplBlockContext): List[TopLevel.FunDecl] =
-    ctx.funDecl().asScala.toList.map { funDecl =>
-      val sig = funSig(funDecl.funSig())
-      TopLevel.FunDecl(
-        sig.name,
-        sig.typeParams,
-        sig.params,
-        sig.returnType,
-        sig.givenParams,
-        suite(funDecl.suite()),
-        exported = false
-      )(
-        range(funDecl)
-      )
-    }
-
-  // Builds a curried call expression from explicit arguments and using arguments.
+  // Builds a curried call expression from explicit arguments.
   private def curriedCall(
       callee: Expr,
       typeArgs: List[Type],
       args: List[Expr],
-      usingArgs: List[Expr],
       source: SourceRange
     ): Expr =
     val baseCall =
       args.headOption match
-        case Some(arg) => Expr.Call(callee, typeArgs, List(arg), usingArgs)(source)
-        case None => Expr.Call(callee, typeArgs, Nil, usingArgs)(source)
+        case Some(arg) => Expr.Call(callee, typeArgs, List(arg))(source)
+        case None => Expr.Call(callee, typeArgs, Nil)(source)
     val withArgs = args.drop(1).foldLeft(baseCall) { (current, arg) =>
-      Expr.Call(current, Nil, List(arg), Nil)(source)
+      Expr.Call(current, Nil, List(arg))(source)
     }
     withArgs
 
@@ -316,9 +272,6 @@ object AstTransform:
             else
               Expr.LetIn("_", true, None, other, desugarBlock(tail, source))(head.source)
 
-  private def typeClassHead(name: String, args: List[Type], source: SourceRange): Type =
-    if args.isEmpty then Type.Name(name)(source) else Type.App(Type.Name(name)(source), args)(source)
-
   private def unquote(text: String): String =
     if text.length >= 2 && text.head == '"' && text.last == '"' then
       text.substring(1, text.length - 1)
@@ -329,9 +282,9 @@ object AstTransform:
     token != null
 
   private def opCall(name: String, args: List[Expr], source: SourceRange): Expr =
-    curriedCall(Expr.Var(name)(source), Nil, args, Nil, source)
+    curriedCall(Expr.Var(name)(source), Nil, args, source)
 
-  // Maps operator symbols to standard library typeclass member names.
+  // Maps operator symbols to standard library operator function names.
   private def binaryOpName(symbol: String): String =
     symbol match
       case "+" => "opPlus"

@@ -1,56 +1,69 @@
-// Ord typeclass with instances for Int and MyList.
+// Ord type class data with instances for Int and MyList.
 
 data MyList[T] = Nil | Cons(head T, tail MyList[T])
 
-typeclass Ord[T]
-    fun lt(a T, b T) Bool
+data Ord[T] = Ord(lt T -> T -> Bool)
 
-instance ordInt for Ord[Int]
-    fun lt(a Int, b Int) Bool
-        a < b
+fun ordInt() Ord[Int]
+    Ord((a Int, b Int) -> a < b)
 
-instance ordList[T] for Ord[MyList[T]] given (o Ord[T])
-    fun lt(a MyList[T], b MyList[T]) Bool
-        match a
-            case Nil
-                match b
-                    case Nil
-                        false
-                    case Cons(_, _)
-                        true
-            case Cons(ah, at)
-                match b
-                    case Nil
-                        false
-                    case Cons(bh, bt)
-                        if lt(ah, bh)
+// Compares two lists using the provided element ordering.
+fun ordListCompare[T](a MyList[T], b MyList[T], ord Ord[T]) Bool
+    match ord
+        case Ord(ltFn)
+            match a
+                case Nil
+                    match b
+                        case Nil
+                            false
+                        case Cons(_, _)
                             true
-                        else
-                            if lt(bh, ah)
-                                false
+                case Cons(ah, at)
+                    match b
+                        case Nil
+                            false
+                        case Cons(bh, bt)
+                            if ltFn(ah, bh)
+                                true
                             else
-                                lt(at, bt)
+                                if ltFn(bh, ah)
+                                    false
+                                else
+                                    ordListCompare(at, bt, ord)
 
-fun minOf2[T](a T, b T) T given (o Ord[T])
-    if lt(a, b) then a else b
+// Builds an ordering for lists from an element ordering.
+fun ordList[T](ord Ord[T]) Ord[MyList[T]]
+    Ord((a MyList[T], b MyList[T]) -> ordListCompare(a, b, ord))
 
-fun minOf3[T](a T, b T, c T) T given (o Ord[T])
-    minOf2(minOf2(a, b), c)
+// Returns the smaller of two values using the given ordering.
+fun minOf2[T](a T, b T, ord Ord[T]) T
+    match ord
+        case Ord(ltFn)
+            if ltFn(a, b) then a else b
 
-instance myShow[T] for Show[MyList[T]] given (s Show[T])
-    fun show(value MyList[T]) String
+// Returns the smallest of three values using the given ordering.
+fun minOf3[T](a T, b T, c T, ord Ord[T]) T
+    minOf2(minOf2(a, b, ord), c, ord)
+
+// Builds a Show dictionary for lists.
+fun myShow[T](s Show[T]) Show[MyList[T]]
+    Show((value MyList[T]) ->
         match value
             case Nil
                 "Nil"
             case Cons(head, tail)
-                "Cons(" + show(head) + ", " + show(tail) + ")"
+                stringAppend(
+                    "Cons(",
+                    stringAppend(show(head, s), stringAppend(", ", stringAppend(show(tail, myShow(s)), ")")))
+                )
+    )
 
 fun main() unit
-    println(minOf3(3, 1, 2))
+    println(minOf3(3, 1, 2, ordInt()), showInt())
     let list1 MyList[Int] = Cons(1, Cons(2, Nil))
     let list2 MyList[Int] = Cons(1, Cons(3, Nil))
     let list3 MyList[Int] = Cons(0, Cons(9, Nil))
-    println(minOf3(list1, list2, list3))
+    println(minOf3(list1, list2, list3, ordList(ordInt())), myShow(showInt()))
 
 // Output:
 // 1

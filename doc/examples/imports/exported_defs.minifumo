@@ -3,5 +3,4 @@ export data Pair[A, B] = Pair(left A, right B)
 export fun add_one(value Int) Int
     value + 1
 
-export typeclass MyShow[A]
-    fun myshow(value A) String
+export data MyShow[A] = MyShow(myshow A -> String)

@@ -1,6 +1,6 @@
 fun main() unit
-    println("Line 1")
-    println("Line 2")
+    println("Line 1", showString())
+    println("Line 2", showString())
 
 // Output:
 // Line 1
