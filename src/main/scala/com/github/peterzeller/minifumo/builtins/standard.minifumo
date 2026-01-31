@@ -556,66 +556,96 @@ fun printlnString(value String) unit
     ()
 
 // Compares two Bool values.
+fun eqBoolFn(a Bool, b Bool) Bool
+    match a
+        case True
+            match b
+                case True
+                    True
+                case False
+                    False
+        case False
+            match b
+                case True
+                    False
+                case False
+                    True
+
+// Builds the Bool equality dictionary.
 fun eqBool() Eq[Bool]
-    Eq((a Bool, b Bool) ->
-        match a
-            case True
-                match b
-                    case True
-                        True
-                    case False
-                        False
-            case False
-                match b
-                    case True
-                        False
-                    case False
-                        True
-    )
+    Eq(eqBoolFn)
 
 // Compares two Nat values.
+fun eqNatFn(a Nat, b Nat) Bool
+    natEq(a, b)
+
+// Builds the Nat equality dictionary.
 fun eqNat() Eq[Nat]
-    Eq((a Nat, b Nat) -> natEq(a, b))
+    Eq(eqNatFn)
 
 // Compares two Int values.
+fun eqIntFn(a Int, b Int) Bool
+    intEq(a, b)
+
+// Builds the Int equality dictionary.
 fun eqInt() Eq[Int]
-    Eq((a Int, b Int) -> intEq(a, b))
+    Eq(eqIntFn)
 
 // Compares two Char values.
+fun eqCharFn(a Char, b Char) Bool
+    charEq(a, b)
+
+// Builds the Char equality dictionary.
 fun eqChar() Eq[Char]
-    Eq((a Char, b Char) -> charEq(a, b))
+    Eq(eqCharFn)
 
 // Compares two String values.
+fun eqStringFn(a String, b String) Bool
+    match a
+        case String(left)
+            match b
+                case String(right)
+                    listEq(left, right, eqChar())
+
+// Builds the String equality dictionary.
 fun eqString() Eq[String]
-    Eq((a String, b String) ->
-        match a
-            case String(left)
-                match b
-                    case String(right)
-                        listEq(left, right, eqChar())
-    )
+    Eq(eqStringFn)
 
 // Converts a Bool value to a String.
+fun showBoolFn(value Bool) String
+    match value
+        case True
+            "True"
+        case False
+            "False"
+
+// Builds the Bool show dictionary.
 fun showBool() Show[Bool]
-    Show((value Bool) ->
-        match value
-            case True
-                "True"
-            case False
-                "False"
-    )
+    Show(showBoolFn)
 
 // Converts a Nat value to a String.
+fun showNatFn(value Nat) String
+    natToString(value)
+
+// Builds the Nat show dictionary.
 fun showNat() Show[Nat]
-    Show((value Nat) -> natToString(value))
+    Show(showNatFn)
 
 // Converts an Int value to a String.
+fun showIntFn(value Int) String
+    intToString(value)
+
+// Builds the Int show dictionary.
 fun showInt() Show[Int]
-    Show((value Int) -> intToString(value))
+    Show(showIntFn)
 
 // Converts a String value to a String.
+fun showStringFn(value String) String
+    value
+
+// Builds the String show dictionary.
 fun showString() Show[String]
-    Show((value String) -> value)
+    Show(showStringFn)
 
 // Converts a value to a String using the supplied Show instance.
 fun show[T](value T, s Show[T]) String
@@ -624,98 +654,169 @@ fun show[T](value T, s Show[T]) String
             showFn(value)
 
 // Negates an Int value.
+fun opNegIntFn(value Int) Int
+    intNeg(value)
+
+// Builds the Int negation dictionary.
 fun opNegInt() OpNeg[Int]
-    OpNeg((value Int) -> intNeg(value))
+    OpNeg(opNegIntFn)
 
 // Adds two Int values.
+fun opPlusIntFn(a Int, b Int) Int
+    intAdd(a, b)
+
+// Builds the Int addition dictionary.
 fun opPlusInt() OpPlus[Int]
-    OpPlus((a Int, b Int) -> intAdd(a, b))
+    OpPlus(opPlusIntFn)
 
 // Subtracts two Int values.
+fun opMinusIntFn(a Int, b Int) Int
+    intSub(a, b)
+
+// Builds the Int subtraction dictionary.
 fun opMinusInt() OpMinus[Int]
-    OpMinus((a Int, b Int) -> intSub(a, b))
+    OpMinus(opMinusIntFn)
 
 // Multiplies two Int values.
+fun opTimesIntFn(a Int, b Int) Int
+    intMul(a, b)
+
+// Builds the Int multiplication dictionary.
 fun opTimesInt() OpTimes[Int]
-    OpTimes((a Int, b Int) -> intMul(a, b))
+    OpTimes(opTimesIntFn)
 
 // Divides two Int values.
+fun opDivIntFn(a Int, b Int) Int
+    intDiv(a, b)
+
+// Builds the Int division dictionary.
 fun opDivInt() OpDiv[Int]
-    OpDiv((a Int, b Int) -> intDiv(a, b))
+    OpDiv(opDivIntFn)
 
 // Computes the remainder of dividing two Int values.
+fun opModIntFn(a Int, b Int) Int
+    intMod(a, b)
+
+// Builds the Int modulo dictionary.
 fun opModInt() OpMod[Int]
-    OpMod((a Int, b Int) -> intMod(a, b))
+    OpMod(opModIntFn)
 
 // Compares two Int values for ordering.
+fun opLtIntFn(a Int, b Int) Bool
+    intLt(a, b)
+
+// Builds the Int less-than dictionary.
 fun opLtInt() OpLt[Int]
-    OpLt((a Int, b Int) -> intLt(a, b))
+    OpLt(opLtIntFn)
 
 // Compares two Int values for ordering.
+fun opLeIntFn(a Int, b Int) Bool
+    intLe(a, b)
+
+// Builds the Int less-than-or-equal dictionary.
 fun opLeInt() OpLe[Int]
-    OpLe((a Int, b Int) -> intLe(a, b))
+    OpLe(opLeIntFn)
 
 // Computes the logical and of two Bool values.
+fun opAndBoolFn(a Bool, b Bool) Bool
+    match a
+        case True
+            b
+        case False
+            False
+
+// Builds the Bool and dictionary.
 fun opAndBool() OpAnd[Bool]
-    OpAnd((a Bool, b Bool) ->
-        match a
-            case True
-                b
-            case False
-                False
-    )
+    OpAnd(opAndBoolFn)
 
 // Computes the logical or of two Bool values.
+fun opOrBoolFn(a Bool, b Bool) Bool
+    match a
+        case True
+            True
+        case False
+            b
+
+// Builds the Bool or dictionary.
 fun opOrBool() OpOr[Bool]
-    OpOr((a Bool, b Bool) ->
-        match a
-            case True
-                True
-            case False
-                b
-    )
+    OpOr(opOrBoolFn)
 
 // Concatenates two String values.
+fun opPlusStringFn(a String, b String) String
+    stringAppend(a, b)
+
+// Builds the String concatenation dictionary.
 fun opPlusString() OpPlus[String]
-    OpPlus((a String, b String) -> stringAppend(a, b))
+    OpPlus(opPlusStringFn)
 
 // Compares two String values for ordering.
+fun opLtStringFn(a String, b String) Bool
+    stringLt(a, b)
+
+// Builds the String less-than dictionary.
 fun opLtString() OpLt[String]
-    OpLt((a String, b String) -> stringLt(a, b))
+    OpLt(opLtStringFn)
 
 // Compares two String values for ordering.
+fun opLeStringFn(a String, b String) Bool
+    stringLe(a, b)
+
+// Builds the String less-than-or-equal dictionary.
 fun opLeString() OpLe[String]
-    OpLe((a String, b String) -> stringLe(a, b))
+    OpLe(opLeStringFn)
 
 // Concatenates two lists.
+fun opPlusListFn[T](a List[T], b List[T]) List[T]
+    listAppend(a, b)
+
+// Builds the list concatenation dictionary.
 fun opPlusList[T]() OpPlus[List[T]]
-    OpPlus((a List[T], b List[T]) -> listAppend(a, b))
+    OpPlus(opPlusListFn)
 
 // Gets list sequence operations.
+// Gets a list element by index using an equality dictionary.
+fun listSequenceGet[T](eq Eq[T], seq List[T], index Int) T
+    if intIsNegative(index)
+        undefined
+    else
+        listGetNat(seq, intToNat(index))
+
+// Sets a list element by index.
+fun listSequenceSet[T](eq Eq[T], seq List[T], index Int, value T) List[T]
+    if intIsNegative(index)
+        seq
+    else
+        listSetNat(seq, intToNat(index), value)
+
+// Checks whether a list contains a value.
+fun listSequenceContains[T](eq Eq[T], seq List[T], value T) Bool
+    listContains(seq, value, eq)
+
+// Builds the list sequence dictionary.
 fun listSequence[T](eq Eq[T]) Sequence[List[T], T]
     Sequence(
-        (seq List[T], index Int) ->
-            if intIsNegative(index)
-                undefined
-            else
-                listGetNat(seq, intToNat(index)),
-        (seq List[T], index Int, value T) ->
-            if intIsNegative(index)
-                seq
-            else
-                listSetNat(seq, intToNat(index), value),
-        (seq List[T], value T) -> listContains(seq, value, eq)
+        listSequenceGet(eq),
+        listSequenceSet(eq),
+        listSequenceContains(eq)
     )
 
 // Gets list set operations.
+// Checks whether a list-based set contains a value.
+fun listSetContains[T](eq Eq[T], set List[T], value T) Bool
+    listContains(set, value, eq)
+
+// Adds a value to a list-based set.
+fun listSetAdd[T](eq Eq[T], set List[T], value T) List[T]
+    if listContains(set, value, eq)
+        set
+    else
+        Cons(value, set)
+
+// Builds the list set dictionary.
 fun listSet[T](eq Eq[T]) Set[List[T], T]
     Set(
-        (set List[T], value T) -> listContains(set, value, eq),
-        (set List[T], value T) ->
-            if listContains(set, value, eq)
-                set
-            else
-                Cons(value, set)
+        listSetContains(eq),
+        listSetAdd(eq)
     )
 
 // Inserts a key/value pair into the tree.
@@ -755,8 +856,17 @@ fun treeLookup[K, V](tree Tree[K, V], key K, lt OpLt[K], eq Eq[K]) V
                                     treeLookup(right, key, lt, eq)
 
 // Builds a tree map instance.
+// Inserts a key/value pair into a tree map.
+fun treeMapPut[K, V](lt OpLt[K], eq Eq[K], tree Tree[K, V], key K, value V) Tree[K, V]
+    treePut(tree, key, value, lt, eq)
+
+// Looks up a value in a tree map.
+fun treeMapLookup[K, V](lt OpLt[K], eq Eq[K], tree Tree[K, V], key K) V
+    treeLookup(tree, key, lt, eq)
+
+// Builds the tree map dictionary.
 fun treeMap[K, V](lt OpLt[K], eq Eq[K]) Map[Tree[K, V], K, V]
     Map(
-        (tree Tree[K, V], key K, value V) -> treePut(tree, key, value, lt, eq),
-        (tree Tree[K, V], key K) -> treeLookup(tree, key, lt, eq)
+        treeMapPut(lt, eq),
+        treeMapLookup(lt, eq)
     )

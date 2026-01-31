@@ -11,8 +11,12 @@ data Show[T] = Show(show T -> String)
 ## 2. Provide instances as functions
 
 ```minifumo
+// Converts an Int to a String using the standard formatter.
+fun showIntFn(value Int) String
+    intToString(value)
+
 fun showInt() Show[Int]
-    Show((value Int) -> intToString(value))
+    Show(showIntFn)
 ```
 
 ## 3. Use explicit parameters

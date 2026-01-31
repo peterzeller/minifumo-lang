@@ -4,8 +4,13 @@ data MyList[T] = Nil | Cons(head T, tail MyList[T])
 
 data Ord[T] = Ord(lt T -> T -> Bool)
 
+// Compares two Int values using the built-in ordering.
+fun ordIntFn(a Int, b Int) Bool
+    a < b
+
+// Builds the Int ordering dictionary.
 fun ordInt() Ord[Int]
-    Ord((a Int, b Int) -> a < b)
+    Ord(ordIntFn)
 
 // Compares two lists using the provided element ordering.
 fun ordListCompare[T](a MyList[T], b MyList[T], ord Ord[T]) Bool
@@ -31,9 +36,13 @@ fun ordListCompare[T](a MyList[T], b MyList[T], ord Ord[T]) Bool
                                 else
                                     ordListCompare(at, bt, ord)
 
+// Builds an ordering function for lists.
+fun ordListFn[T](a MyList[T], b MyList[T], ord Ord[T]) Bool
+    ordListCompare(a, b, ord)
+
 // Builds an ordering for lists from an element ordering.
 fun ordList[T](ord Ord[T]) Ord[MyList[T]]
-    Ord((a MyList[T], b MyList[T]) -> ordListCompare(a, b, ord))
+    Ord(ordListFn(ord))
 
 // Returns the smaller of two values using the given ordering.
 fun minOf2[T](a T, b T, ord Ord[T]) T
@@ -45,18 +54,20 @@ fun minOf2[T](a T, b T, ord Ord[T]) T
 fun minOf3[T](a T, b T, c T, ord Ord[T]) T
     minOf2(minOf2(a, b, ord), c, ord)
 
+// Converts a list to a String using the provided Show dictionary.
+fun myShowFn[T](value MyList[T], s Show[T]) String
+    match value
+        case Nil
+            "Nil"
+        case Cons(head, tail)
+            stringAppend(
+                "Cons(",
+                stringAppend(show(head, s), stringAppend(", ", stringAppend(show(tail, myShow(s)), ")")))
+            )
+
 // Builds a Show dictionary for lists.
 fun myShow[T](s Show[T]) Show[MyList[T]]
-    Show((value MyList[T]) ->
-        match value
-            case Nil
-                "Nil"
-            case Cons(head, tail)
-                stringAppend(
-                    "Cons(",
-                    stringAppend(show(head, s), stringAppend(", ", stringAppend(show(tail, myShow(s)), ")")))
-                )
-    )
+    Show(myShowFn(s))
 
 fun main() unit
     println(minOf3(3, 1, 2, ordInt()), showInt())

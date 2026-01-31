@@ -24,11 +24,11 @@ fun treeSize[T](value Tree[T]) Int
 
 // Builds a Sized dictionary for lists.
 fun sizedList[T]() Sized[MyList[T]]
-    Sized((value MyList[T]) -> listSize(value))
+    Sized(listSize)
 
 // Builds a Sized dictionary for trees.
 fun sizedTree[T]() Sized[Tree[T]]
-    Sized((value Tree[T]) -> treeSize(value))
+    Sized(treeSize)
 
 // Computes the total size of the list and tree.
 fun totalSize[T](list MyList[T], tree Tree[T], s1 Sized[MyList[T]], s2 Sized[Tree[T]]) Int
