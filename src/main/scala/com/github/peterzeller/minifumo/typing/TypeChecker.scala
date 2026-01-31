@@ -199,7 +199,7 @@ object TypeChecker:
           val eliminatorSymbol =
             FunctionSymbol(eliminatorName, eliminatorTypeParams, eliminatorType)
           functions = functions + (eliminatorName -> eliminatorSymbol)
-      case funDecl @ ast.TopLevel.FunDecl(name, typeParams, params, returnType, _, exported) if includeNonExported || exported =>
+      case _ @ ast.TopLevel.FunDecl(name, typeParams, params, returnType, _, exported) if includeNonExported || exported =>
         if functions.contains(name) then
           errors += errorAt(item.source, s"Duplicate function: $name")
         val paramTypes = params.map(p => fromAstType(p.tpe))
@@ -1377,12 +1377,14 @@ object TypeChecker:
         Type.Unknown
       }
 
+  // Converts an AST type into a typed representation with flattened function parameters.
   private def fromAstType(tpe: ast.Type): Type =
     tpe match
       case ast.Type.Name(value) => Type.Name(value)
       case ast.Type.Paren(inner) => fromAstType(inner)
       case ast.Type.App(base, args) => Type.App(fromAstType(base), args.map(fromAstType))
-      case ast.Type.Fun(param, result) => Type.Fun(List(fromAstType(param)), fromAstType(result))
+      case ast.Type.Fun(param, result) =>
+        normalizeFunType(Type.Fun(List(fromAstType(param)), fromAstType(result)))
 
   private def validateAstType(tpe: ast.Type, typeParams: Set[String], exports: ExportEnv): List[TypeError] =
     tpe match
@@ -1395,23 +1397,6 @@ object TypeChecker:
         validateAstType(inner, typeParams, exports)
       case ast.Type.Fun(param, result) =>
         validateAstType(param, typeParams, exports) ++ validateAstType(result, typeParams, exports)
-
-  private def validateTypedType(
-      tpe: Type,
-      typeParams: Set[String],
-      exports: ExportEnv,
-      source: ast.SourceRange
-    ): List[TypeError] =
-    tpe match
-      case Type.Name(value) =>
-        if typeParams.contains(value) || builtinTypeNames.contains(value) || exports.types.contains(value) then Nil
-        else List(errorAt(source, s"Unknown type name: $value"))
-      case Type.App(base, args) =>
-        validateTypedType(base, typeParams, exports, source) ++ args.flatMap(arg => validateTypedType(arg, typeParams, exports, source))
-      case Type.Fun(params, result) =>
-        params.flatMap(param => validateTypedType(param, typeParams, exports, source)) ++ validateTypedType(result, typeParams, exports, source)
-      case Type.Meta(_) => Nil
-      case Type.Unknown => Nil
 
   // Resolves literal types based on the standard library.
   private def literalType(
