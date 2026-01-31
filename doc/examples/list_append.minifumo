@@ -10,8 +10,8 @@ fun myAppend(a List, b List) List
           Cons(h, myAppend(t, b))
 
 // Converts a list to a String using the provided Show dictionary.
-fun myShowListFn(value List, s Show[Int]) String
-    match value
+fun myShowListFn(s Show[Int]) List -> String
+    (value List) -> match value
         case Nil
             "Nil"
         case Cons(head, tail)

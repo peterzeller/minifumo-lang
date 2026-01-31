@@ -37,7 +37,7 @@ fun ordListCompare[T](a MyList[T], b MyList[T], ord Ord[T]) Bool
                                     ordListCompare(at, bt, ord)
 
 // Builds an ordering function for lists.
-fun ordListFn[T](a MyList[T], b MyList[T], ord Ord[T]) Bool
+fun ordListFn[T](ord Ord[T], a MyList[T], b MyList[T]) Bool
     ordListCompare(a, b, ord)
 
 // Builds an ordering for lists from an element ordering.
@@ -55,7 +55,7 @@ fun minOf3[T](a T, b T, c T, ord Ord[T]) T
     minOf2(minOf2(a, b, ord), c, ord)
 
 // Converts a list to a String using the provided Show dictionary.
-fun myShowFn[T](value MyList[T], s Show[T]) String
+fun myShowFn[T](s Show[T], value MyList[T]) String
     match value
         case Nil
             "Nil"

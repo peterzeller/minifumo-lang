@@ -1235,7 +1235,9 @@ object TypeChecker:
     ): (TypeEnv, Type, List[TypeError]) =
     val resolvedLeft = applySubstitutions(left, env)
     val resolvedRight = applySubstitutions(right, env)
-    (resolvedLeft, resolvedRight) match
+    val normalizedLeft = normalizeFunType(resolvedLeft)
+    val normalizedRight = normalizeFunType(resolvedRight)
+    (normalizedLeft, normalizedRight) match
       case (Type.Unknown, other) => (env, other, Nil)
       case (other, Type.Unknown) => (env, other, Nil)
       case (Type.Meta(id), other) =>
@@ -1285,15 +1287,33 @@ object TypeChecker:
         (
           env,
           Type.Unknown,
-          List(errorAt(source, s"Type mismatch in $context: ${renderType(resolvedLeft)} vs ${renderType(resolvedRight)}"))
+          List(errorAt(source, s"Type mismatch in $context: ${renderType(normalizedLeft)} vs ${renderType(normalizedRight)}"))
         )
 
+  // Flattens nested function types into a single parameter list.
+  private def normalizeFunType(tpe: Type): Type =
+    tpe match
+      case Type.Fun(params, result) =>
+        result match
+          case inner: Type.Fun =>
+            val normalizedInner: Type.Fun = normalizeFunType(inner) match
+              case fun: Type.Fun => fun
+              case other => Type.Fun(Nil, other)
+            Type.Fun(params ++ normalizedInner.params, normalizedInner.result)
+          case _ =>
+            Type.Fun(params, result)
+      case other => other
+
+  // Resolves the function type and type parameters for a callable expression.
   private def resolveFunctionType(callee: Expr, env: TypeEnv): Option[(Type.Fun, List[String])] =
     callee match
       case Expr.Var(symbol, _) =>
         symbol match
           case fun: FunctionSymbol => Some((fun.tpe, fun.typeParams))
-          case _ => None
+          case _ =>
+            applySubstitutions(symbol.tpe, env) match
+              case tpe: Type.Fun => Some((tpe, Nil))
+              case _ => None
       case _ =>
         applySubstitutions(callee.tpe, env) match
           case tpe: Type.Fun => Some((tpe, Nil))
@@ -1304,7 +1324,9 @@ object TypeChecker:
     s"${typeName}_elim"
 
   private def isCompatible(expected: Type, actual: Type): Boolean =
-    (expected, actual) match
+    val normalizedExpected = normalizeFunType(expected)
+    val normalizedActual = normalizeFunType(actual)
+    (normalizedExpected, normalizedActual) match
       case (Type.Unknown, _) => true
       case (_, Type.Unknown) => true
       case (Type.Meta(_), _) => true
