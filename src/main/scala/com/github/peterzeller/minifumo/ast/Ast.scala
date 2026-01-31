@@ -14,22 +14,8 @@ enum TopLevel:
       typeParams: List[String],
       params: List[FunParam],
       returnType: Option[Type],
-      givenParams: List[FunParam],
       body: Expr,
       exported: Boolean
-    )(val source: SourceRange)
-  case TypeClassDecl(
-      name: String,
-      typeParams: List[String],
-      members: List[FunSig],
-      exported: Boolean
-    )(val source: SourceRange)
-  case InstanceDecl(
-      name: String,
-      typeParams: List[String],
-      head: Type,
-      givenParams: List[FunParam],
-      members: List[TopLevel.FunDecl]
     )(val source: SourceRange)
 
   def source: SourceRange
@@ -38,8 +24,7 @@ final case class FunSig(
     name: String,
     typeParams: List[String],
     params: List[FunParam],
-    returnType: Option[Type],
-    givenParams: List[FunParam]
+    returnType: Option[Type]
   )(val source: SourceRange)
 
 final case class CtorDecl(name: String, fields: List[CtorField])(val source: SourceRange)
@@ -52,6 +37,7 @@ enum Type:
   case Name(value: String)(val source: SourceRange)
   case Paren(inner: Type)(val source: SourceRange)
   case App(base: Type, args: List[Type])(val source: SourceRange)
+  case Fun(param: Type, result: Type)(val source: SourceRange)
 
   def source: SourceRange
 
@@ -61,7 +47,7 @@ enum Expr:
   case Paren(expr: Expr)(val source: SourceRange)
   // Call is used for both function calls, as well as expressions like "a + b"
   // For example, `a+b` is represented as `Call(Var("+"), List(Var("a"), Var("b")))`
-  case Call(callee: Expr, typeArgs: List[Type], args: List[Expr], usingArgs: List[Expr])(val source: SourceRange)
+  case Call(callee: Expr, typeArgs: List[Type], args: List[Expr])(val source: SourceRange)
   case Lambda(param: LambdaParam, body: Expr)(val source: SourceRange)
   // Let and Var bindings
   case LetIn(name: String, isConstant: Boolean, tpe: Option[Type], value: Expr, body: Expr)(val source: SourceRange)

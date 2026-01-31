@@ -1,4 +1,4 @@
 fun main() unit
-    println(let x = 1 in x + 1)
+    println(let x = 1 in x + 1, showInt())
 
 // Output: 2

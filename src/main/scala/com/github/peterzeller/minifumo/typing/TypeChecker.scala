@@ -12,44 +12,20 @@ object TypeChecker:
 
   final case class DataType(name: String, typeParams: List[String], ctors: List[CtorSymbol])
 
-  // Stores member signatures without creating function symbols during the export pass.
-  final case class TypeClassMemberSig(
-      name: String,
-      typeParams: List[String],
-      params: List[Type],
-      result: Type
-    )
-
-  // Typeclass definitions are tracked in the type checker export environment.
-  final case class TypeClassDef(name: String, typeParams: List[String], members: List[TypeClassMemberSig])
-
-  final case class InstanceDef(
-      symbol: InstanceSymbol,
-      typeParams: List[String],
-      head: Type,
-      givenTypes: List[Type],
-      members: Map[String, ast.TopLevel.FunDecl]
-    )
-
   final case class ExportEnv(
       functions: Map[String, FunctionSymbol],
       ctors: Map[String, CtorSymbol],
-      types: Map[String, DataType],
-      typeClasses: Map[String, TypeClassDef],
-      instances: Map[String, InstanceDef],
-      // Member name -> typeclasses that declare it (used for implicit member resolution).
-      memberIndex: Map[String, List[TypeClassDef]]
+      types: Map[String, DataType]
     )
 
   val emptyExportEnv: ExportEnv =
-    ExportEnv(Map.empty, Map.empty, Map.empty, Map.empty, Map.empty, Map.empty)
+    ExportEnv(Map.empty, Map.empty, Map.empty)
 
   final case class TypeEnv(
       scopes: List[Map[String, TermSymbol]],
       exports: ExportEnv,
       typeParams: Set[String],
       expectedReturn: Type,
-      givens: List[ParamSymbol],
       substitutions: Map[Int, Type],
       nextMetaId: Int
     ):
@@ -93,21 +69,11 @@ object TypeChecker:
 
   // Merges two export environments, preferring entries from the override environment.
   def mergeExports(base: ExportEnv, overrideEnv: ExportEnv): ExportEnv =
-    val merged = ExportEnv(
+    ExportEnv(
       functions = base.functions ++ overrideEnv.functions,
       ctors = base.ctors ++ overrideEnv.ctors,
-      types = base.types ++ overrideEnv.types,
-      typeClasses = base.typeClasses ++ overrideEnv.typeClasses,
-      instances = base.instances ++ overrideEnv.instances,
-      memberIndex = Map.empty
+      types = base.types ++ overrideEnv.types
     )
-    val memberIndex = merged.typeClasses.values
-      .flatMap(tc => tc.members.map(_.name).distinct.map(_ -> tc))
-      .groupBy(_._1)
-      .view
-      .mapValues(_.map(_._2).toList)
-      .toMap
-    merged.copy(memberIndex = memberIndex)
 
   // Adds the standard library exports to an import environment.
   def withStandardExports(importedExports: ExportEnv): ExportEnv =
@@ -134,15 +100,13 @@ object TypeChecker:
       if includeStandard then withStandardExports(importedExports) else importedExports
     val shadowedTypes = if includeStandard then Standard.standardExports.types.keySet else Set.empty
     val shadowedCtors = if includeStandard then Standard.standardExports.ctors.keySet else Set.empty
-    val shadowedTypeClasses = if includeStandard then Standard.standardExports.typeClasses.keySet else Set.empty
     val (exports, exportErrors) =
       extractExports(
         program,
         combinedExports,
         includeNonExported = true,
         shadowedTypes = shadowedTypes,
-        shadowedCtors = shadowedCtors,
-        shadowedTypeClasses = shadowedTypeClasses
+        shadowedCtors = shadowedCtors
       )
     val errors = ListBuffer.empty[TypeError]
     errors ++= exportErrors
@@ -160,20 +124,6 @@ object TypeChecker:
           )(ctor.source)
         }
         TopLevel.DataDecl(dataDecl.name, dataDecl.typeParams, ctorDecls)(dataDecl.source)
-      case typeClassDecl: ast.TopLevel.TypeClassDecl =>
-        val members = typeClassDecl.members.map { member =>
-          TypeClassMember(
-            member.name,
-            member.typeParams,
-            member.params.map(p => fromAstType(p.tpe)),
-            member.returnType.map(fromAstType).getOrElse(Type.Unknown)
-          )(member.source)
-        }
-        TopLevel.TypeClassDecl(typeClassDecl.name, typeClassDecl.typeParams, members)(typeClassDecl.source)
-      case instanceDecl: ast.TopLevel.InstanceDecl =>
-        val (typedInstance, instanceErrors) = typeInstance(instanceDecl, exports)
-        errors ++= instanceErrors
-        typedInstance
     }
     (Program(typedItems)(program.source), errors.toList)
 
@@ -183,19 +133,14 @@ object TypeChecker:
       baseExports: ExportEnv = emptyExportEnv,
       includeNonExported: Boolean = true,
       shadowedTypes: Set[String] = Set.empty,
-      shadowedCtors: Set[String] = Set.empty,
-      shadowedTypeClasses: Set[String] = Set.empty
+      shadowedCtors: Set[String] = Set.empty
     ): (ExportEnv, List[TypeError]) =
     val errors = ListBuffer.empty[TypeError]
     var functions = baseExports.functions
     var ctors = baseExports.ctors
     var types = baseExports.types
-    var typeClasses = baseExports.typeClasses
-    var instances = baseExports.instances
-    var memberIndex = baseExports.memberIndex
     val localTypes = scala.collection.mutable.Set.empty[String]
     val localCtors = scala.collection.mutable.Set.empty[String]
-    val localTypeClasses = scala.collection.mutable.Set.empty[String]
 
     for item <- program.items do {
       item match
@@ -232,7 +177,7 @@ object TypeChecker:
         localTypes += name
         ctorDecls.foreach { ctor =>
           ctor.fields.foreach { field =>
-            errors ++= validateAstType(field.tpe, typeParams.toSet, ExportEnv(functions, ctors, types, typeClasses, instances, memberIndex))
+            errors ++= validateAstType(field.tpe, typeParams.toSet, ExportEnv(functions, ctors, types))
           }
         }
         val eliminatorName = buildEliminatorName(name)
@@ -252,94 +197,28 @@ object TypeChecker:
           val eliminatorParams = scrutineeType +: handlerTypes
           val eliminatorType: Type.Fun = Type.Fun(eliminatorParams, returnType)
           val eliminatorSymbol =
-            FunctionSymbol(eliminatorName, eliminatorTypeParams, eliminatorType, givenParams = Nil)
+            FunctionSymbol(eliminatorName, eliminatorTypeParams, eliminatorType)
           functions = functions + (eliminatorName -> eliminatorSymbol)
-      case funDecl @ ast.TopLevel.FunDecl(name, typeParams, params, returnType, _, _, exported) if includeNonExported || exported =>
+      case _ @ ast.TopLevel.FunDecl(name, typeParams, params, returnType, _, exported) if includeNonExported || exported =>
         if functions.contains(name) then
           errors += errorAt(item.source, s"Duplicate function: $name")
         val paramTypes = params.map(p => fromAstType(p.tpe))
-        val givenTypes = funGivenTypes(funDecl)
         val returnTpe = returnType.map(fromAstType).getOrElse {
           errors += errorAt(item.source, s"Missing return type for function: $name")
           Type.Unknown
         }
-        val funSymbol = FunctionSymbol(name, typeParams, Type.Fun(paramTypes, returnTpe), givenTypes)
+        val funSymbol = FunctionSymbol(name, typeParams, Type.Fun(paramTypes, returnTpe))
         functions = functions + (name -> funSymbol)
         val typeParamSet = typeParams.toSet
         params.foreach { param =>
-          errors ++= validateAstType(param.tpe, typeParamSet, ExportEnv(functions, ctors, types, typeClasses, instances, memberIndex))
-        }
-        funDecl.givenParams.foreach { param =>
-          errors ++= validateAstType(param.tpe, typeParamSet, ExportEnv(functions, ctors, types, typeClasses, instances, memberIndex))
+          errors ++= validateAstType(param.tpe, typeParamSet, ExportEnv(functions, ctors, types))
         }
         returnType.foreach { tpe =>
-          errors ++= validateAstType(tpe, typeParamSet, ExportEnv(functions, ctors, types, typeClasses, instances, memberIndex))
+          errors ++= validateAstType(tpe, typeParamSet, ExportEnv(functions, ctors, types))
         }
-      case ast.TopLevel.TypeClassDecl(name, typeParams, members, exported) if includeNonExported || exported =>
-        val isShadowedTypeClass = shadowedTypeClasses.contains(name)
-        if localTypeClasses.contains(name) then
-          errors += errorAt(item.source, s"Duplicate typeclass: $name")
-        else if typeClasses.contains(name) && !isShadowedTypeClass then
-          errors += errorAt(item.source, s"Duplicate typeclass: $name")
-        val memberSigs = members.map { member =>
-          if member.givenParams.nonEmpty then
-            errors += errorAt(member.source, s"Typeclass member ${member.name} cannot declare given parameters")
-          if member.returnType.isEmpty then
-            errors += errorAt(member.source, s"Missing return type for member: ${member.name}")
-          TypeClassMemberSig(
-            member.name,
-            member.typeParams,
-            member.params.map(p => fromAstType(p.tpe)),
-            member.returnType.map(fromAstType).getOrElse(Type.Unknown)
-          )
-        }
-        typeClasses = typeClasses + (name -> TypeClassDef(name, typeParams, memberSigs))
-        localTypeClasses += name
-        memberSigs.foreach { member =>
-          val typeParamSet = (typeParams ++ member.typeParams).toSet
-          member.params.foreach { param =>
-            errors ++= validateTypedType(param, typeParamSet, ExportEnv(functions, ctors, types, typeClasses, instances, memberIndex), item.source)
-          }
-          errors ++= validateTypedType(member.result, typeParamSet, ExportEnv(functions, ctors, types, typeClasses, instances, memberIndex), item.source)
-        }
-      case ast.TopLevel.InstanceDecl(name, typeParams, head, givenParams, members) if includeNonExported =>
-        if instances.contains(name) then
-          errors += errorAt(item.source, s"Duplicate instance: $name")
-        val headType = fromAstType(head)
-        val givenTypes = givenParams.map(p => fromAstType(p.tpe))
-        val memberMap = members.map(m => m.name -> m).toMap
-        val instanceSymbol = InstanceSymbol(name, typeParams, headType, givenTypes, Map.empty)
-        instances = instances + (name -> InstanceDef(instanceSymbol, typeParams, headType, givenTypes, memberMap))
       case _ =>
     }
-    memberIndex = typeClasses.values
-      .flatMap(tc => tc.members.map(_.name).distinct.map(_ -> tc))
-      .groupBy(_._1)
-      .view
-      .mapValues(_.map(_._2).toList)
-      .toMap
-
-    val updatedInstances = instances.map { case (name, instance) =>
-      val (typeClassName, typeClassArgs) = instance.head match
-        case Type.App(Type.Name(tcName), args) => (tcName, args)
-        case Type.Name(tcName) => (tcName, Nil)
-        case _ => ("", Nil)
-      val typeClassMembers = typeClasses.get(typeClassName).map { tc =>
-        val subst = tc.typeParams.zip(typeClassArgs).toMap
-        tc.members.map { member =>
-          val params = member.params.map(param => instantiateType(param, subst))
-          val result = instantiateType(member.result, subst)
-          val funType: Type.Fun = Type.Fun(params ++ instance.givenTypes, result)
-          member.name -> FunctionSymbol(s"${instance.symbol.name}.${member.name}", member.typeParams, funType, Nil)
-        }.toMap
-      }.getOrElse(Map.empty[String, FunctionSymbol])
-      val symbol = instance.symbol.copy(members = typeClassMembers)
-      name -> instance.copy(symbol = symbol)
-    }
-    (ExportEnv(functions, ctors, types, typeClasses, updatedInstances, memberIndex), errors.toList)
-
-  private def funGivenTypes(funDecl: ast.TopLevel.FunDecl): List[Type] =
-    funDecl.givenParams.map(p => fromAstType(p.tpe))
+    (ExportEnv(functions, ctors, types), errors.toList)
 
   def typeFunction(
       funDecl: ast.TopLevel.FunDecl,
@@ -349,147 +228,26 @@ object TypeChecker:
     val idSupply = new IdSupply
     val funSymbol = exports.functions.getOrElse(
       funDecl.name,
-      FunctionSymbol(funDecl.name, funDecl.typeParams, Type.Fun(Nil, Type.Unknown), Nil)
+      FunctionSymbol(funDecl.name, funDecl.typeParams, Type.Fun(Nil, Type.Unknown))
     )
     val paramsWithSource = funDecl.params.map { param =>
-      (param, ParamSymbol(param.name, fromAstType(param.tpe), idSupply.freshId()))
-    }
-    val givenWithSource = funDecl.givenParams.map { param =>
       (param, ParamSymbol(param.name, fromAstType(param.tpe), idSupply.freshId()))
     }
     val duplicateParams = funDecl.params.groupBy(_.name).collect { case (_, ps) if ps.length > 1 => ps }
     duplicateParams.flatten.foreach { param =>
       errors += errorAt(param.source, s"Duplicate parameter: ${param.name}")
     }
-    val duplicateGivens = funDecl.givenParams.groupBy(_.name).collect { case (_, ps) if ps.length > 1 => ps }
-    duplicateGivens.flatten.foreach { param =>
-      errors += errorAt(param.source, s"Duplicate given parameter: ${param.name}")
-    }
-    val givenParamNames = funDecl.givenParams.map(_.name).toSet
-    funDecl.params.filter(p => givenParamNames.contains(p.name)).foreach { param =>
-      errors += errorAt(param.source, s"Parameter shadows given: ${param.name}")
-    }
     val params = paramsWithSource.map(_._2)
-    val givens = givenWithSource.map(_._2)
-    val scopeBindings = (params ++ givens).map(p => p.name -> p).toMap
+    val scopeBindings = params.map(p => p.name -> p).toMap
     val env =
-      TypeEnv(List(scopeBindings), exports, funDecl.typeParams.toSet, funSymbol.tpe.result, givens, Map.empty, 1)
+      TypeEnv(List(scopeBindings), exports, funDecl.typeParams.toSet, funSymbol.tpe.result, Map.empty, 1)
     val expectedBodyType =
       if funSymbol.tpe.result == Type.Unknown then None else Some(funSymbol.tpe.result)
     val (typedBody, bodyErrors, _) = typeExpr(funDecl.body, env, funSymbol.tpe.result, expectedBodyType, idSupply)
     errors ++= bodyErrors
     val typedFun: TopLevel.FunDecl =
-      TopLevel.FunDecl(funSymbol, funDecl.typeParams, params, givens, typedBody)(funDecl.source)
+      TopLevel.FunDecl(funSymbol, funDecl.typeParams, params, typedBody)(funDecl.source)
     (typedFun, errors.toList)
-
-  def typeInstance(
-      instanceDecl: ast.TopLevel.InstanceDecl,
-      exports: ExportEnv
-    ): (TopLevel.InstanceDecl, List[TypeError]) =
-    val errors = ListBuffer.empty[TypeError]
-    val instanceDef = exports.instances.get(instanceDecl.name)
-    val idSupply = new IdSupply
-    errors ++= validateAstType(instanceDecl.head, instanceDecl.typeParams.toSet, exports)
-    val headType = fromAstType(instanceDecl.head)
-    instanceDecl.givenParams.foreach { param =>
-      errors ++= validateAstType(param.tpe, instanceDecl.typeParams.toSet, exports)
-    }
-    val (typeClassName, typeClassArgs) = headType match
-      case Type.App(Type.Name(tcName), args) => (tcName, args)
-      case Type.Name(tcName) => (tcName, Nil)
-      case _ => ("", Nil)
-    val typeClassDefOpt = exports.typeClasses.get(typeClassName)
-    typeClassDefOpt match
-      case None =>
-        errors += errorAt(instanceDecl.source, s"Unknown typeclass: ${typeClassName}")
-      case Some(typeClassDef) =>
-        val duplicateMembers = instanceDecl.members.groupBy(_.name).collect { case (_, ms) if ms.length > 1 => ms }
-        duplicateMembers.flatten.foreach { member =>
-          errors += errorAt(member.source, s"Duplicate member ${member.name} in instance ${instanceDecl.name}")
-        }
-        if typeClassDef.typeParams.length != typeClassArgs.length then
-          errors += errorAt(
-            instanceDecl.source,
-            s"Typeclass ${typeClassDef.name} expects ${typeClassDef.typeParams.length} type arguments, got ${typeClassArgs.length}"
-          )
-        val typeClassSubst = typeClassDef.typeParams.zip(typeClassArgs).toMap
-        val membersByName = instanceDecl.members.map(m => m.name -> m).toMap
-        typeClassDef.members.foreach { member =>
-          membersByName.get(member.name) match
-            case None =>
-              errors += errorAt(instanceDecl.source, s"Missing member ${member.name} in instance ${instanceDecl.name}")
-            case Some(funDecl) =>
-              val expectedParams = member.params.map(param => instantiateType(param, typeClassSubst))
-              val expectedResult = instantiateType(member.result, typeClassSubst)
-              if funDecl.params.length != expectedParams.length then
-                errors += errorAt(
-                  funDecl.source,
-                  s"Member ${member.name} expects ${expectedParams.length} parameters, got ${funDecl.params.length}"
-                )
-              funDecl.params.zip(expectedParams).foreach { case (param, expected) =>
-                val actual = fromAstType(param.tpe)
-                if !isCompatible(expected, actual) then
-                  errors += errorAt(
-                    param.source,
-                    s"Member ${member.name} parameter ${param.name} has type ${renderType(actual)}, expected ${renderType(expected)}"
-                  )
-              }
-              funDecl.returnType.foreach { actualReturn =>
-                val actual = fromAstType(actualReturn)
-                if !isCompatible(expectedResult, actual) then
-                  errors += errorAt(
-                    actualReturn.source,
-                    s"Member ${member.name} returns ${renderType(actual)}, expected ${renderType(expectedResult)}"
-                  )
-              }
-              if funDecl.returnType.isEmpty then
-                errors += errorAt(funDecl.source, s"Missing return type for member: ${member.name}")
-        }
-    val givenParams = instanceDecl.givenParams.map { param =>
-      ParamSymbol(param.name, fromAstType(param.tpe), idSupply.freshId())
-    }
-    val typedMembers = instanceDecl.members.flatMap { memberDecl =>
-      if memberDecl.givenParams.nonEmpty then
-        errors += errorAt(memberDecl.source, s"Member ${memberDecl.name} cannot declare its own given parameters")
-        None
-      else
-        val explicitParams = memberDecl.params.map { param =>
-          ParamSymbol(param.name, fromAstType(param.tpe), idSupply.freshId())
-        }
-        val duplicateParams = memberDecl.params.groupBy(_.name).collect { case (_, ps) if ps.length > 1 => ps }
-        duplicateParams.flatten.foreach { param =>
-          errors += errorAt(param.source, s"Duplicate parameter: ${param.name}")
-        }
-        val givenParamNames = givenParams.map(_.name).toSet
-        memberDecl.params.filter(p => givenParamNames.contains(p.name)).foreach { param =>
-          errors += errorAt(param.source, s"Parameter shadows instance given: ${param.name}")
-        }
-        val memberSymbol = instanceDef.flatMap(_.symbol.members.get(memberDecl.name)).getOrElse {
-          FunctionSymbol(s"${instanceDecl.name}.${memberDecl.name}", memberDecl.typeParams, Type.Fun(Nil, Type.Unknown), Nil)
-        }
-        val allParams = explicitParams ++ givenParams
-        val scopeBindings = allParams.map(p => p.name -> p).toMap
-        val env =
-          TypeEnv(
-            List(scopeBindings),
-            exports,
-            (instanceDecl.typeParams ++ memberDecl.typeParams).toSet,
-            memberSymbol.tpe.result,
-            givenParams,
-            Map.empty,
-            1
-          )
-        val expectedBodyType =
-          if memberSymbol.tpe.result == Type.Unknown then None else Some(memberSymbol.tpe.result)
-        val (typedBody, bodyErrors, _) =
-          typeExpr(memberDecl.body, env, memberSymbol.tpe.result, expectedBodyType, idSupply)
-        errors ++= bodyErrors
-        Some(InstanceMember(memberDecl.name, memberSymbol, allParams, typedBody)(memberDecl.source))
-    }
-    val instanceSymbol = instanceDef.map(_.symbol).getOrElse(
-      InstanceSymbol(instanceDecl.name, instanceDecl.typeParams, headType, givenParams.map(_.tpe), Map.empty)
-    )
-    (TopLevel.InstanceDecl(instanceSymbol, instanceDecl.typeParams, givenParams, typedMembers)(instanceDecl.source), errors.toList)
 
   private def typeExpr(
       expr: ast.Expr,
@@ -522,8 +280,8 @@ object TypeChecker:
       case ast.Expr.Lit(value) => synthLit(value, expr.source, env)
       case ast.Expr.Var(name) => synthVar(name, expr.source, env)
       case ast.Expr.Paren(inner) => synthParen(inner, expr.source, env, idSupply)
-      case ast.Expr.Call(callee, typeArgs, args, usingArgs) =>
-        synthCall(callee, typeArgs, args, usingArgs, expr.source, env, idSupply)
+      case ast.Expr.Call(callee, typeArgs, args) =>
+        synthCall(callee, typeArgs, args, expr.source, env, idSupply)
       case ast.Expr.Lambda(param, body) =>
         synthLambda(param, body, expr.source, env, idSupply)
       case ast.Expr.LetIn(name, isConstant, declaredTypeAst, valueExpr, bodyExpr) =>
@@ -551,8 +309,8 @@ object TypeChecker:
       case ast.Expr.Lit(value) => checkLit(value, expectedType, expr.source, env)
       case ast.Expr.Var(name) => checkVar(name, expectedType, expr.source, env)
       case ast.Expr.Paren(inner) => checkParen(inner, expectedType, expr.source, env, expectedReturn, idSupply)
-      case ast.Expr.Call(callee, typeArgs, args, usingArgs) =>
-        checkCall(callee, typeArgs, args, usingArgs, expectedType, expr.source, env, expectedReturn, idSupply)
+      case ast.Expr.Call(callee, typeArgs, args) =>
+        checkCall(callee, typeArgs, args, expectedType, expr.source, env, expectedReturn, idSupply)
       case ast.Expr.Lambda(param, body) =>
         checkLambda(param, body, expectedType, expr.source, env, expectedReturn, idSupply)
       case ast.Expr.LetIn(name, isConstant, declaredTypeAst, valueExpr, bodyExpr) =>
@@ -667,203 +425,87 @@ object TypeChecker:
       callee: ast.Expr,
       typeArgs: List[ast.Type],
       args: List[ast.Expr],
-      usingArgs: List[ast.Expr],
       source: ast.SourceRange,
       env: TypeEnv,
       idSupply: IdSupply
     ): (Expr, List[TypeError], TypeEnv) =
-    checkCall(callee, typeArgs, args, usingArgs, Type.Unknown, source, env, env.expectedReturn, idSupply)
+    checkCall(callee, typeArgs, args, Type.Unknown, source, env, env.expectedReturn, idSupply)
 
   // T-App-Check: Γ ⊢ f ⇒ T1 → T2  and  Γ ⊢ a ⇐ T1  and  T2 ≈ T  ⇒  Γ ⊢ f a ⇐ T
   private def checkCall(
       callee: ast.Expr,
       typeArgs: List[ast.Type],
       args: List[ast.Expr],
-      usingArgs: List[ast.Expr],
       expectedType: Type,
       source: ast.SourceRange,
       env: TypeEnv,
       expectedReturn: Type,
       idSupply: IdSupply
     ): (Expr, List[TypeError], TypeEnv) =
-    callee match
-      case ast.Expr.Var(name) if env.exports.memberIndex.contains(name) =>
-        typeClassMemberCall(name, typeArgs, args, usingArgs, expectedType, source, env, expectedReturn, idSupply)
+    val (typedCallee, calleeErrors, envAfterCallee) = synthesizeExpr(callee, env, idSupply)
+    typedCallee match
+      case Expr.Var(symbol, _) if symbol.name == "." && args.length == 2 =>
+        val (typedArgs, argsErrors, envAfterArgs) =
+          typeExprs(args, envAfterCallee, expectedReturn, None, idSupply)
+        val errors = calleeErrors ++ argsErrors :+ errorAt(callee.source, "Field access typing is not implemented")
+        (Expr.CallFun(typedCallee, typedArgs, Type.Unknown)(source), errors, envAfterArgs)
+      case Expr.Var(symbol: CtorSymbol, _) =>
+        val (typedExpr, ctorErrors, envAfterCtor) =
+          typeCtorCall(symbol, args, expectedType, source, envAfterCallee, expectedReturn, idSupply)
+        (typedExpr, calleeErrors ++ ctorErrors, envAfterCtor)
       case _ =>
-        val (typedCallee, calleeErrors, envAfterCallee) = synthesizeExpr(callee, env, idSupply)
-        typedCallee match
-          case Expr.Var(symbol, _) if symbol.name == "." && args.length == 2 =>
-            val (typedArgs, argsErrors, envAfterArgs) =
-              typeExprs(args, envAfterCallee, expectedReturn, None, idSupply)
-            val errors = calleeErrors ++ argsErrors :+ errorAt(callee.source, "Field access typing is not implemented")
-            (Expr.CallFun(typedCallee, typedArgs, Nil, Type.Unknown)(source), errors, envAfterArgs)
-          case Expr.Var(symbol: CtorSymbol, _) =>
-            val (typedExpr, ctorErrors, envAfterCtor) =
-              typeCtorCall(symbol, args, expectedType, source, envAfterCallee, expectedReturn, idSupply)
-            (typedExpr, calleeErrors ++ ctorErrors, envAfterCtor)
-          case _ =>
-            val maybeFunType = resolveFunctionType(typedCallee, envAfterCallee)
-            maybeFunType match
-              case Some((funType, typeParams, givenTypes)) =>
-                val errors = ListBuffer.empty[TypeError]
-                errors ++= calleeErrors
-                val (envAfterTypeParams, typeParamBindings, typeArgErrors) =
-                  instantiateTypeParams(typeParams, typeArgs, envAfterCallee, source)
-                errors ++= typeArgErrors
-                val instantiatedFunType: Type.Fun = instantiateType(funType, typeParamBindings) match
-                  case fun: Type.Fun => fun
-                  case _ => Type.Fun(Nil, Type.Unknown)
-                var currentEnv = envAfterTypeParams
-                var remainingParams = instantiatedFunType.params
-                val typedArgs = args.map { arg =>
-                  val expectedParamType =
-                    remainingParams.headOption
-                      .map(applySubstitutions(_, currentEnv))
-                      .getOrElse(Type.Unknown)
-                  val (typedArg, argErrors, updatedEnv) =
-                    checkExpr(arg, currentEnv, expectedReturn, expectedParamType, idSupply)
-                  errors ++= argErrors
-                  currentEnv = updatedEnv
-                  remainingParams = remainingParams.drop(1)
-                  typedArg
-                }
-                if args.length > instantiatedFunType.params.length then
-                  errors += errorAt(
-                    callee.source,
-                    s"Call expects at most ${instantiatedFunType.params.length} args, got ${args.length}"
-                  )
-                val resultAfterArgs =
-                  if remainingParams.nonEmpty then
-                    Type.Fun(remainingParams, instantiatedFunType.result)
-                  else instantiatedFunType.result
-                val instantiatedGivenTypes = givenTypes.map(tpe => instantiateType(tpe, typeParamBindings))
-                val (givenArgsResolved, givenErrors, envAfterGiven) =
-                  resolveGivenArguments(instantiatedGivenTypes, usingArgs, currentEnv, source, idSupply, Nil)
-                errors ++= givenErrors
-                val resultWithGivens = applySubstitutions(resultAfterArgs, envAfterGiven)
-                val (envAfterExpected, checkedType, expectedErrors) =
-                  ensureExpectedType(resultWithGivens, Some(expectedType), source, envAfterGiven)
-                errors ++= expectedErrors
-                (
-                  Expr.CallFun(typedCallee, typedArgs, givenArgsResolved, checkedType)(source),
-                  errors.toList,
-                  envAfterExpected
-                )
-              case None =>
-                val (typedArgs, argsErrors, envAfterArgs) = typeExprs(args, envAfterCallee, expectedReturn, None, idSupply)
-                val errors =
-                  calleeErrors ++ argsErrors :+ errorAt(
-                    callee.source,
-                    s"Call target is not a function: ${renderType(typedCallee.tpe)}"
-                  )
-                (Expr.CallFun(typedCallee, typedArgs, Nil, Type.Unknown)(source), errors, envAfterArgs)
+        val maybeFunType = resolveFunctionType(typedCallee, envAfterCallee)
+        maybeFunType match
+          case Some((funType, typeParams)) =>
+            val errors = ListBuffer.empty[TypeError]
+            errors ++= calleeErrors
+            val (envAfterTypeParams, typeParamBindings, typeArgErrors) =
+              instantiateTypeParams(typeParams, typeArgs, envAfterCallee, source)
+            errors ++= typeArgErrors
+            val instantiatedFunType: Type.Fun = instantiateType(funType, typeParamBindings) match
+              case fun: Type.Fun => fun
+              case _ => Type.Fun(Nil, Type.Unknown)
+            var currentEnv = envAfterTypeParams
+            var remainingParams = instantiatedFunType.params
+            val typedArgs = args.map { arg =>
+              val expectedParamType =
+                remainingParams.headOption
+                  .map(applySubstitutions(_, currentEnv))
+                  .getOrElse(Type.Unknown)
+              val (typedArg, argErrors, updatedEnv) =
+                checkExpr(arg, currentEnv, expectedReturn, expectedParamType, idSupply)
+              errors ++= argErrors
+              currentEnv = updatedEnv
+              remainingParams = remainingParams.drop(1)
+              typedArg
+            }
+            if args.length > instantiatedFunType.params.length then
+              errors += errorAt(
+                callee.source,
+                s"Call expects at most ${instantiatedFunType.params.length} args, got ${args.length}"
+              )
+            val resultAfterArgs =
+              if remainingParams.nonEmpty then
+                Type.Fun(remainingParams, instantiatedFunType.result)
+              else instantiatedFunType.result
+            val resultWithSubstitutions = applySubstitutions(resultAfterArgs, currentEnv)
+            val (envAfterExpected, checkedType, expectedErrors) =
+              ensureExpectedType(resultWithSubstitutions, Some(expectedType), source, currentEnv)
+            errors ++= expectedErrors
+            (
+              Expr.CallFun(typedCallee, typedArgs, checkedType)(source),
+              errors.toList,
+              envAfterExpected
+            )
+          case None =>
+            val (typedArgs, argsErrors, envAfterArgs) = typeExprs(args, envAfterCallee, expectedReturn, None, idSupply)
+            val errors =
+              calleeErrors ++ argsErrors :+ errorAt(
+                callee.source,
+                s"Call target is not a function: ${renderType(typedCallee.tpe)}"
+              )
+            (Expr.CallFun(typedCallee, typedArgs, Type.Unknown)(source), errors, envAfterArgs)
 
-  private def typeClassMemberCall(
-      name: String,
-      typeArgs: List[ast.Type],
-      args: List[ast.Expr],
-      usingArgs: List[ast.Expr],
-      expectedType: Type,
-      source: ast.SourceRange,
-      env: TypeEnv,
-      expectedReturn: Type,
-      idSupply: IdSupply
-    ): (Expr, List[TypeError], TypeEnv) =
-    val errors = ListBuffer.empty[TypeError]
-    if typeArgs.nonEmpty then
-      errors += errorAt(source, s"Type arguments are not supported for typeclass member calls: $name")
-    val candidates = env.exports.memberIndex.getOrElse(name, Nil).flatMap { tc =>
-      tc.members.find(_.name == name).map(member => (tc, member))
-    }
-    // Renders a typeclass goal with type parameter names for unresolved meta arguments.
-    def renderTypeClassGoal(tc: TypeClassDef, args: List[Type]): String =
-      if args.isEmpty then tc.name
-      else
-        val renderedArgs = args.zipAll(tc.typeParams, Type.Unknown, "").map {
-          case (Type.Meta(_), paramName) if paramName.nonEmpty => paramName
-          case (arg, _) => renderType(arg)
-        }
-        s"${tc.name}[${renderedArgs.mkString(", ")}]"
-    val failedCandidateErrors = ListBuffer.empty[List[TypeError]]
-    val typedCandidates = candidates.flatMap { case (tc, member) =>
-      val (envAfterTypeParams, typeParamBindings, typeArgErrors) =
-        instantiateTypeParams(tc.typeParams ++ member.typeParams, Nil, env, source)
-      val candidateErrors = ListBuffer.empty[TypeError]
-      candidateErrors ++= errors ++ typeArgErrors
-      val instantiatedParamTypes = member.params.map(param => instantiateType(param, typeParamBindings))
-      var currentEnv = envAfterTypeParams
-      val typedArgs = args.zipWithIndex.map { case (arg, index) =>
-        val expectedParamType =
-          if index < instantiatedParamTypes.length then
-            applySubstitutions(instantiatedParamTypes(index), currentEnv)
-          else Type.Unknown
-        val (typedArg, argErrors, updatedEnv) =
-          checkExpr(arg, currentEnv, expectedReturn, expectedParamType, idSupply)
-        candidateErrors ++= argErrors
-        currentEnv = updatedEnv
-        typedArg
-      }
-      if args.length > instantiatedParamTypes.length then
-        candidateErrors += errorAt(source, s"Call expects at most ${instantiatedParamTypes.length} args, got ${args.length}")
-      val remainingParamTypes = instantiatedParamTypes.drop(args.length)
-      val baseResultType = instantiateType(member.result, typeParamBindings)
-      val resultAfterArgs =
-        if remainingParamTypes.nonEmpty then Type.Fun(remainingParamTypes, baseResultType) else baseResultType
-      val (envAfterResult, unifiedResult, resultErrors) =
-        if expectedType != Type.Unknown then
-          unifyTypes(resultAfterArgs, expectedType, currentEnv, source, "typeclass member result")
-        else
-          (currentEnv, resultAfterArgs, Nil)
-      candidateErrors ++= resultErrors
-      val typeClassArgs = tc.typeParams.map { param =>
-        applySubstitutions(typeParamBindings.getOrElse(param, Type.Unknown), currentEnv)
-      }
-      val goal = if typeClassArgs.isEmpty then Type.Name(tc.name) else Type.App(Type.Name(tc.name), typeClassArgs)
-      val preferGiven =
-        usingArgs.isEmpty && typedArgs.exists { arg =>
-          arg.tpe match
-            case Type.Name(paramName) if env.typeParams.contains(paramName) => true
-            case _ => false
-        }
-      val (instanceArgs, instanceErrors, envAfterInstance) =
-        if preferGiven then
-          val matchingGivens = env.givens.filter(g => isCompatible(g.tpe, goal))
-          matchingGivens match
-            case param :: Nil => (List(Expr.Var(param, param.tpe)(source)), Nil, envAfterResult)
-            case _ :: _ => (Nil, List(errorAt(source, s"Ambiguous given for ${renderTypeClassGoal(tc, typeClassArgs)}")), envAfterResult)
-            case Nil => resolveGivenArguments(List(goal), usingArgs, envAfterResult, source, idSupply, Nil)
-        else
-          resolveGivenArguments(List(goal), usingArgs, envAfterResult, source, idSupply, Nil)
-      candidateErrors ++= instanceErrors
-      instanceArgs.headOption match
-        case Some(instanceExpr) =>
-          val checkedType = applySubstitutions(unifiedResult, envAfterInstance)
-          val expr = Expr.CallTypeClassMember(instanceExpr, name, typedArgs, checkedType)(source)
-          Some((expr, candidateErrors.toList, envAfterInstance))
-        case None =>
-          failedCandidateErrors += candidateErrors.toList
-          None
-    }
-    typedCandidates.distinct match
-      case Nil =>
-        val missingSymbol = ErrorSymbol(name, Type.Unknown)
-        val baseErrors =
-          if failedCandidateErrors.nonEmpty then
-            failedCandidateErrors.flatten.toList
-          else if candidates.isEmpty || errors.isEmpty then
-            errors.toList :+ errorAt(source, s"No typeclass member found: $name")
-          else
-            errors.toList
-        (Expr.Var(missingSymbol, Type.Unknown)(source), baseErrors, env)
-      case (expr, candidateErrors, candidateEnv) :: Nil =>
-        (expr, candidateErrors, candidateEnv)
-      case _ =>
-        val missingSymbol = ErrorSymbol(name, Type.Unknown)
-        (
-          Expr.Var(missingSymbol, Type.Unknown)(source),
-          errors.toList :+ errorAt(source, s"Ambiguous typeclass member call: $name"),
-          env
-        )
 
   // Instantiates type parameters with explicit arguments or fresh meta variables.
   private def instantiateTypeParams(
@@ -888,154 +530,6 @@ object TypeChecker:
         (nextEnv, acc + (name -> meta))
       }
       (updatedEnv, bindings, Nil)
-
-  private def resolveGivenArguments(
-      givenTypes: List[Type],
-      usingArgs: List[ast.Expr],
-      env: TypeEnv,
-      source: ast.SourceRange,
-      idSupply: IdSupply,
-      stack: List[Type]
-    ): (List[Expr], List[TypeError], TypeEnv) =
-    val errors = ListBuffer.empty[TypeError]
-    if usingArgs.nonEmpty && usingArgs.length != givenTypes.length then
-      errors += errorAt(source, s"Expected ${givenTypes.length} using arguments, got ${usingArgs.length}")
-    var currentEnv = env
-    val resolved = givenTypes.zipWithIndex.flatMap { case (givenType, index) =>
-      val instantiatedGoal = applySubstitutions(givenType, currentEnv)
-      val (exprOpt, exprErrors, updatedEnv) =
-        if usingArgs.nonEmpty && index < usingArgs.length then
-          resolveUsingExpr(usingArgs(index), instantiatedGoal, currentEnv, source, idSupply)
-        else
-          resolveInstance(instantiatedGoal, currentEnv, source, idSupply, stack, None)
-      errors ++= exprErrors
-      currentEnv = updatedEnv
-      exprOpt
-    }
-    (resolved, errors.toList, currentEnv)
-
-  private def resolveUsingExpr(
-      usingExpr: ast.Expr,
-      goal: Type,
-      env: TypeEnv,
-      source: ast.SourceRange,
-      idSupply: IdSupply
-    ): (Option[Expr], List[TypeError], TypeEnv) =
-    usingExpr match
-      case ast.Expr.Var(name) =>
-        resolveSymbol(name, env) match
-          case Some(instanceSymbol: InstanceSymbol) =>
-            env.exports.instances.get(instanceSymbol.name) match
-              case Some(instance) => resolveNamedInstance(instance, goal, env, source, idSupply)
-              case None => (None, List(errorAt(source, s"Unknown using argument: $name")), env)
-          case _ =>
-            val (typedExpr, exprErrors, updatedEnv) = checkExpr(usingExpr, env, env.expectedReturn, goal, idSupply)
-            (Some(typedExpr), exprErrors, updatedEnv)
-      case _ =>
-        val (typedExpr, exprErrors, updatedEnv) = checkExpr(usingExpr, env, env.expectedReturn, goal, idSupply)
-        (Some(typedExpr), exprErrors, updatedEnv)
-
-  private def resolveNamedInstance(
-      instance: InstanceDef,
-      goal: Type,
-      env: TypeEnv,
-      source: ast.SourceRange,
-      idSupply: IdSupply
-    ): (Option[Expr], List[TypeError], TypeEnv) =
-    val (bindingsOpt, matchErrors) = matchInstance(instance, goal, source)
-    bindingsOpt match
-      case None => (None, matchErrors, env)
-      case Some((bindings, instantiatedHead)) =>
-        val prunedBindings = dropSelfBindings(bindings)
-        val (givenArgs, givenErrors, updatedEnv) =
-          resolveGivenArguments(
-            instance.givenTypes.map(tpe => instantiateType(tpe, prunedBindings)),
-            Nil,
-            env,
-            source,
-            idSupply,
-            goal :: Nil
-          )
-        val expr = Expr.InstanceValue(instance.symbol, givenArgs, instantiatedHead)(source)
-        (Some(expr), matchErrors ++ givenErrors, updatedEnv)
-
-  private def resolveInstance(
-      goal: Type,
-      env: TypeEnv,
-      source: ast.SourceRange,
-      idSupply: IdSupply,
-      stack: List[Type],
-      filter: Option[Type]
-    ): (Option[Expr], List[TypeError], TypeEnv) =
-    if stack.exists(t => t == goal) then
-      (None, List(errorAt(source, s"Cyclic instance resolution for ${renderType(goal)}")), env)
-    else
-      val errors = ListBuffer.empty[TypeError]
-      val givenMatches = env.givens.filter(g => isCompatible(g.tpe, goal))
-      val filteredGiven = filter match
-        case Some(f) => givenMatches.filter(g => isCompatible(g.tpe, f))
-        case None => givenMatches
-      filteredGiven match
-        case param :: Nil =>
-          return (Some(Expr.Var(param, param.tpe)(source)), Nil, env)
-        case _ :: _ =>
-          return (None, List(errorAt(source, s"Ambiguous given for ${renderType(goal)}")), env)
-        case Nil => ()
-      val instanceCandidates = env.exports.instances.values.toList.filter { inst =>
-        filter.forall(f => isCompatible(inst.head, f)) && matchInstanceHead(inst, goal)
-      }
-      val filteredCandidates =
-        if instanceCandidates.nonEmpty then
-          val minTypeParams = instanceCandidates.map(_.typeParams.length).min
-          instanceCandidates.filter(_.typeParams.length == minTypeParams)
-        else
-          instanceCandidates
-      val resolved = filteredCandidates.flatMap { inst =>
-        val (bindingsOpt, matchErrors) = matchInstance(inst, goal, source)
-        bindingsOpt.flatMap { case (bindings, instantiatedHead) =>
-          val prunedBindings = dropSelfBindings(bindings)
-          val (givenArgs, givenErrors, updatedEnv) =
-            resolveGivenArguments(
-              inst.givenTypes.map(tpe => instantiateType(tpe, prunedBindings)),
-              Nil,
-              env,
-              source,
-              idSupply,
-              goal :: stack
-            )
-          if givenErrors.nonEmpty then
-            errors ++= matchErrors ++ givenErrors
-            None
-          else
-            Some((Expr.InstanceValue(inst.symbol, givenArgs, instantiatedHead)(source), matchErrors, updatedEnv))
-        }
-      }
-      resolved match
-        case (expr, exprErrors, updatedEnv) :: Nil =>
-          errors ++= exprErrors
-          (Some(expr), errors.toList, updatedEnv)
-        case Nil =>
-          (None, List(errorAt(source, s"No instance found for ${renderType(goal)}")), env)
-        case _ =>
-          throw Exception("Unreachable code: multiple resolved instances should have been caught earlier")
-          //(None, List(errorAt(source, s"Ambiguous instance for ${renderType(goal)}. Possible options:\n${resolved.map(_._1).map(r => s"- ${r._1.name}").mkString("\n")}")))
-
-  private def matchInstanceHead(instance: InstanceDef, goal: Type): Boolean =
-    val typeParamBindings = collectTypeParamBindings(instance.head, goal, instance.typeParams.toSet, Map.empty)
-    val instantiatedHead = instantiateType(instance.head, typeParamBindings)
-    isCompatible(instantiatedHead, goal)
-
-  private def matchInstance(
-      instance: InstanceDef,
-      goal: Type,
-      source: ast.SourceRange
-    ): (Option[(Map[String, Type], Type)], List[TypeError]) =
-    val typeParamBindings = collectTypeParamBindings(instance.head, goal, instance.typeParams.toSet, Map.empty)
-    val instantiatedHead = instantiateType(instance.head, typeParamBindings)
-    if isCompatible(instantiatedHead, goal) then
-      (Some(typeParamBindings -> instantiatedHead), Nil)
-    else
-      (None, List(errorAt(source, s"Instance ${instance.symbol.name} does not match ${renderType(goal)}")))
 
   private def typeCtorCall(
       ctor: CtorSymbol,
@@ -1372,7 +866,7 @@ object TypeChecker:
           env.exports.functions.get(elimName) match
             case Some(elimSymbol) =>
               val elimVar = Expr.Var(elimSymbol, elimSymbol.tpe)(source)
-              Expr.CallFun(elimVar, scrutinee :: handlers, Nil, resultType)(source)
+              Expr.CallFun(elimVar, scrutinee :: handlers, resultType)(source)
             case None =>
               errors += errorAt(source, s"Unknown eliminator function: $elimName")
               Expr.Lit(ast.Literal.UnitLit()(source), baseTypes("unit"))(source)
@@ -1681,18 +1175,6 @@ object TypeChecker:
       case Type.Meta(id) => Type.Meta(id)
       case Type.Unknown => Type.Unknown
 
-  private def dropSelfBindings(bindings: Map[String, Type]): Map[String, Type] =
-    bindings.filterNot { case (name, tpe) => containsTypeParam(tpe, name) }
-
-  private def containsTypeParam(tpe: Type, name: String): Boolean =
-    tpe match
-      case Type.Name(value) => value == name
-      case Type.App(base, args) => containsTypeParam(base, name) || args.exists(containsTypeParam(_, name))
-      case Type.Fun(params, result) =>
-        params.exists(containsTypeParam(_, name)) || containsTypeParam(result, name)
-      case Type.Meta(_) => false
-      case Type.Unknown => false
-
   private def ensureExpectedType(
       actualType: Type,
       expectedType: Option[Type],
@@ -1753,7 +1235,9 @@ object TypeChecker:
     ): (TypeEnv, Type, List[TypeError]) =
     val resolvedLeft = applySubstitutions(left, env)
     val resolvedRight = applySubstitutions(right, env)
-    (resolvedLeft, resolvedRight) match
+    val normalizedLeft = normalizeFunType(resolvedLeft)
+    val normalizedRight = normalizeFunType(resolvedRight)
+    (normalizedLeft, normalizedRight) match
       case (Type.Unknown, other) => (env, other, Nil)
       case (other, Type.Unknown) => (env, other, Nil)
       case (Type.Meta(id), other) =>
@@ -1803,18 +1287,36 @@ object TypeChecker:
         (
           env,
           Type.Unknown,
-          List(errorAt(source, s"Type mismatch in $context: ${renderType(resolvedLeft)} vs ${renderType(resolvedRight)}"))
+          List(errorAt(source, s"Type mismatch in $context: ${renderType(normalizedLeft)} vs ${renderType(normalizedRight)}"))
         )
 
-  private def resolveFunctionType(callee: Expr, env: TypeEnv): Option[(Type.Fun, List[String], List[Type])] =
+  // Flattens nested function types into a single parameter list.
+  private def normalizeFunType(tpe: Type): Type =
+    tpe match
+      case Type.Fun(params, result) =>
+        result match
+          case inner: Type.Fun =>
+            val normalizedInner: Type.Fun = normalizeFunType(inner) match
+              case fun: Type.Fun => fun
+              case other => Type.Fun(Nil, other)
+            Type.Fun(params ++ normalizedInner.params, normalizedInner.result)
+          case _ =>
+            Type.Fun(params, result)
+      case other => other
+
+  // Resolves the function type and type parameters for a callable expression.
+  private def resolveFunctionType(callee: Expr, env: TypeEnv): Option[(Type.Fun, List[String])] =
     callee match
       case Expr.Var(symbol, _) =>
         symbol match
-          case fun: FunctionSymbol => Some((fun.tpe, fun.typeParams, fun.givenParams))
-          case _ => None
+          case fun: FunctionSymbol => Some((fun.tpe, fun.typeParams))
+          case _ =>
+            applySubstitutions(symbol.tpe, env) match
+              case tpe: Type.Fun => Some((tpe, Nil))
+              case _ => None
       case _ =>
         applySubstitutions(callee.tpe, env) match
-          case tpe: Type.Fun => Some((tpe, Nil, Nil))
+          case tpe: Type.Fun => Some((tpe, Nil))
           case _ => None
 
   // Builds the implicit eliminator name for a data type.
@@ -1822,7 +1324,9 @@ object TypeChecker:
     s"${typeName}_elim"
 
   private def isCompatible(expected: Type, actual: Type): Boolean =
-    (expected, actual) match
+    val normalizedExpected = normalizeFunType(expected)
+    val normalizedActual = normalizeFunType(actual)
+    (normalizedExpected, normalizedActual) match
       case (Type.Unknown, _) => true
       case (_, Type.Unknown) => true
       case (Type.Meta(_), _) => true
@@ -1853,7 +1357,6 @@ object TypeChecker:
   private def resolveSymbol(name: String, env: TypeEnv): Option[Symbol] =
     env.resolveLocal(name)
       .orElse(baseValues.get(name))
-      .orElse(env.exports.instances.get(name).map(_.symbol))
       .orElse(env.exports.functions.get(name))
       .orElse(env.exports.ctors.get(name))
 
@@ -1874,38 +1377,26 @@ object TypeChecker:
         Type.Unknown
       }
 
+  // Converts an AST type into a typed representation with flattened function parameters.
   private def fromAstType(tpe: ast.Type): Type =
     tpe match
       case ast.Type.Name(value) => Type.Name(value)
       case ast.Type.Paren(inner) => fromAstType(inner)
       case ast.Type.App(base, args) => Type.App(fromAstType(base), args.map(fromAstType))
+      case ast.Type.Fun(param, result) =>
+        normalizeFunType(Type.Fun(List(fromAstType(param)), fromAstType(result)))
 
   private def validateAstType(tpe: ast.Type, typeParams: Set[String], exports: ExportEnv): List[TypeError] =
     tpe match
       case ast.Type.Name(value) =>
-        if typeParams.contains(value) || builtinTypeNames.contains(value) || exports.types.contains(value) || exports.typeClasses.contains(value) then Nil
+        if typeParams.contains(value) || builtinTypeNames.contains(value) || exports.types.contains(value) then Nil
         else List(errorAt(tpe.source, s"Unknown type name: $value"))
       case ast.Type.App(base, args) =>
         validateAstType(base, typeParams, exports) ++ args.flatMap(arg => validateAstType(arg, typeParams, exports))
       case ast.Type.Paren(inner) =>
         validateAstType(inner, typeParams, exports)
-
-  private def validateTypedType(
-      tpe: Type,
-      typeParams: Set[String],
-      exports: ExportEnv,
-      source: ast.SourceRange
-    ): List[TypeError] =
-    tpe match
-      case Type.Name(value) =>
-        if typeParams.contains(value) || builtinTypeNames.contains(value) || exports.types.contains(value) || exports.typeClasses.contains(value) then Nil
-        else List(errorAt(source, s"Unknown type name: $value"))
-      case Type.App(base, args) =>
-        validateTypedType(base, typeParams, exports, source) ++ args.flatMap(arg => validateTypedType(arg, typeParams, exports, source))
-      case Type.Fun(params, result) =>
-        params.flatMap(param => validateTypedType(param, typeParams, exports, source)) ++ validateTypedType(result, typeParams, exports, source)
-      case Type.Meta(_) => Nil
-      case Type.Unknown => Nil
+      case ast.Type.Fun(param, result) =>
+        validateAstType(param, typeParams, exports) ++ validateAstType(result, typeParams, exports)
 
   // Resolves literal types based on the standard library.
   private def literalType(

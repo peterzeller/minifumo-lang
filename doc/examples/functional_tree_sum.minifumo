@@ -8,6 +8,6 @@ fun sum(tree Tree) Int
             sum(l) + sum(r)
 
 fun main() unit
-    let tree = Node(Leaf(1), Node(Leaf(2), Leaf(3))) in println(sum(tree))
+    let tree = Node(Leaf(1), Node(Leaf(2), Leaf(3))) in println(sum(tree), showInt())
 
 // Output: 6

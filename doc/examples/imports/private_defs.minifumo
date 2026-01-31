@@ -3,5 +3,4 @@ data Hidden = Hidden
 fun secret() Int
     1
 
-typeclass HiddenClass[T]
-    fun hidden(value T) Int
+data HiddenClass[T] = HiddenClass(hidden T -> Int)

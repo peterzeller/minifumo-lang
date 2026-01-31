@@ -14,15 +14,11 @@ object Interpreter:
     case SetVal(value: Set[Value])
     case MapVal(value: Map[Value, Value])
     case AdtVal(name: String, args: List[Value])
-    // Maps member names to their implementation plus any captured given arguments.
-    case InstanceVal(name: String, members: Map[String, InstanceMemberValue])
     case UnitVal
     case FuncVal(
         name: String,
-        explicitArity: Int,
-        givenArity: Int,
-        capturedExplicit: List[Value],
-        pendingGiven: List[Value],
+        arity: Int,
+        captured: List[Value],
         fn: (List[Value], Env) => (Value, Env)
       )
     case UndefinedVal
@@ -32,14 +28,10 @@ object Interpreter:
 
   final case class FunDef(params: List[ParamSymbol], body: Expr)
 
-  // Captured holds resolved given arguments for the instance member.
-  final case class InstanceMemberValue(symbol: FunctionSymbol, captured: List[Value])
-
   final case class Env(
       scopes: List[Map[TermSymbol, Value]],
       functions: Map[FunctionSymbol, FunDef],
       ctors: Map[CtorSymbol, Int],
-      instances: Map[InstanceSymbol, TopLevel.InstanceDecl],
       eliminators: Map[String, List[CtorSymbol]]
     ):
     def resolve(symbol: TermSymbol): Option[Value] =
@@ -83,7 +75,7 @@ object Interpreter:
 
   def evalProg(program: Program, entryName: String): Value =
     val env = buildEnv(program)
-    val entrySymbol = program.items.collectFirst { case TopLevel.FunDecl(symbol, _, _, _, _) if symbol.name == entryName => symbol }
+    val entrySymbol = program.items.collectFirst { case TopLevel.FunDecl(symbol, _, _, _) if symbol.name == entryName => symbol }
       .getOrElse(throw new IllegalArgumentException(s"Unknown function: $entryName"))
     val (value, _) = evalFunc(entrySymbol, Nil, env)
     value
@@ -130,34 +122,21 @@ object Interpreter:
         (literalValue(value), env)
       case Expr.Var(symbol, _) =>
         val value = symbol match
-          case instance: InstanceSymbol =>
-            env.instances.get(instance) match
-              case Some(instanceDecl) if instance.givenParams.isEmpty =>
-                val members = instanceDecl.members.map { member =>
-                  member.memberName -> InstanceMemberValue(member.symbol, Nil)
-                }.toMap
-                Value.InstanceVal(instanceDecl.symbol.name, members)
-              case Some(_) =>
-                throw new IllegalArgumentException(s"Instance ${instance.name} requires given arguments")
-              case None =>
-                throw new IllegalArgumentException(s"Unknown instance: ${instance.name}")
           case term: TermSymbol =>
             env.resolve(term).getOrElse(throw new IllegalArgumentException(s"Unknown variable: ${term.name}"))
           case fun: FunctionSymbol =>
             builtins.get(fun.name) match
               case Some(BuiltinDef(arity, builtin)) =>
                 // Override function with builtin implementation
-                Value.FuncVal(fun.name, arity, 0, Nil, Nil, builtin)
+                Value.FuncVal(fun.name, arity, Nil, builtin)
               case None =>
                 env.eliminators.get(fun.name) match
                   case Some(ctors) =>
-                    Value.FuncVal(fun.name, ctors.length + 1, 0, Nil, Nil, buildEliminator(ctors))
+                    Value.FuncVal(fun.name, ctors.length + 1, Nil, buildEliminator(ctors))
                   case None =>
                     Value.FuncVal(
                       fun.name,
                       fun.tpe.params.length,
-                      fun.givenParams.length,
-                      Nil,
                       Nil,
                       (args, env) => evalFunc(fun, args, env)
                     )
@@ -167,8 +146,6 @@ object Interpreter:
               Value.FuncVal(
                 ctor.name,
                 ctor.arity,
-                0,
-                Nil,
                 Nil,
                 (args: List[Value], env: Env) => evalFunc(ctor, args, env)
               )
@@ -177,11 +154,10 @@ object Interpreter:
         (value, env)
       case Expr.Paren(inner, _) =>
         evalExpr(inner, env)
-      case Expr.CallFun(callee, args, givenArgs, _) =>
+      case Expr.CallFun(callee, args, _) =>
         val (calleeValue, envAfterCallee) = evalExpr(callee, env)
         val (argValues, envAfterArgs) = evalArgs(args, envAfterCallee)
-        val (givenValues, envAfterGivens) = evalArgs(givenArgs, envAfterArgs)
-        applyFunctionValue(calleeValue, argValues, givenValues, envAfterGivens)
+        applyFunctionValue(calleeValue, argValues, envAfterArgs)
       case Expr.CallCtor(symbol, args, _) =>
         val (argValues, envAfterArgs) = evalArgs(args, env)
         if argValues.length > symbol.arity then
@@ -198,51 +174,7 @@ object Interpreter:
                 s"Constructor ${symbol.name} expects ${symbol.arity} args, got ${allArgs.length}"
               )
             (Value.AdtVal(symbol.name, allArgs), env)
-          (Value.FuncVal(symbol.name, remaining, 0, argValues, Nil, fn), envAfterArgs)
-      case Expr.InstanceValue(symbol, givenArgs, _) =>
-        env.instances.get(symbol) match
-          case Some(instanceDecl) =>
-            val (givenValues, envAfterGivens) = evalArgs(givenArgs, env)
-            val members = instanceDecl.members.map { member =>
-              member.memberName -> InstanceMemberValue(member.symbol, givenValues)
-            }.toMap
-            (Value.InstanceVal(instanceDecl.symbol.name, members), envAfterGivens)
-          case None =>
-            throw new IllegalArgumentException(s"Unknown instance: ${symbol.name}")
-      case Expr.CallTypeClassMember(instanceExpr, memberName, args, _) =>
-        val (instanceValue, envAfterInstance) = evalExpr(instanceExpr, env)
-        val (argValues, envAfterArgs) = evalArgs(args, envAfterInstance)
-        instanceValue match
-          case Value.InstanceVal(_, members) =>
-            members.get(memberName) match
-              case Some(InstanceMemberValue(memberSymbol, captured)) =>
-                val expectedArity = memberSymbol.tpe.params.length
-                val givenCount = captured.length
-                val explicitCount = expectedArity - givenCount
-                if explicitCount < 0 then
-                  throw new IllegalArgumentException(
-                    s"Typeclass member ${memberSymbol.name} expects $expectedArity args, got ${argValues.length}"
-                  )
-                if argValues.length > explicitCount then
-                  throw new IllegalArgumentException(
-                    s"Typeclass member ${memberSymbol.name} expects at most $explicitCount explicit args, got ${argValues.length}"
-                  )
-                if argValues.length == explicitCount then
-                  evalFunc(memberSymbol, argValues ++ captured, envAfterArgs)
-                else
-                  val remaining = explicitCount - argValues.length
-                  val fn = (moreArgs: List[Value], env: Env) =>
-                    val combinedArgs = argValues ++ moreArgs ++ captured
-                    if combinedArgs.length != expectedArity then
-                      throw new IllegalArgumentException(
-                        s"Typeclass member ${memberSymbol.name} expects $expectedArity args, got ${combinedArgs.length}"
-                      )
-                    evalFunc(memberSymbol, combinedArgs, env)
-                  (Value.FuncVal(memberSymbol.name, remaining, 0, Nil, Nil, fn), envAfterArgs)
-              case None =>
-                throw new IllegalArgumentException(s"Unknown instance member: $memberName")
-          case other =>
-            throw new IllegalArgumentException(s"Expected typeclass instance, got: $other")
+          (Value.FuncVal(symbol.name, remaining, argValues, fn), envAfterArgs)
       case Expr.Lambda(param, body, _) =>
         val capturedEnv = env
         val fn = (args: List[Value], _: Env) =>
@@ -253,7 +185,7 @@ object Interpreter:
               (result, envAfter.popScope)
             case other =>
               throw new IllegalArgumentException(s"Lambda expects 1 arg, got ${other.length}")
-        (Value.FuncVal("<lambda>", 1, 0, Nil, Nil, fn), env)
+        (Value.FuncVal("<lambda>", 1, Nil, fn), env)
       case Expr.LetIn(symbol, _, _, valueExpr, bodyExpr, _) =>
         val (value, envAfterValue) = evalExpr(valueExpr, env)
         val envWithBinding = envAfterValue.pushScope(Map(symbol -> value))
@@ -275,56 +207,37 @@ object Interpreter:
     }
     (values, currentEnv)
 
-  // Applies a curried function value to explicit and given arguments in order.
+  // Applies a curried function value to explicit arguments in order.
   private def applyFunctionValue(
       value: Value,
       explicitArgs: List[Value],
-      givenArgs: List[Value],
       env: Env
     ): (Value, Env) =
     value match
-      case Value.FuncVal(_, 0, 0, captured, pending, fn) if explicitArgs.isEmpty && givenArgs.isEmpty =>
-        fn(captured ++ pending, env)
+      case Value.FuncVal(_, 0, captured, fn) if explicitArgs.isEmpty =>
+        fn(captured, env)
       case _ =>
         val (afterExplicit, envAfterExplicit) =
           explicitArgs.foldLeft((value, env)) { case ((currentValue, currentEnv), arg) =>
             applyExplicitArg(currentValue, arg, currentEnv)
           }
-        val (afterGivenValue, envAfterGiven) =
-          givenArgs.foldLeft((afterExplicit, envAfterExplicit)) { case ((currentValue, currentEnv), arg) =>
-            applyGivenArg(currentValue, arg, currentEnv)
-          }
-        (afterGivenValue, envAfterGiven) match
-          case (Value.FuncVal(_, 0, 0, captured, pending, fn), envAfter) if captured.nonEmpty || pending.nonEmpty =>
-            fn(captured ++ pending, envAfter)
-          case other => other
+        afterExplicit match
+          case Value.FuncVal(_, 0, captured, fn) if captured.nonEmpty =>
+            fn(captured, envAfterExplicit)
+          case _ =>
+            (afterExplicit, envAfterExplicit)
 
   // Applies an explicit argument to a function value.
   private def applyExplicitArg(value: Value, arg: Value, env: Env): (Value, Env) =
     value match
-      case Value.FuncVal(name, explicitArity, givenArity, capturedExplicit, pendingGiven, fn) =>
-        if explicitArity <= 0 then
+      case Value.FuncVal(name, arity, captured, fn) =>
+        if arity <= 0 then
           throw new IllegalArgumentException(s"Function $name expects no more explicit args")
-        val updatedCaptured = capturedExplicit :+ arg
-        val remaining = explicitArity - 1
-        val updatedValue = Value.FuncVal(name, remaining, givenArity, updatedCaptured, pendingGiven, fn)
-        if remaining == 0 && pendingGiven.length == givenArity then
-          fn(updatedCaptured ++ pendingGiven, env)
-        else
-          (updatedValue, env)
-      case other =>
-        throw new IllegalArgumentException(s"Call target must be a function, got: $other")
-
-  // Applies a given argument to a function value.
-  private def applyGivenArg(value: Value, arg: Value, env: Env): (Value, Env) =
-    value match
-      case Value.FuncVal(name, explicitArity, givenArity, capturedExplicit, pendingGiven, fn) =>
-        if givenArity <= pendingGiven.length then
-          throw new IllegalArgumentException(s"Function $name expects no more given args")
-        val updatedPending = pendingGiven :+ arg
-        val updatedValue = Value.FuncVal(name, explicitArity, givenArity, capturedExplicit, updatedPending, fn)
-        if explicitArity == 0 && updatedPending.length == givenArity then
-          fn(capturedExplicit ++ updatedPending, env)
+        val updatedCaptured = captured :+ arg
+        val remaining = arity - 1
+        val updatedValue = Value.FuncVal(name, remaining, updatedCaptured, fn)
+        if remaining == 0 then
+          fn(updatedCaptured, env)
         else
           (updatedValue, env)
       case other =>
@@ -346,7 +259,7 @@ object Interpreter:
             throw new IllegalArgumentException(s"Unknown constructor in eliminator: $ctorName")
           val handler = handlers(index)
           val argsToApply = if ctorArgs.isEmpty then List(Value.UnitVal) else ctorArgs
-          applyFunctionValue(handler, argsToApply, Nil, env)
+          applyFunctionValue(handler, argsToApply, env)
         case other =>
           throw new IllegalArgumentException(s"Eliminator expects an ADT value, got: $other")
 
@@ -357,7 +270,6 @@ object Interpreter:
   private def buildEnv(program: Program): Env =
     var functions = Map.empty[FunctionSymbol, FunDef]
     var ctors = Map.empty[CtorSymbol, Int]
-    var instances = Map.empty[InstanceSymbol, TopLevel.InstanceDecl]
     var eliminators = Map.empty[String, List[CtorSymbol]]
     program.items.foreach {
           case TopLevel.DataDecl(typeName, _, constructors) =>
@@ -366,17 +278,10 @@ object Interpreter:
             }
             val ctorList = constructors.map(_.symbol)
             eliminators = eliminators + (buildEliminatorName(typeName) -> ctorList)
-          case TopLevel.FunDecl(symbol, _, params, givenParams, body) =>
-            functions = functions + (symbol -> FunDef(params ++ givenParams, body))
-          case instanceDecl: TopLevel.InstanceDecl =>
-            instances = instances + (instanceDecl.symbol -> instanceDecl)
-            instanceDecl.members.foreach { member =>
-              functions = functions + (member.symbol -> FunDef(member.params, member.body))
-            }
-          case _: TopLevel.TypeClassDecl =>
-            ()
+          case TopLevel.FunDecl(symbol, _, params, body) =>
+            functions = functions + (symbol -> FunDef(params, body))
         }
-    Env(List(Map.empty), functions, ctors, instances, eliminators)
+    Env(List(Map.empty), functions, ctors, eliminators)
 
   // Wraps a boolean value as a Bool constructor value.
   private def boolToValue(value: Boolean): Value =
@@ -482,10 +387,10 @@ object Interpreter:
       "printlnString" -> BuiltinDef(1, builtinPrintln),
       "natToString" -> BuiltinDef(1, builtinNatToString),
       "intToString" -> BuiltinDef(1, builtinIntToString),
-      "opPlusInt.opPlus" -> BuiltinDef(2, builtinIntAdd),
-      "opMinusInt.opMinus" -> BuiltinDef(2, builtinIntSub),
-      "opLtInt.opLt" -> BuiltinDef(2, builtinIntLt),
-      "opLeInt.opLe" -> BuiltinDef(2, builtinIntLe)
+      "opPlus" -> BuiltinDef(2, builtinIntAdd),
+      "opMinus" -> BuiltinDef(2, builtinIntSub),
+      "opLt" -> BuiltinDef(2, builtinIntLt),
+      "opLe" -> BuiltinDef(2, builtinIntLe)
     )
 
   private def builtinPrintln(args: List[Value], env: Env): (Value, Env) =
@@ -524,9 +429,9 @@ object Interpreter:
       case List(left, right) =>
         (valueToInt(left), valueToInt(right)) match
           case (Some(a), Some(b)) => (intToValue(a + b), env)
-          case _ => throw new IllegalArgumentException(s"opPlusInt.opPlus expects Int args, got: $left, $right")
+          case _ => throw new IllegalArgumentException(s"opPlus expects Int args, got: $left, $right")
       case other =>
-        throw new IllegalArgumentException(s"opPlusInt.opPlus expects 2 args, got: $other")
+        throw new IllegalArgumentException(s"opPlus expects 2 args, got: $other")
 
   // Subtracts two Int values using host arithmetic.
   private def builtinIntSub(args: List[Value], env: Env): (Value, Env) =
@@ -534,9 +439,9 @@ object Interpreter:
       case List(left, right) =>
         (valueToInt(left), valueToInt(right)) match
           case (Some(a), Some(b)) => (intToValue(a - b), env)
-          case _ => throw new IllegalArgumentException(s"opMinusInt.opMinus expects Int args, got: $left, $right")
+          case _ => throw new IllegalArgumentException(s"opMinus expects Int args, got: $left, $right")
       case other =>
-        throw new IllegalArgumentException(s"opMinusInt.opMinus expects 2 args, got: $other")
+        throw new IllegalArgumentException(s"opMinus expects 2 args, got: $other")
 
   // Compares two Int values for strictly-less-than.
   private def builtinIntLt(args: List[Value], env: Env): (Value, Env) =
@@ -544,9 +449,9 @@ object Interpreter:
       case List(left, right) =>
         (valueToInt(left), valueToInt(right)) match
           case (Some(a), Some(b)) => (boolToValue(a < b), env)
-          case _ => throw new IllegalArgumentException(s"opLtInt.opLt expects Int args, got: $left, $right")
+          case _ => throw new IllegalArgumentException(s"opLt expects Int args, got: $left, $right")
       case other =>
-        throw new IllegalArgumentException(s"opLtInt.opLt expects 2 args, got: $other")
+        throw new IllegalArgumentException(s"opLt expects 2 args, got: $other")
 
   // Compares two Int values for less-than-or-equal.
   private def builtinIntLe(args: List[Value], env: Env): (Value, Env) =
@@ -554,9 +459,9 @@ object Interpreter:
       case List(left, right) =>
         (valueToInt(left), valueToInt(right)) match
           case (Some(a), Some(b)) => (boolToValue(a <= b), env)
-          case _ => throw new IllegalArgumentException(s"opLeInt.opLe expects Int args, got: $left, $right")
+          case _ => throw new IllegalArgumentException(s"opLe expects Int args, got: $left, $right")
       case other =>
-        throw new IllegalArgumentException(s"opLeInt.opLe expects 2 args, got: $other")
+        throw new IllegalArgumentException(s"opLe expects 2 args, got: $other")
 
   private def renderValue(value: Value): String =
     valueToInt(value)
@@ -569,12 +474,11 @@ object Interpreter:
           case Value.SetVal(values) => values.map(renderValue).mkString("Set(", ", ", ")")
           case Value.MapVal(values) =>
             values.map { case (k, v) => s"${renderValue(k)}: ${renderValue(v)}" }.mkString("Map(", ", ", ")")
-          case Value.InstanceVal(name, _) => s"<instance $name>"
           case Value.AdtVal(name, args) =>
             if args.isEmpty then name else s"$name${args.map(renderValue).mkString("(", ", ", ")")}"
           case Value.UnitVal => "unit"
           case Value.UndefinedVal => "undefined"
-          case Value.FuncVal(name, _, _, _, _, _) => s"<function $name>"
+          case Value.FuncVal(name, _, _, _) => s"<function $name>"
           case Value.IntVal(v) => v.toString
           case Value.BoolVal(v) => v.toString
           case Value.StringVal(v) => v

@@ -2,6 +2,6 @@ fun sum(a Int, b Int) Int
     a + b
 
 fun main() unit
-    println(sum(1, 2))
+    println(sum(1, 2), showInt())
 
 // Output: 3

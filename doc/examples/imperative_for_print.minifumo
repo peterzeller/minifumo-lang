@@ -5,7 +5,7 @@ fun logAll(numbers List[Int]) unit
         case Nil
             unit
         case Cons(head, tail)
-            println(head)
+            println(head, showInt())
             logAll(tail)
 
 fun main() unit

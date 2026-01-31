@@ -9,18 +9,25 @@ fun myAppend(a List, b List) List
         case Cons(h, t)
           Cons(h, myAppend(t, b))
 
-instance myShowList for Show[List]
-    fun show(value List) String
-        match value
-            case Nil
-                "Nil"
-            case Cons(head, tail)
-                "Cons(" + show(head) + ", " + show(tail) + ")"
+// Converts a list to a String using the provided Show dictionary.
+fun myShowListFn(s Show[Int]) List -> String
+    (value List) -> match value
+        case Nil
+            "Nil"
+        case Cons(head, tail)
+            stringAppend(
+                "Cons(",
+                stringAppend(show(head, s), stringAppend(", ", stringAppend(show(tail, myShowList(s)), ")")))
+            )
+
+// Builds a Show dictionary for the local list type.
+fun myShowList(s Show[Int]) Show[List]
+    Show(myShowListFn(s))
 
 fun main() unit
     let lst1 = Cons(1, Cons(2, Nil))
     let lst2 = Cons(3, Cons(4, Nil))
     let lst3 = myAppend(lst1, lst2)
-    println(lst3)
+    println(lst3, myShowList(showInt()))
 
 // Output: Cons(1, Cons(2, Cons(3, Cons(4, Nil))))

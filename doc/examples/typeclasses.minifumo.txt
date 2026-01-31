@@ -1,26 +1,26 @@
 
 
-typeclass Show[T]
-    fun show(value T) String
+// Shows an Int as "41".
+fun showIntLocalFn(value Int) String
+    "41"
 
-instance showString for Show[String]
-    fun show(value String) String
-        value
+fun showIntLocal() Show[Int]
+    Show(showIntLocalFn)
 
-instance showInt for Show[Int]
-    fun show(value Int) String
-        "41"
+// Shows an Int as "42".
+fun showInt2LocalFn(value Int) String
+    "42"
 
-instance showInt2 for Show[Int]
-    fun show(value Int) String
-        "42"
+fun showInt2Local() Show[Int]
+    Show(showInt2LocalFn)
 
-fun printValue[T](value T) given (s Show[T])
-    println(show(value))
+// Prints a value using an explicit Show dictionary.
+fun printValue[T](value T, s Show[T]) unit
+    println(value, s)
 
 fun main()
-    printValue("Hello World")
-    printValue(42) using (showInt2)
+    printValue("Hello World", showString())
+    printValue(42, showInt2Local())
 
 
 // Output:

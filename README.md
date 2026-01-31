@@ -10,7 +10,7 @@ Minifumo is a programming language with the following ideas:
     - Syntax is inspired by Scala, F#, Python, Go, and Math
     - Functional style by default (with mutability as opt-in)
     - Statically typed, no sub-typing, with simple generics
-    - Type classes via (implicit) parameters (as in Scala or Lean)
+    - First-class data types and explicit dictionary passing
     - Algebraic data types (like enums in Scala, Swift, Rust)
     - Errors as return values (panics only for rare cases, as in Go)
     - No runtime reflection
@@ -31,7 +31,7 @@ Everyone can improve properties by:
 - Adding a proof for correct properties (theorems)
 
 Everyone can improve data types by:
-- Implementing type class instances
+- Implementing datatype instances
 - Implementing conversion functions
 
 And finally, everyone can add challenges for implementing a function.

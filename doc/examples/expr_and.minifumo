@@ -1,4 +1,4 @@
 fun main() unit
-    println(true and false)
+    println(true and false, showBool())
 
 // Output: False
