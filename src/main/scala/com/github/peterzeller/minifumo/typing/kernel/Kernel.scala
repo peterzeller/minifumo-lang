@@ -38,7 +38,10 @@ object Kernel {
     def lookup(index: Int): Option[Term] = types.lift(index)
 
     /** Extends the context with a new bound variable type. */
-    def extend(typ: Term): Context = Context(lift(typ, 1, 0) :: types)
+    def extend(typ: Term): Context = {
+      val liftedExisting = types.map(existing => lift(existing, 1, 0))
+      Context(lift(typ, 1, 0) :: liftedExisting)
+    }
   }
 
   object Context {

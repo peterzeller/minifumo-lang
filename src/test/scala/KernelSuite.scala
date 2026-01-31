@@ -104,6 +104,11 @@ class KernelSuite extends munit.FunSuite {
     assertEquals(reduced, Lam(Sort(0), Var(1)))
   }
 
+  test("context extension shifts existing entries") {
+    val ctx = Context.empty.extend(Sort(0)).extend(Var(0)).extend(Sort(0))
+    assertEquals(ctx.lookup(1), Some(Var(2)))
+  }
+
   test("whnf reduces let bindings") {
     val term = Let(Const("a"), Const("A"), Var(0))
     val result = Kernel.whnf(Env.empty, Context.empty, term)
