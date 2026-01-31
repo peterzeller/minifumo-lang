@@ -11,6 +11,8 @@ class KernelSuite extends munit.FunSuite {
   private def baseEnv: Env = {
     val natDecl = ConstDecl(Sort(0), None, Reducibility.Opaque)
     val boolDecl = ConstDecl(Sort(0), None, Reducibility.Opaque)
+    val type0Decl = ConstDecl(Sort(1), Some(Sort(0)), Reducibility.Reducible)
+    val type0AliasDecl = ConstDecl(Const("Type0"), None, Reducibility.Opaque)
     val trueDecl = ConstDecl(Const("Bool"), None, Reducibility.Opaque)
     val falseDecl = ConstDecl(Const("Bool"), None, Reducibility.Opaque)
     val threeDecl = ConstDecl(Const("Nat"), None, Reducibility.Opaque)
@@ -66,6 +68,8 @@ class KernelSuite extends munit.FunSuite {
     Env.empty
       .addConstant("Nat", natDecl)
       .addConstant("Bool", boolDecl)
+      .addConstant("Type0", type0Decl)
+      .addConstant("A", type0AliasDecl)
       .addConstant("true", trueDecl)
       .addConstant("false", falseDecl)
       .addConstant("three", threeDecl)
@@ -104,9 +108,15 @@ class KernelSuite extends munit.FunSuite {
     assertEquals(reduced, Lam(Sort(0), Var(1)))
   }
 
-  test("context extension shifts existing entries") {
+  test("context extension preserves dependent references") {
     val ctx = Context.empty.extend(Sort(0)).extend(Var(0)).extend(Sort(0))
-    assertEquals(ctx.lookup(1), Some(Var(2)))
+    assertEquals(ctx.lookup(1), Some(Var(0)))
+  }
+
+  test("subst respects cutoff depth") {
+    val term = Var(2)
+    val result = Kernel.subst(term, 1, Var(0), 1)
+    assertEquals(result, Var(1))
   }
 
   test("whnf reduces let bindings") {
@@ -148,6 +158,13 @@ class KernelSuite extends munit.FunSuite {
     val t1 = Lam(Sort(0), Lam(Sort(0), Var(1)))
     val t2 = Lam(Sort(0), Lam(Sort(0), Var(1)))
     assert(Kernel.conv(Env.empty, Context.empty, t1, t2))
+  }
+
+  test("ensureSort reduces through definitional constants") {
+    val env = baseEnv
+    val term = Pi(Const("A"), Const("A"))
+    val inferred = Kernel.infer(env, Context.empty, term)
+    assert(Kernel.conv(env, Context.empty, inferred, Sort(0)))
   }
 
   test("infer id type") {

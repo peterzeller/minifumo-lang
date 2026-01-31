@@ -38,10 +38,7 @@ object Kernel {
     def lookup(index: Int): Option[Term] = types.lift(index)
 
     /** Extends the context with a new bound variable type. */
-    def extend(typ: Term): Context = {
-      val liftedExisting = types.map(existing => lift(existing, 1, 0))
-      Context(lift(typ, 1, 0) :: liftedExisting)
-    }
+    def extend(typ: Term): Context = Context(typ :: types)
   }
 
   object Context {
@@ -64,22 +61,28 @@ object Kernel {
     case Term.Const(name) => Term.Const(name)
   }
 
-  /** Substitutes a term for a de Bruijn index, shifting under binders as needed. */
-  def subst(term: Term, index: Int, replacement: Term): Term = term match {
-    case Term.Var(ix) if ix == index => replacement
+  /** Substitutes a term for a de Bruijn index at the given cutoff depth. */
+  def subst(term: Term, index: Int, replacement: Term, cutoff: Int): Term = term match {
+    case Term.Var(ix) if ix == index + cutoff => lift(replacement, cutoff, 0)
     case Term.Var(ix) => Term.Var(ix)
     case Term.Sort(level) => Term.Sort(level)
-    case Term.Pi(dom, cod) => Term.Pi(subst(dom, index, replacement), subst(cod, index + 1, lift(replacement, 1, 0)))
-    case Term.Lam(dom, body) => Term.Lam(subst(dom, index, replacement), subst(body, index + 1, lift(replacement, 1, 0)))
-    case Term.App(fn, arg) => Term.App(subst(fn, index, replacement), subst(arg, index, replacement))
+    case Term.Pi(dom, cod) =>
+      Term.Pi(subst(dom, index, replacement, cutoff), subst(cod, index, replacement, cutoff + 1))
+    case Term.Lam(dom, body) =>
+      Term.Lam(subst(dom, index, replacement, cutoff), subst(body, index, replacement, cutoff + 1))
+    case Term.App(fn, arg) =>
+      Term.App(subst(fn, index, replacement, cutoff), subst(arg, index, replacement, cutoff))
     case Term.Let(value, valueTy, body) =>
       Term.Let(
-        subst(value, index, replacement),
-        subst(valueTy, index, replacement),
-        subst(body, index + 1, lift(replacement, 1, 0))
+        subst(value, index, replacement, cutoff),
+        subst(valueTy, index, replacement, cutoff),
+        subst(body, index, replacement, cutoff + 1)
       )
     case Term.Const(name) => Term.Const(name)
   }
+
+  /** Substitutes a term for a de Bruijn index at the top level. */
+  def subst(term: Term, index: Int, replacement: Term): Term = subst(term, index, replacement, 0)
 
   /** Beta-reduces by substituting an argument into a lambda body. */
   def betaReduce(body: Term, arg: Term): Term = lift(subst(body, 0, lift(arg, 1, 0)), -1, 0)
@@ -124,13 +127,13 @@ object Kernel {
       env.lookup(name).map(_.typ).getOrElse(throw KernelError(s"Unknown constant $name"))
     case Term.Pi(dom, cod) =>
       val domSort = infer(env, ctx, dom)
-      val domLevel = ensureSort(domSort)
+      val domLevel = ensureSort(env, ctx, domSort)
       val codSort = infer(env, ctx.extend(dom), cod)
-      val codLevel = ensureSort(codSort)
+      val codLevel = ensureSort(env, ctx.extend(dom), codSort)
       Term.Sort(math.max(domLevel, codLevel))
     case Term.Lam(dom, body) =>
       val domSort = infer(env, ctx, dom)
-      ensureSort(domSort)
+      ensureSort(env, ctx, domSort)
       val bodyTy = infer(env, ctx.extend(dom), body)
       Term.Pi(dom, bodyTy)
     case Term.App(fn, arg) =>
@@ -142,7 +145,7 @@ object Kernel {
       }
     case Term.Let(value, valueTy, body) =>
       val valueTySort = infer(env, ctx, valueTy)
-      ensureSort(valueTySort)
+      ensureSort(env, ctx, valueTySort)
       check(env, ctx, value, valueTy)
       val bodyTy = infer(env, ctx.extend(valueTy), body)
       betaReduce(bodyTy, value)
@@ -156,7 +159,7 @@ object Kernel {
   }
 
   /** Ensures that a term is a sort and returns its universe level. */
-  private def ensureSort(term: Term): Int = term match {
+  private def ensureSort(env: Env, ctx: Context, term: Term): Int = whnf(env, ctx, term) match {
     case Term.Sort(level) => level
     case other => throw KernelError(s"Expected a sort, found $other")
   }
