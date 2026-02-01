@@ -52,6 +52,8 @@ object TypedAst:
         tpe: Expr
       )(val source: SourceRange) extends Expr
 
+    case class Meta(index: Int) extends Expr
+
   final case class MatchCase(pattern: Pattern, body: Expr)(val source: SourceRange)
 
   enum Pattern:

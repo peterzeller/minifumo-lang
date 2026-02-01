@@ -52,20 +52,6 @@ object TypeChecker:
       nextId += 1
       id
 
-  private val builtinTypeNames: Set[String] =
-    Set("Set", "Map", "unit")
-
-  private val baseTypes: Map[String, Expr] =
-    Map(
-      "unit" -> Expr.Name("unit")
-    )
-
-  private val baseValues: Map[String, BuiltinValueSymbol] =
-    Map(
-      "unit" -> BuiltinValueSymbol("unit", baseTypes("unit")),
-      "undefined" -> BuiltinValueSymbol("undefined", Expr.Unknown)
-    )
-
   // Merges two export environments, preferring entries from the override environment.
   def mergeExports(base: ExportEnv, overrideEnv: ExportEnv): ExportEnv =
     ExportEnv(

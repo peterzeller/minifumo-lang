@@ -327,7 +327,7 @@ object Main:
   private def exportedKinds(program: ProgramFile, name: String): List[ImportKind] =
     program.items.flatMap {
       case ast.TopLevel.DataDecl(itemName, _, _, exported) if exported && itemName == name => List(ImportKind.Data)
-      case ast.TopLevel.FunDecl(itemName, _, _, _, _, exported) if exported && itemName == name => List(ImportKind.Function)
+      case ast.TopLevel.FunDecl(sig, _, exported) if exported && sig.name == name => List(ImportKind.Function)
       case _ => Nil
     }
 
