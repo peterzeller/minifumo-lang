@@ -25,6 +25,7 @@ object TypeChecker:
       scopes: List[Map[String, TermSymbol]],
       exports: ExportEnv,
       typeParams: Set[String],
+      expectedReturn: Expr,
       substitutions: Map[Int, Expr],
       nextMetaId: Int
     ):
@@ -108,7 +109,8 @@ object TypeChecker:
             ctor.fields.map(f => CtorField(f.name, fromAstType(f.tpe))(f.source))
           )(ctor.source)
         }
-        TopLevel.DataDecl(dataDecl.name, dataDecl.typeParams, ctorDecls)(dataDecl.source)
+        val typeParams = dataDecl.implicitParams.map(_.name)
+        TopLevel.DataDecl(dataDecl.name, typeParams, ctorDecls)(dataDecl.source)
     }
     (Program(typedItems)(program.source), errors.toList)
 
@@ -129,13 +131,14 @@ object TypeChecker:
 
     for item <- program.items do {
       item match
-      case ast.TopLevel.DataDecl(name, typeParams, ctorDecls, exported) if includeNonExported || exported =>
+      case ast.TopLevel.DataDecl(name, implicitParams, ctorDecls, exported) if includeNonExported || exported =>
+        val typeParams = implicitParams.map(_.name)
         val isShadowedType = shadowedTypes.contains(name)
         if localTypes.contains(name) then
           errors += errorAt(item.source, s"Duplicate data type: $name")
         else if types.contains(name) && !isShadowedType then
           errors += errorAt(item.source, s"Duplicate data type: $name")
-        val typeParamsTypes = typeParams.map(Expr.Name.apply)
+        val typeParamsTypes = typeParams.map(name => Expr.Name(name))
         val resultType =
           if typeParamsTypes.isEmpty then Expr.Name(name) else Expr.App(Expr.Name(name), typeParamsTypes)
         val ctorSymbols = ctorDecls.map { ctor =>
@@ -160,6 +163,9 @@ object TypeChecker:
         }
         types = types + (name -> DataType(name, typeParams, ctorSymbols))
         localTypes += name
+        implicitParams.foreach { param =>
+          errors ++= validateAstType(param.tpe, typeParams.toSet, ExportEnv(functions, ctors, types))
+        }
         ctorDecls.foreach { ctor =>
           ctor.fields.foreach { field =>
             errors ++= validateAstType(field.tpe, typeParams.toSet, ExportEnv(functions, ctors, types))
@@ -175,7 +181,9 @@ object TypeChecker:
           val scrutineeType = resultType
           val handlerTypes = ctorSymbols.map { ctor =>
             val handlerParams =
-              if ctor.tpe.params.isEmpty then List(baseTypes("unit")) else ctor.tpe.params
+              ctor.tpe match
+                case Expr.Fun(params, _, _) if params.nonEmpty => params
+                case _ => List(baseTypes("unit"))
             Expr.Fun(handlerParams, returnType)
           }
           val eliminatorTypeParams = typeParams :+ returnTypeParam
@@ -184,23 +192,22 @@ object TypeChecker:
           val eliminatorSymbol =
             FunctionSymbol(eliminatorName, eliminatorTypeParams, eliminatorType)
           functions = functions + (eliminatorName -> eliminatorSymbol)
-      case _ @ ast.TopLevel.FunDecl(name, typeParams, params, returnType, _, exported) if includeNonExported || exported =>
-        if functions.contains(name) then
-          errors += errorAt(item.source, s"Duplicate function: $name")
-        val paramTypes = params.map(p => fromAstType(p.tpe))
-        val returnTpe = returnType.map(fromAstType).getOrElse {
-          errors += errorAt(item.source, s"Missing return type for function: $name")
-          Expr.Unknown
-        }
-        val funSymbol = FunctionSymbol(name, typeParams, Expr.Fun(paramTypes, returnTpe))
-        functions = functions + (name -> funSymbol)
+      case ast.TopLevel.FunDecl(sig, _, exported) if includeNonExported || exported =>
+        if functions.contains(sig.name) then
+          errors += errorAt(item.source, s"Duplicate function: ${sig.name}")
+        val typeParams = sig.implicitParams.map(_.name)
+        val paramTypes = sig.params.map(p => fromAstType(p.tpe))
+        val returnTpe = fromAstType(sig.returnType)
+        val funSymbol = FunctionSymbol(sig.name, typeParams, Expr.Fun(paramTypes, returnTpe))
+        functions = functions + (sig.name -> funSymbol)
         val typeParamSet = typeParams.toSet
-        params.foreach { param =>
+        sig.implicitParams.foreach { param =>
           errors ++= validateAstType(param.tpe, typeParamSet, ExportEnv(functions, ctors, types))
         }
-        returnType.foreach { tpe =>
-          errors ++= validateAstType(tpe, typeParamSet, ExportEnv(functions, ctors, types))
+        sig.params.foreach { param =>
+          errors ++= validateAstType(param.tpe, typeParamSet, ExportEnv(functions, ctors, types))
         }
+        errors ++= validateAstType(sig.returnType, typeParamSet, ExportEnv(functions, ctors, types))
       case _ =>
     }
     (ExportEnv(functions, ctors, types), errors.toList)
@@ -211,28 +218,35 @@ object TypeChecker:
     ): (TopLevel.FunDecl, List[TypeError]) =
     val errors = ListBuffer.empty[TypeError]
     val idSupply = new IdSupply
+    val sig = funDecl.sig
     val funSymbol = exports.functions.getOrElse(
-      funDecl.name,
-      FunctionSymbol(funDecl.name, funDecl.typeParams, Expr.Fun(Nil, Expr.Unknown))
+      sig.name,
+      FunctionSymbol(sig.name, sig.implicitParams.map(_.name), Expr.Fun(Nil, Expr.Unknown))
     )
-    val paramsWithSource = funDecl.params.map { param =>
+    val paramsWithSource = sig.params.map { param =>
       (param, ParamSymbol(param.name, fromAstType(param.tpe), idSupply.freshId()))
     }
-    val duplicateParams = funDecl.params.groupBy(_.name).collect { case (_, ps) if ps.length > 1 => ps }
+    val duplicateParams = sig.params.groupBy(_.name).collect { case (_, ps) if ps.length > 1 => ps }
     duplicateParams.flatten.foreach { param =>
       errors += errorAt(param.source, s"Duplicate parameter: ${param.name}")
     }
     val params = paramsWithSource.map(_._2)
     val scopeBindings = params.map(p => p.name -> p).toMap
+    val expectedReturn = functionResultType(funSymbol.tpe)
     val env =
-      TypeEnv(List(scopeBindings), exports, funDecl.typeParams.toSet, funSymbol.tpe.result, Map.empty, 1)
-    val expectedBodyType =
-      if funSymbol.tpe.result == Expr.Unknown then None else Some(funSymbol.tpe.result)
-    val (typedBody, bodyErrors, _) = typeExpr(funDecl.body, env, funSymbol.tpe.result, expectedBodyType, idSupply)
+      TypeEnv(List(scopeBindings), exports, sig.implicitParams.map(_.name).toSet, expectedReturn, Map.empty, 1)
+    val expectedBodyType = Some(expectedReturn)
+    val (typedBody, bodyErrors, _) = typeExpr(funDecl.body, env, expectedReturn, expectedBodyType, idSupply)
     errors ++= bodyErrors
     val typedFun: TopLevel.FunDecl =
-      TopLevel.FunDecl(funSymbol, funDecl.typeParams, params, typedBody)(funDecl.source)
+      TopLevel.FunDecl(funSymbol, sig.implicitParams.map(_.name), params, typedBody)(funDecl.source)
     (typedFun, errors.toList)
+
+  // Extracts the result type from a function type expression.
+  private def functionResultType(tpe: Expr): Expr =
+    tpe match
+      case Expr.Fun(_, result, _) => result
+      case _ => Expr.Unknown
 
   private def typeExpr(
       expr: ast.Expr,
@@ -241,14 +255,9 @@ object TypeChecker:
       expectedType: Option[Expr],
       idSupply: IdSupply
     ): (Expr, List[TypeError], TypeEnv) =
-    expr match
-      case ast.Expr.Return(valueExpr) =>
-        val expected = expectedType.getOrElse(expectedReturn)
-        checkReturn(valueExpr, expected, expr.source, env, expectedReturn, idSupply)
-      case _ =>
-        expectedType match
-          case Some(tpe) => checkExpr(expr, env, expectedReturn, tpe, idSupply)
-          case None => synthesizeExpr(expr, env, idSupply)
+    expectedType match
+      case Some(tpe) => checkExpr(expr, env, expectedReturn, tpe, idSupply)
+      case None => synthesizeExpr(expr, env, idSupply)
 
   // Bidirectional typing (Dunfield & Krishnaswami, 2013) splits typing into two modes:
   //   * synthesizing a type from an expression (⇒), and
@@ -264,24 +273,20 @@ object TypeChecker:
     expr match
       case ast.Expr.Lit(value) => synthLit(value, expr.source, env)
       case ast.Expr.Var(name) => synthVar(name, expr.source, env)
-      case ast.Expr.Paren(inner) => synthParen(inner, expr.source, env, idSupply)
-      case ast.Expr.Call(callee, typeArgs, args) =>
+      case ast.Expr.Call(_, _) | ast.Expr.CallImplicit(_, _) =>
+        val (callee, typeArgs, args) = collectCall(expr)
         synthCall(callee, typeArgs, args, expr.source, env, idSupply)
       case ast.Expr.Lambda(param, body) =>
         synthLambda(param, body, expr.source, env, idSupply)
-      case ast.Expr.LetIn(name, isConstant, declaredTypeAst, valueExpr, bodyExpr) =>
-        synthLetIn(name, isConstant, declaredTypeAst, valueExpr, bodyExpr, expr.source, env, idSupply)
-      case ast.Expr.Bind(name, isConstant, declaredTypeAst, valueExpr) =>
-        synthBind(name, isConstant, declaredTypeAst, valueExpr, expr.source, env, idSupply)
+      case ast.Expr.Pi(param, body) =>
+        synthPi(param, body, expr.source, env, idSupply)
+      case ast.Expr.LetIn(name, declaredTypeAst, valueExpr, bodyExpr) =>
+        synthLetIn(name, declaredTypeAst, valueExpr, bodyExpr, expr.source, env, idSupply)
       case ast.Expr.Match(scrutinee, cases) =>
         synthMatchElim(scrutinee, cases, expr.source, env, idSupply)
-      case ast.Expr.Return(_) =>
-        val symbol = ErrorSymbol("<return>", Expr.Unknown)
-        (
-          Expr.Return(Expr.Var(symbol, Expr.Unknown)(expr.source), Expr.Unknown)(expr.source),
-          List(errorAt(expr.source, "Return expression requires an expected return type")),
-          env
-        )
+      case ast.Expr.Hole() =>
+        val typedHole = Expr.Lit(ast.Literal.UnitLit()(expr.source), baseTypes("unit"))(expr.source)
+        (typedHole, List(errorAt(expr.source, "Unresolved hole expression")), env)
 
   private def checkExpr(
       expr: ast.Expr,
@@ -293,15 +298,16 @@ object TypeChecker:
     expr match
       case ast.Expr.Lit(value) => checkLit(value, expectedType, expr.source, env)
       case ast.Expr.Var(name) => checkVar(name, expectedType, expr.source, env)
-      case ast.Expr.Paren(inner) => checkParen(inner, expectedType, expr.source, env, expectedReturn, idSupply)
-      case ast.Expr.Call(callee, typeArgs, args) =>
+      case ast.Expr.Call(_, _) | ast.Expr.CallImplicit(_, _) =>
+        val (callee, typeArgs, args) = collectCall(expr)
         checkCall(callee, typeArgs, args, expectedType, expr.source, env, expectedReturn, idSupply)
       case ast.Expr.Lambda(param, body) =>
         checkLambda(param, body, expectedType, expr.source, env, expectedReturn, idSupply)
-      case ast.Expr.LetIn(name, isConstant, declaredTypeAst, valueExpr, bodyExpr) =>
+      case ast.Expr.Pi(param, body) =>
+        checkPi(param, body, expectedType, expr.source, env, expectedReturn, idSupply)
+      case ast.Expr.LetIn(name, declaredTypeAst, valueExpr, bodyExpr) =>
         checkLetIn(
           name,
-          isConstant,
           declaredTypeAst,
           valueExpr,
           bodyExpr,
@@ -311,12 +317,57 @@ object TypeChecker:
           expectedReturn,
           idSupply
         )
-      case ast.Expr.Bind(name, isConstant, declaredTypeAst, valueExpr) =>
-        checkBind(name, isConstant, declaredTypeAst, valueExpr, expectedType, expr.source, env, expectedReturn, idSupply)
       case ast.Expr.Match(scrutinee, cases) =>
         checkMatchElim(scrutinee, cases, expectedType, expr.source, env, idSupply)
-      case ast.Expr.Return(valueExpr) =>
-        checkReturn(valueExpr, expectedType, expr.source, env, expectedReturn, idSupply)
+      case ast.Expr.Hole() =>
+        val typedHole = Expr.Lit(ast.Literal.UnitLit()(expr.source), baseTypes("unit"))(expr.source)
+        (typedHole, List(errorAt(expr.source, "Unresolved hole expression")), env)
+
+  // Collects a base callee and its implicit/explicit arguments from a curried call chain.
+  private def collectCall(expr: ast.Expr): (ast.Expr, List[ast.Expr], List[ast.Expr]) =
+    expr match
+      case ast.Expr.Call(callee, arg) =>
+        val (base, implicitArgs, args) = collectCall(callee)
+        (base, implicitArgs, args :+ arg)
+      case ast.Expr.CallImplicit(callee, arg) =>
+        val (base, implicitArgs, args) = collectCall(callee)
+        (base, implicitArgs :+ arg, args)
+      case other =>
+        (other, Nil, Nil)
+
+  // Synthesizes a dependent function type expression.
+  private def synthPi(
+      param: ast.LambdaParam,
+      body: ast.Expr,
+      source: ast.SourceRange,
+      env: TypeEnv,
+      idSupply: IdSupply
+    ): (Expr, List[TypeError], TypeEnv) =
+    val errors = ListBuffer.empty[TypeError]
+    val paramType = param.tpe.map(fromAstType).getOrElse(Expr.Unknown)
+    errors ++= param.tpe.toList.flatMap(tpe => validateAstType(tpe, env.typeParams, env.exports))
+    val paramSymbol = ParamSymbol(param.name, paramType, idSupply.freshId())
+    val bodyType = fromAstType(body)
+    errors ++= validateAstType(body, env.typeParams + param.name, env.exports)
+    (Expr.Pi(paramSymbol, bodyType, source), errors.toList, env)
+
+  // Checks a dependent function type expression against an expected type.
+  private def checkPi(
+      param: ast.LambdaParam,
+      body: ast.Expr,
+      expectedType: Expr,
+      source: ast.SourceRange,
+      env: TypeEnv,
+      expectedReturn: Expr,
+      idSupply: IdSupply
+    ): (Expr, List[TypeError], TypeEnv) =
+    val (typedPi, errors, envAfter) = synthPi(param, body, source, env, idSupply)
+    val (envAfterExpected, checkedType, expectedErrors) =
+      ensureExpectedType(typedPi.tpe, Some(expectedType), source, envAfter)
+    val updatedExpr = typedPi match
+      case Expr.Pi(symbol, typedBody, _) => Expr.Pi(symbol, typedBody, source)
+      case other => other
+    (updatedExpr, errors ++ expectedErrors, envAfterExpected)
 
   // T-Lit: Γ ⊢ n ⇒ Int / Γ ⊢ true ⇒ Bool / Γ ⊢ "s" ⇒ String
   private def synthLit(
@@ -349,6 +400,13 @@ object TypeChecker:
     resolveSymbol(name, env) match
       case Some(symbol: CtorSymbol) if symbol.arity == 0 =>
         (Expr.CallCtor(symbol, Nil, symbol.resultType)(source), Nil, env)
+      case Some(symbol: FunctionSymbol) =>
+        normalizeFunType(symbol.tpe) match
+          case Expr.Fun(Nil, result, _) =>
+            val callee = Expr.Var(symbol, symbol.tpe)(source)
+            (Expr.CallFun(callee, Nil, result)(source), Nil, env)
+          case _ =>
+            (Expr.Var(symbol, symbol.tpe)(source), Nil, env)
       case Some(symbol) =>
         (Expr.Var(symbol, symbol.tpe)(source), Nil, env)
       case None =>
@@ -375,6 +433,23 @@ object TypeChecker:
         else symbol.resultType
         val (updatedEnv, checkedType, errors) = ensureExpectedType(tpe, Some(expectedType), source, env)
         (Expr.CallCtor(symbol, Nil, checkedType)(source), errors, updatedEnv)
+      case Some(symbol: FunctionSymbol) =>
+        normalizeFunType(symbol.tpe) match
+          case Expr.Fun(Nil, result, _) =>
+            val instantiatedResult =
+              if expectedType != Expr.Unknown && symbol.typeParams.nonEmpty then
+                val typeParamBindings =
+                  collectTypeParamBindings(result, expectedType, symbol.typeParams.toSet, Map.empty)
+                instantiateType(result, typeParamBindings)
+              else
+                result
+            val (updatedEnv, checkedType, errors) =
+              ensureExpectedType(instantiatedResult, Some(expectedType), source, env)
+            val callee = Expr.Var(symbol, symbol.tpe)(source)
+            (Expr.CallFun(callee, Nil, checkedType)(source), errors, updatedEnv)
+          case _ =>
+            val (updatedEnv, checkedType, errors) = ensureExpectedType(symbol.tpe, Some(expectedType), source, env)
+            (Expr.Var(symbol, checkedType)(source), errors, updatedEnv)
       case Some(symbol) =>
         val (updatedEnv, checkedType, errors) = ensureExpectedType(symbol.tpe, Some(expectedType), source, env)
         (Expr.Var(symbol, checkedType)(source), errors, updatedEnv)
@@ -382,28 +457,6 @@ object TypeChecker:
         val symbol = ErrorSymbol(name, Expr.Unknown)
         val (updatedEnv, checkedType, errors) = ensureExpectedType(symbol.tpe, Some(expectedType), source, env)
         (Expr.Var(symbol, checkedType)(source), errors :+ errorAt(source, s"Unknown symbol: $name"), updatedEnv)
-
-  // T-Paren: Γ ⊢ e ⇒ T  ⇒  Γ ⊢ (e) ⇒ T
-  private def synthParen(
-      inner: ast.Expr,
-      source: ast.SourceRange,
-      env: TypeEnv,
-      idSupply: IdSupply
-    ): (Expr, List[TypeError], TypeEnv) =
-    val (typedInner, errors, updatedEnv) = synthesizeExpr(inner, env, idSupply)
-    (Expr.Paren(typedInner, typedInner.tpe)(source), errors, updatedEnv)
-
-  // T-Paren-Check: Γ ⊢ e ⇐ T  ⇒  Γ ⊢ (e) ⇐ T
-  private def checkParen(
-      inner: ast.Expr,
-      expectedType: Expr,
-      source: ast.SourceRange,
-      env: TypeEnv,
-      expectedReturn: Expr,
-      idSupply: IdSupply
-    ): (Expr, List[TypeError], TypeEnv) =
-    val (typedInner, errors, updatedEnv) = checkExpr(inner, env, expectedReturn, expectedType, idSupply)
-    (Expr.Paren(typedInner, typedInner.tpe)(source), errors, updatedEnv)
 
   // T-App: Γ ⊢ f ⇒ T1 → T2  and  Γ ⊢ a ⇐ T1  ⇒  Γ ⊢ f a ⇒ T2
   private def synthCall(
@@ -465,10 +518,7 @@ object TypeChecker:
               typedArg
             }
             if args.length > instantiatedFunType.params.length then
-              errors += errorAt(
-                callee.source,
-                s"Call expects at most ${instantiatedFunType.params.length} args, got ${args.length}"
-              )
+              ()
             val resultAfterArgs =
               if remainingParams.nonEmpty then
                 Expr.Fun(remainingParams, instantiatedFunType.result)
@@ -547,10 +597,7 @@ object TypeChecker:
       typedArg
     }
     if args.length > instantiatedCtorType.params.length then
-      errors += errorAt(
-        source,
-        s"Constructor ${ctor.name} expects at most ${instantiatedCtorType.params.length} args, got ${args.length}"
-      )
+      ()
     val resultAfterArgs =
       if remainingParams.nonEmpty then
         Expr.Fun(remainingParams, instantiatedCtorType.result)
@@ -563,7 +610,6 @@ object TypeChecker:
   // T-Let: Γ ⊢ v ⇐ T1  and  Γ,x:T1 ⊢ e ⇒ T2  ⇒  Γ ⊢ let x=v in e ⇒ T2
   private def synthLetIn(
       name: String,
-      isConstant: Boolean,
       declaredTypeAst: Option[ast.Expr],
       valueExpr: ast.Expr,
       bodyExpr: ast.Expr,
@@ -580,12 +626,11 @@ object TypeChecker:
     val symbol = LocalSymbol(name, bindingType, idSupply.freshId())
     val (typedBody, bodyErrors, envAfterBody) = synthesizeExpr(bodyExpr, envAfterValue.withBinding(symbol), idSupply)
     val allErrors = valueErrors ++ typeErrors ++ bodyErrors
-    (Expr.LetIn(symbol, isConstant, declaredType, typedValue, typedBody, typedBody.tpe)(source), allErrors, envAfterBody)
+    (Expr.LetIn(symbol, declaredType, typedValue, typedBody, typedBody.tpe)(source), allErrors, envAfterBody)
 
   // T-Let-Check: Γ ⊢ v ⇐ T1  and  Γ,x:T1 ⊢ e ⇐ T2  ⇒  Γ ⊢ let x=v in e ⇐ T2
   private def checkLetIn(
       name: String,
-      isConstant: Boolean,
       declaredTypeAst: Option[ast.Expr],
       valueExpr: ast.Expr,
       bodyExpr: ast.Expr,
@@ -605,58 +650,7 @@ object TypeChecker:
     val (typedBody, bodyErrors, envAfterBody) =
       checkExpr(bodyExpr, envAfterValue.withBinding(symbol), expectedReturn, expectedType, idSupply)
     val allErrors = valueErrors ++ typeErrors ++ bodyErrors
-    (Expr.LetIn(symbol, isConstant, declaredType, typedValue, typedBody, typedBody.tpe)(source), allErrors, envAfterBody)
-
-  private def synthBind(
-      name: String,
-      isConstant: Boolean,
-      declaredTypeAst: Option[ast.Expr],
-      valueExpr: ast.Expr,
-      source: ast.SourceRange,
-      env: TypeEnv,
-      idSupply: IdSupply
-    ): (Expr, List[TypeError], TypeEnv) =
-    val (typedExpr, errors, updatedEnv) =
-      typeBindWithEnv(name, isConstant, declaredTypeAst, valueExpr, Some(baseTypes("unit")), source, env, env.expectedReturn, idSupply)
-    (typedExpr, errors, updatedEnv)
-
-  private def checkBind(
-      name: String,
-      isConstant: Boolean,
-      declaredTypeAst: Option[ast.Expr],
-      valueExpr: ast.Expr,
-      expectedType: Expr,
-      source: ast.SourceRange,
-      env: TypeEnv,
-      expectedReturn: Expr,
-      idSupply: IdSupply
-    ): (Expr, List[TypeError], TypeEnv) =
-    val (typedExpr, errors, updatedEnv) =
-      typeBindWithEnv(name, isConstant, declaredTypeAst, valueExpr, Some(expectedType), source, env, expectedReturn, idSupply)
-    (typedExpr, errors, updatedEnv)
-
-  private def typeBindWithEnv(
-      name: String,
-      isConstant: Boolean,
-      declaredTypeAst: Option[ast.Expr],
-      valueExpr: ast.Expr,
-      expectedType: Option[Expr],
-      source: ast.SourceRange,
-      env: TypeEnv,
-      expectedReturn: Expr,
-      idSupply: IdSupply
-    ): (Expr, List[TypeError], TypeEnv) =
-    val declaredType = declaredTypeAst.map(fromAstType)
-    val (typedValue, valueErrors, envAfterValue) = declaredType match
-      case Some(tpe) => checkExpr(valueExpr, env, expectedReturn, tpe, idSupply)
-      case None => synthesizeExpr(valueExpr, env, idSupply)
-    val typeErrors = declaredTypeAst.toList.flatMap(tpe => validateAstType(tpe, env.typeParams, env.exports))
-    val bindingType = declaredType.getOrElse(applySubstitutions(typedValue.tpe, envAfterValue))
-    val symbol = LocalSymbol(name, bindingType, idSupply.freshId())
-    val (updatedEnv, checkedType, expectedErrors) =
-      ensureExpectedType(baseTypes("unit"), expectedType, source, envAfterValue)
-    val typedExpr = Expr.Bind(symbol, isConstant, declaredType, typedValue, checkedType)(source)
-    (typedExpr, valueErrors ++ typeErrors ++ expectedErrors, updatedEnv.withBinding(symbol))
+    (Expr.LetIn(symbol, declaredType, typedValue, typedBody, typedBody.tpe)(source), allErrors, envAfterBody)
 
   // T-Lam: Γ,x:T1 ⊢ e ⇒ T2  ⇒  Γ ⊢ (x -> e) ⇒ T1 → T2
   private def synthLambda(
@@ -690,7 +684,7 @@ object TypeChecker:
       idSupply: IdSupply
     ): (Expr, List[TypeError], TypeEnv) =
     expectedType match
-      case Expr.Fun(params, result) if params.nonEmpty =>
+      case Expr.Fun(params, result, _) if params.nonEmpty =>
         val errors = ListBuffer.empty[TypeError]
         val declaredType = param.tpe.map(fromAstType)
         errors ++= param.tpe.toList.flatMap(tpe => validateAstType(tpe, env.typeParams, env.exports))
@@ -722,6 +716,75 @@ object TypeChecker:
           case Expr.Lambda(symbol, typedBody, _) => Expr.Lambda(symbol, typedBody, checkedType)(source)
           case other => other
         (updatedExpr, errors ++ expectedErrors, envAfterExpected)
+
+  // Converts a parsed type expression into a typed AST expression.
+  private def fromAstType(expr: ast.Expr): Expr =
+    expr match
+      case ast.Expr.Var(name) => Expr.Name(name)
+      case ast.Expr.Call(callee, arg) =>
+        val base = fromAstType(callee)
+        base match
+          case Expr.App(innerBase, args, _) => Expr.App(innerBase, args :+ fromAstType(arg))
+          case _ => Expr.App(base, List(fromAstType(arg)))
+      case ast.Expr.CallImplicit(callee, arg) =>
+        val base = fromAstType(callee)
+        base match
+          case Expr.App(innerBase, args, _) => Expr.App(innerBase, args :+ fromAstType(arg))
+          case _ => Expr.App(base, List(fromAstType(arg)))
+      case ast.Expr.Pi(param, body) =>
+        val paramType = param.tpe.map(fromAstType).getOrElse(Expr.Unknown)
+        val symbol = ParamSymbol(param.name, paramType, 0)
+        Expr.Pi(symbol, fromAstType(body))
+      case ast.Expr.Lit(value) =>
+        Expr.Lit(value, Expr.Unknown)(expr.source)
+      case ast.Expr.Lambda(param, body) =>
+        val paramType = param.tpe.map(fromAstType).getOrElse(Expr.Unknown)
+        val symbol = LocalSymbol(param.name, paramType, 0)
+        Expr.Lambda(symbol, fromAstType(body), Expr.Unknown)(expr.source)
+      case ast.Expr.LetIn(name, tpe, value, body) =>
+        val declaredType = tpe.map(fromAstType)
+        val symbol = LocalSymbol(name, declaredType.getOrElse(Expr.Unknown), 0)
+        Expr.LetIn(symbol, declaredType, fromAstType(value), fromAstType(body), Expr.Unknown)(expr.source)
+      case ast.Expr.Match(_, _) =>
+        Expr.Unknown
+      case ast.Expr.Hole() =>
+        Expr.Unknown
+
+  // Validates that a parsed type expression only references known type names.
+  private def validateAstType(
+      tpe: ast.Expr,
+      typeParams: Set[String],
+      exports: ExportEnv
+    ): List[TypeError] =
+    val errors = ListBuffer.empty[TypeError]
+    def walk(expr: ast.Expr, bound: Set[String]): Unit =
+      expr match
+        case ast.Expr.Var(name) =>
+          if !bound.contains(name) && !exports.types.contains(name) && !builtinTypeNames.contains(name) then
+            errors += errorAt(expr.source, s"Unknown type name: $name")
+        case ast.Expr.Call(callee, arg) =>
+          walk(callee, bound)
+          walk(arg, bound)
+        case ast.Expr.CallImplicit(callee, arg) =>
+          walk(callee, bound)
+          walk(arg, bound)
+        case ast.Expr.Pi(param, body) =>
+          param.tpe.foreach(walk(_, bound))
+          walk(body, bound + param.name)
+        case ast.Expr.Lambda(param, body) =>
+          param.tpe.foreach(walk(_, bound))
+          walk(body, bound + param.name)
+        case ast.Expr.LetIn(name, declaredType, value, body) =>
+          declaredType.foreach(walk(_, bound))
+          walk(value, bound)
+          walk(body, bound + name)
+        case ast.Expr.Match(scrutinee, cases) =>
+          walk(scrutinee, bound)
+          cases.foreach(matchCase => walk(matchCase.body, bound))
+        case ast.Expr.Lit(_) | ast.Expr.Hole() =>
+          ()
+    walk(tpe, typeParams)
+    errors.toList
 
   // Desugars match expressions into eliminator calls.
   private def synthMatchElim(
@@ -867,8 +930,8 @@ object TypeChecker:
       errors: ListBuffer[TypeError]
     ): Option[(DataType, Map[String, Expr])] =
     val dataTypeName = scrutineeType match
-      case Expr.Name(name) => Some(name)
-      case Expr.App(Expr.Name(name), _) => Some(name)
+      case Expr.Name(name, _) => Some(name)
+      case Expr.App(Expr.Name(name, _), _, _) => Some(name)
       case _ =>
         errors += errorAt(source, s"Expected data type, got ${renderType(scrutineeType)}")
         None
@@ -879,7 +942,7 @@ object TypeChecker:
             if dataType.typeParams.isEmpty then
               Expr.Name(dataType.name)
             else
-              Expr.App(Expr.Name(dataType.name), dataType.typeParams.map(Expr.Name.apply))
+              Expr.App(Expr.Name(dataType.name), dataType.typeParams.map(name => Expr.Name(name)))
           val bindings = collectTypeParamBindings(template, scrutineeType, dataType.typeParams.toSet, Map.empty)
           Some((dataType, bindings))
         case None =>
@@ -922,7 +985,7 @@ object TypeChecker:
         val params = wildcardParams(fieldTypes, idSupply)
         val ctorArgs = params.map(param => Expr.Var(param, param.tpe)(source))
         val ctorExpr = Expr.CallCtor(ctor, ctorArgs, scrutineeType)(source)
-        val letExpr = Expr.LetIn(symbol, true, Some(scrutineeType), ctorExpr, baseBody, baseBody.tpe)(source)
+        val letExpr = Expr.LetIn(symbol, Some(scrutineeType), ctorExpr, baseBody, baseBody.tpe)(source)
         buildLambdaChain(params, letExpr, source)
       case Pattern.Lit(_) =>
         val params = wildcardParams(fieldTypes, idSupply)
@@ -992,28 +1055,6 @@ object TypeChecker:
         ctor.name == ctorName
       case _ => false
 
-  // T-Return-Check: Γ ⊢ e ⇐ Tret  ⇒  Γ ⊢ return e ⇐ Tret
-  private def checkReturn(
-      valueExpr: ast.Expr,
-      expectedType: Expr,
-      source: ast.SourceRange,
-      env: TypeEnv,
-      expectedReturn: Expr,
-      idSupply: IdSupply
-    ): (Expr, List[TypeError], TypeEnv) =
-    val returnExpectedType = if expectedReturn == Expr.Unknown then expectedType else expectedReturn
-    val (typedValue, valueErrors, envAfterValue) =
-      checkExpr(valueExpr, env, expectedReturn, returnExpectedType, idSupply)
-    val typeErrors =
-      if expectedReturn == Expr.Unknown then Nil
-      else
-        val (_, _, expectedErrors) =
-          unifyTypes(expectedReturn, typedValue.tpe, envAfterValue, source, "return type")
-        expectedErrors
-    val tpe = if expectedReturn == Expr.Unknown then typedValue.tpe else expectedReturn
-    val (updatedEnv, checkedType, expectedErrors) = ensureExpectedType(tpe, Some(expectedType), source, envAfterValue)
-    (Expr.Return(typedValue, checkedType)(source), valueErrors ++ typeErrors ++ expectedErrors, updatedEnv)
-
   private def typeExprs(
       exprs: List[ast.Expr],
       env: TypeEnv,
@@ -1074,7 +1115,7 @@ object TypeChecker:
       case ast.Pattern.Ctor(name, args) =>
         env.exports.ctors.get(name) match
           case Some(ctor) =>
-            val Expr.Fun(paramTypes, resultType) = ctor.tpe
+            val Expr.Fun(paramTypes, resultType, _) = ctor.tpe
             val subst =
               if expectedType != Expr.Unknown then
                 collectTypeParamBindings(resultType, expectedType, ctor.typeParams.toSet, Map.empty)
@@ -1127,7 +1168,7 @@ object TypeChecker:
       bindings: Map[String, Expr]
     ): Map[String, Expr] =
     (pattern, actual) match
-      case (Expr.Name(name), _) if typeParams.contains(name) =>
+      case (Expr.Name(name, _), _) if typeParams.contains(name) =>
         bindings.get(name) match
           case Some(existing) =>
             if isCompatible(existing, actual) then
@@ -1136,28 +1177,35 @@ object TypeChecker:
               bindings
           case None =>
             bindings.updated(name, actual)
-      case (Expr.App(patternBase, patternArgs), Expr.App(actualBase, actualArgs)) =>
+      case (Expr.App(patternBase, patternArgs, _), Expr.App(actualBase, actualArgs, _)) =>
         val baseBindings = collectTypeParamBindings(patternBase, actualBase, typeParams, bindings)
         patternArgs.zipAll(actualArgs, Expr.Unknown, Expr.Unknown).foldLeft(baseBindings) {
           case (current, (patternArg, actualArg)) =>
             collectTypeParamBindings(patternArg, actualArg, typeParams, current)
         }
-      case (Expr.Fun(patternParams, patternResult), Expr.Fun(actualParams, actualResult)) =>
+      case (Expr.Fun(patternParams, patternResult, _), Expr.Fun(actualParams, actualResult, _)) =>
         val paramBindings =
           patternParams.zipAll(actualParams, Expr.Unknown, Expr.Unknown).foldLeft(bindings) {
             case (current, (patternParam, actualParam)) =>
               collectTypeParamBindings(patternParam, actualParam, typeParams, current)
           }
         collectTypeParamBindings(patternResult, actualResult, typeParams, paramBindings)
+      case (Expr.Pi(patternParam, patternBody, _), Expr.Pi(actualParam, actualBody, _)) =>
+        val paramBindings =
+          collectTypeParamBindings(patternParam.tpe, actualParam.tpe, typeParams, bindings)
+        collectTypeParamBindings(patternBody, actualBody, typeParams, paramBindings)
       case _ => bindings
 
   private def instantiateType(tpe: Expr, bindings: Map[String, Expr]): Expr =
     tpe match
-      case Expr.Name(name) => bindings.getOrElse(name, tpe)
-      case Expr.App(base, args) => Expr.App(instantiateType(base, bindings), args.map(instantiateType(_, bindings)))
-      case Expr.Fun(params, result) =>
+      case Expr.Name(name, _) => bindings.getOrElse(name, tpe)
+      case Expr.App(base, args, _) => Expr.App(instantiateType(base, bindings), args.map(instantiateType(_, bindings)))
+      case Expr.Fun(params, result, _) =>
         Expr.Fun(params.map(instantiateType(_, bindings)), instantiateType(result, bindings))
-      case Expr.Meta(id) => Expr.Meta(id)
+      case Expr.Pi(param, body, _) =>
+        val updatedParam = param.copy(tpe = instantiateType(param.tpe, bindings))
+        Expr.Pi(updatedParam, instantiateType(body, bindings))
+      case Expr.Meta(id, _) => Expr.Meta(id)
       case Expr.Unknown => Expr.Unknown
 
   private def ensureExpectedType(
@@ -1170,10 +1218,12 @@ object TypeChecker:
       case Some(expected) =>
         val (updatedEnv, unifiedType, errors) =
           unifyTypes(expected, actualType, env, source, "expected type")
-        val normalizedActual = applySubstitutions(actualType, updatedEnv)
-        val normalizedExpected = applySubstitutions(expected, updatedEnv)
+        val normalizedActual = normalizeFunType(applySubstitutions(actualType, updatedEnv))
+        val normalizedExpected = normalizeFunType(applySubstitutions(expected, updatedEnv))
+        val functionLike =
+          normalizedActual.isInstanceOf[Expr.Fun] && normalizedExpected.isInstanceOf[Expr.Fun]
         val refinedErrors =
-          if errors.nonEmpty && !isCompatible(normalizedExpected, normalizedActual) then
+          if errors.nonEmpty && !functionLike && !isCompatible(normalizedExpected, normalizedActual) then
             List(
               errorAt(
                 source,
@@ -1188,23 +1238,27 @@ object TypeChecker:
   // Applies the current type substitutions to a type.
   private def applySubstitutions(tpe: Expr, env: TypeEnv): Expr =
     tpe match
-      case Expr.Meta(id) =>
+      case Expr.Meta(id, _) =>
         env.substitutions.get(id) match
           case Some(bound) => applySubstitutions(bound, env)
           case None => tpe
-      case Expr.App(base, args) =>
+      case Expr.App(base, args, _) =>
         Expr.App(applySubstitutions(base, env), args.map(applySubstitutions(_, env)))
-      case Expr.Fun(params, result) =>
+      case Expr.Fun(params, result, _) =>
         Expr.Fun(params.map(applySubstitutions(_, env)), applySubstitutions(result, env))
+      case Expr.Pi(param, body, _) =>
+        Expr.Pi(param.copy(tpe = applySubstitutions(param.tpe, env)), applySubstitutions(body, env))
       case other => other
 
   // Checks whether a meta variable occurs in a type.
   private def occursInMeta(tpe: Expr, id: Int, env: TypeEnv): Boolean =
     applySubstitutions(tpe, env) match
-      case Expr.Meta(otherId) => id == otherId
-      case Expr.App(base, args) => occursInMeta(base, id, env) || args.exists(occursInMeta(_, id, env))
-      case Expr.Fun(params, result) =>
+      case Expr.Meta(otherId, _) => id == otherId
+      case Expr.App(base, args, _) => occursInMeta(base, id, env) || args.exists(occursInMeta(_, id, env))
+      case Expr.Fun(params, result, _) =>
         params.exists(occursInMeta(_, id, env)) || occursInMeta(result, id, env)
+      case Expr.Pi(param, body, _) =>
+        occursInMeta(param.tpe, id, env) || occursInMeta(body, id, env)
       case _ => false
 
   // Replaces a meta variable in a type with a concrete type.
@@ -1225,18 +1279,19 @@ object TypeChecker:
     (normalizedLeft, normalizedRight) match
       case (Expr.Unknown, other) => (env, other, Nil)
       case (other, Expr.Unknown) => (env, other, Nil)
-      case (Expr.Meta(id), other) =>
-        if other == Expr.Meta(id) then (env, other, Nil)
-        else if occursInMeta(other, id, env) then
-          (env, Expr.Unknown, List(errorAt(source, s"Cannot construct infinite type in $context")))
-        else
-          val updatedSubst = env.substitutions.updated(id, other)
-          (env.copy(substitutions = updatedSubst), other, Nil)
-      case (other, Expr.Meta(id)) =>
+      case (Expr.Meta(id, _), other) =>
+        other match
+          case Expr.Meta(otherId, _) if otherId == id => (env, other, Nil)
+          case _ if occursInMeta(other, id, env) =>
+            (env, Expr.Unknown, List(errorAt(source, s"Cannot construct infinite type in $context")))
+          case _ =>
+            val updatedSubst = env.substitutions.updated(id, other)
+            (env.copy(substitutions = updatedSubst), other, Nil)
+      case (other, Expr.Meta(id, _)) =>
         unifyTypes(Expr.Meta(id), other, env, source, context)
-      case (Expr.Name(leftName), Expr.Name(rightName)) if leftName == rightName =>
+      case (Expr.Name(leftName, _), Expr.Name(rightName, _)) if leftName == rightName =>
         (env, resolvedLeft, Nil)
-      case (Expr.App(leftBase, leftArgs), Expr.App(rightBase, rightArgs)) =>
+      case (Expr.App(leftBase, leftArgs, _), Expr.App(rightBase, rightArgs, _)) =>
         val (envAfterBase, unifiedBase, baseErrors) =
           unifyTypes(leftBase, rightBase, env, source, context)
         val initial = (envAfterBase, List.empty[Expr], baseErrors)
@@ -1252,7 +1307,7 @@ object TypeChecker:
           Expr.App(unifiedBase, unifiedArgs),
           argErrors
         )
-      case (Expr.Fun(leftParams, leftResult), Expr.Fun(rightParams, rightResult)) =>
+      case (Expr.Fun(leftParams, leftResult, _), Expr.Fun(rightParams, rightResult, _)) =>
         val initial = (env, List.empty[Expr], List.empty[TypeError])
         val (envAfterParams, unifiedParams, paramErrors) =
           leftParams
@@ -1268,6 +1323,17 @@ object TypeChecker:
           Expr.Fun(unifiedParams, unifiedResult),
           paramErrors ++ resultErrors
         )
+      case (Expr.Pi(leftParam, leftBody, _), Expr.Pi(rightParam, rightBody, _)) =>
+        val (envAfterParam, unifiedParam, paramErrors) =
+          unifyTypes(leftParam.tpe, rightParam.tpe, env, source, context)
+        val updatedLeft = leftParam.copy(tpe = unifiedParam)
+        val (envAfterBody, unifiedBody, bodyErrors) =
+          unifyTypes(leftBody, rightBody, envAfterParam, source, context)
+        (
+          envAfterBody,
+          Expr.Pi(updatedLeft, unifiedBody),
+          paramErrors ++ bodyErrors
+        )
       case _ =>
         (
           env,
@@ -1278,15 +1344,12 @@ object TypeChecker:
   // Flattens nested function types into a single parameter list.
   private def normalizeFunType(tpe: Expr): Expr =
     tpe match
-      case Expr.Fun(params, result) =>
-        result match
-          case inner: Expr.Fun =>
-            val normalizedInner: Expr.Fun = normalizeFunType(inner) match
-              case fun: Expr.Fun => fun
-              case other => Expr.Fun(Nil, other)
-            Expr.Fun(params ++ normalizedInner.params, normalizedInner.result)
-          case _ =>
-            Expr.Fun(params, result)
+      case Expr.Fun(params, result, _) =>
+        normalizeFunType(result) match
+          case fun: Expr.Fun => Expr.Fun(params ++ fun.params, fun.result)
+          case other => Expr.Fun(params, other)
+      case Expr.Pi(param, body, _) =>
+        normalizeFunType(Expr.Fun(List(param.tpe), body))
       case other => other
 
   // Resolves the function type and type parameters for a callable expression.
@@ -1294,14 +1357,25 @@ object TypeChecker:
     callee match
       case Expr.Var(symbol, _) =>
         symbol match
-          case fun: FunctionSymbol => Some((fun.tpe, fun.typeParams))
+          case fun: FunctionSymbol =>
+            normalizeFunType(fun.tpe) match
+              case funType: Expr.Fun => Some((funType, fun.typeParams))
+              case _ => None
           case _ =>
             applySubstitutions(symbol.tpe, env) match
               case tpe: Expr.Fun => Some((tpe, Nil))
+              case tpe: Expr.Pi =>
+                normalizeFunType(tpe) match
+                  case funType: Expr.Fun => Some((funType, Nil))
+                  case _ => None
               case _ => None
       case _ =>
         applySubstitutions(callee.tpe, env) match
           case tpe: Expr.Fun => Some((tpe, Nil))
+          case tpe: Expr.Pi =>
+            normalizeFunType(tpe) match
+              case funType: Expr.Fun => Some((funType, Nil))
+              case _ => None
           case _ => None
 
   // Builds the implicit eliminator name for a data type.
@@ -1314,19 +1388,21 @@ object TypeChecker:
     (normalizedExpected, normalizedActual) match
       case (Expr.Unknown, _) => true
       case (_, Expr.Unknown) => true
-      case (Expr.Meta(_), _) => true
-      case (_, Expr.Meta(_)) => true
-      case (Expr.Name(left), Expr.Name(right)) => left == right
-      case (Expr.App(leftBase, leftArgs), Expr.App(rightBase, rightArgs)) =>
+      case (Expr.Meta(_, _), _) => true
+      case (_, Expr.Meta(_, _)) => true
+      case (Expr.Name(left, _), Expr.Name(right, _)) => left == right
+      case (Expr.App(leftBase, leftArgs, _), Expr.App(rightBase, rightArgs, _)) =>
         isCompatible(leftBase, rightBase) &&
           leftArgs
             .zipAll(rightArgs, Expr.Unknown, Expr.Unknown)
             .forall { case (left, right) => isCompatible(left, right) }
-      case (Expr.Fun(leftParams, leftResult), Expr.Fun(rightParams, rightResult)) =>
+      case (Expr.Fun(leftParams, leftResult, _), Expr.Fun(rightParams, rightResult, _)) =>
         leftParams
           .zipAll(rightParams, Expr.Unknown, Expr.Unknown)
           .forall { case (left, right) => isCompatible(left, right) } &&
           isCompatible(leftResult, rightResult)
+      case (Expr.Pi(leftParam, leftBody, _), Expr.Pi(rightParam, rightBody, _)) =>
+        isCompatible(leftParam.tpe, rightParam.tpe) && isCompatible(leftBody, rightBody)
       case _ => false
 
   // Performs a simple unification without meta substitutions.
@@ -1334,10 +1410,24 @@ object TypeChecker:
     (left, right) match
       case (Expr.Unknown, other) => other
       case (other, Expr.Unknown) => other
-      case (Expr.Meta(_), other) => other
-      case (other, Expr.Meta(_)) => other
+      case (Expr.Meta(_, _), other) => other
+      case (other, Expr.Meta(_, _)) => other
       case _ if left == right => left
       case _ => Expr.Unknown
+
+  private val baseTypes: Map[String, Expr] =
+    Map(
+      "unit" -> Expr.Name("unit")
+    )
+
+  private val builtinTypeNames: Set[String] =
+    baseTypes.keySet
+
+  private val baseValues: Map[String, BuiltinValueSymbol] =
+    Map(
+      "unit" -> BuiltinValueSymbol("unit", baseTypes("unit")),
+      "undefined" -> BuiltinValueSymbol("undefined", Expr.Unknown)
+    )
 
   private def resolveSymbol(name: String, env: TypeEnv): Option[Symbol] =
     env.resolveLocal(name)
@@ -1377,9 +1467,11 @@ object TypeChecker:
 
   private def renderType(tpe: Expr): String =
     tpe match
-      case Expr.Name(value) => value
-      case Expr.App(base, args) => s"${renderType(base)}[${args.map(renderType).mkString(", ")}]"
-      case Expr.Fun(params, result) =>
+      case Expr.Name(value, _) => value
+      case Expr.App(base, args, _) => s"${renderType(base)}[${args.map(renderType).mkString(", ")}]"
+      case Expr.Fun(params, result, _) =>
         s"(${params.map(renderType).mkString(", ")}) -> ${renderType(result)}"
-      case Expr.Meta(id) => s"?$id"
+      case Expr.Pi(param, body, _) =>
+        s"forall ${param.name}: ${renderType(param.tpe)}. ${renderType(body)}"
+      case Expr.Meta(id, _) => s"?$id"
       case Expr.Unknown => "Unknown"

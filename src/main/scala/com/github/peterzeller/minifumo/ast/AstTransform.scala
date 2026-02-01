@@ -48,7 +48,8 @@ object AstTransform:
     ctx.ctorField().asScala.toList.map(ctorField)
 
   def ctorField(ctx: MinifumoParser.CtorFieldContext): CtorField =
-    CtorField(ctx.ID().getText, expr(ctx.expr()))(range(ctx))
+    val fieldType = Option(ctx.expr()).map(expr).getOrElse(Expr.Hole()(range(ctx)))
+    CtorField(ctx.ID().getText, fieldType)(range(ctx))
 
   def funDecl(ctx: MinifumoParser.FunDeclContext): TopLevel =
     val sig = ctx.funSig()
@@ -74,7 +75,8 @@ object AstTransform:
     ctx.funParam().asScala.toList.map(funParam)
 
   def funParam(ctx: MinifumoParser.FunParamContext): FunParam =
-    FunParam(ctx.ID().getText, expr(ctx.expr()))(range(ctx))
+    val paramType = Option(ctx.expr()).map(expr).getOrElse(Expr.Hole()(range(ctx)))
+    FunParam(ctx.ID().getText, paramType)(range(ctx))
 
   // Parses a suite and desugars it into a single expression.
   def suite(ctx: MinifumoParser.SuiteContext): Expr =
@@ -99,6 +101,9 @@ object AstTransform:
         val args = Option(c.argList()).map(argList).getOrElse(Nil)
         val tArgs = Option(c.typeArgs()).map(typeArgs).getOrElse(Nil)
         curriedCall(expr(c.expr()), tArgs, args, range(c))
+      case c: MinifumoParser.TypeAppContext =>
+        val tArgs = typeArgs(c.typeArgs())
+        curriedCall(expr(c.expr()), tArgs, Nil, range(c))
       case c: MinifumoParser.DotContext =>
         // The expression x.f(a,b,c) is short for f(x,a,b,c)
         curriedCall(Expr.Var(c.ID().getText)(range(c)), Nil, expr(c.expr()) :: argList(c.argList()), range(c))
@@ -130,6 +135,18 @@ object AstTransform:
         opCall("opAnd", List(expr(c.expr(0)), expr(c.expr(1))), range(c))
       case c: MinifumoParser.OrContext =>
         opCall("opOr", List(expr(c.expr(0)), expr(c.expr(1))), range(c))
+      case c: MinifumoParser.FunctionTypeContext =>
+        val baseExpr = expr(c.base)
+        val resultExpr = expr(c.result)
+        val (baseParams, baseResult) = splitFunctionType(baseExpr)
+        val allParams = baseParams :+ baseResult
+        allParams.foldRight(resultExpr) { (paramType, acc) =>
+          val param = LambdaParam("_", Some(paramType))(range(c))
+          Expr.Pi(param, acc)(range(c))
+        }
+      case c: MinifumoParser.DependentFunctionTypeContext =>
+        val param = LambdaParam(c.ID().getText, Some(expr(c.base)))(range(c))
+        Expr.Pi(param, expr(c.result))(range(c))
       case c: MinifumoParser.LetInContext =>
         val tpe = Option(c.varType).map(expr)
         Expr.LetIn(c.ID().getText, tpe, expr(c.expr(0)), expr(c.expr(1)))(range(c))
@@ -228,6 +245,14 @@ object AstTransform:
   private def lambdaParam(ctx: MinifumoParser.LambdaParamContext): LambdaParam =
     val tpe = Option(ctx.expr()).map(expr)
     LambdaParam(ctx.ID().getText, tpe)(range(ctx))
+
+  // Splits a non-dependent function type into parameter types and the final result type.
+  private def splitFunctionType(expr: Expr): (List[Expr], Expr) =
+    expr match
+      case Expr.Pi(param, body) if param.name == "_" && param.tpe.nonEmpty =>
+        val (params, result) = splitFunctionType(body)
+        (param.tpe.toList ++ params, result)
+      case _ => (Nil, expr)
 
   // Builds a nested lambda chain from multiple parameters.
   private def lambdaChain(params: List[LambdaParam], body: Expr, source: SourceRange): Expr =
