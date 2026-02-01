@@ -5,6 +5,7 @@ import org.antlr.v4.runtime.{ParserRuleContext, Token}
 import org.antlr.v4.runtime.tree.TerminalNode
 
 import scala.jdk.CollectionConverters.*
+import java.util.Arrays
 
 object AstTransform:
   def program(ctx: MinifumoParser.ProgramContext): ProgramFile =
@@ -27,15 +28,16 @@ object AstTransform:
 
   def dataDecl(ctx: MinifumoParser.DataDeclContext): TopLevel =
     val name = typeName(ctx.typeName())
-    val params = Option(ctx.typeParams()).map(typeParams).getOrElse(Nil)
+    val params = Option(ctx.implicitParams()).map(typeParams).getOrElse(Nil)
     val ctors = ctx.ctorDecl().asScala.toList.map(ctorDecl)
     TopLevel.DataDecl(name, params, ctors, isExported(ctx.EXPORT()))(range(ctx))
 
   def typeName(ctx: MinifumoParser.TypeNameContext): String =
     ctx.ID().getText
 
-  def typeParams(ctx: MinifumoParser.TypeParamsContext): List[String] =
-    ctx.ID().asScala.toList.map(_.getText)
+  def typeParams(ctx: MinifumoParser.ImplicitParamsContext): List[FunParam] =
+    ctx.funParam().asScala.toList.map(funParam)
+
 
   def ctorDecl(ctx: MinifumoParser.CtorDeclContext): CtorDecl =
     val name = ctx.ID().getText
@@ -46,17 +48,14 @@ object AstTransform:
     ctx.ctorField().asScala.toList.map(ctorField)
 
   def ctorField(ctx: MinifumoParser.CtorFieldContext): CtorField =
-    CtorField(ctx.ID().getText, `type`(ctx.`type`()))(range(ctx))
+    CtorField(ctx.ID().getText, expr(ctx.expr()))(range(ctx))
 
   def funDecl(ctx: MinifumoParser.FunDeclContext): TopLevel =
     val sig = ctx.funSig()
     val funSigDecl = funSig(sig)
     val body = suite(ctx.suite())
     TopLevel.FunDecl(
-      funSigDecl.name,
-      funSigDecl.typeParams,
-      funSigDecl.params,
-      funSigDecl.returnType,
+      funSigDecl,
       body,
       isExported(ctx.EXPORT())
     )(range(ctx))
@@ -64,15 +63,18 @@ object AstTransform:
   def funSig(ctx: MinifumoParser.FunSigContext): FunSig =
     val name = ctx.ID().getText
     val params = Option(ctx.funParams()).map(funParams).getOrElse(Nil)
-    val tParams = Option(ctx.typeParams()).map(typeParams).getOrElse(Nil)
-    val returnType = Option(ctx.`type`()).map(`type`)
+    val tParams = Option(ctx.implicitParams()).map(implicitParams).getOrElse(Nil)
+    val returnType = expr(ctx.expr())
     FunSig(name, tParams, params, returnType)(range(ctx))
+
+  def implicitParams(ctx: MinifumoParser.ImplicitParamsContext): List[FunParam] =
+    ctx.funParam().asScala.toList.map(funParam)
 
   def funParams(ctx: MinifumoParser.FunParamsContext): List[FunParam] =
     ctx.funParam().asScala.toList.map(funParam)
 
   def funParam(ctx: MinifumoParser.FunParamContext): FunParam =
-    FunParam(ctx.ID().getText, `type`(ctx.`type`()))(range(ctx))
+    FunParam(ctx.ID().getText, expr(ctx.expr()))(range(ctx))
 
   // Parses a suite and desugars it into a single expression.
   def suite(ctx: MinifumoParser.SuiteContext): Expr =
@@ -82,25 +84,6 @@ object AstTransform:
   def block(ctx: MinifumoParser.BlockContext): List[Expr] =
     ctx.expr().asScala.toList.map(expr)
 
-  def `type`(ctx: MinifumoParser.TypeContext): Type =
-    val base = typeApp(ctx.base)
-    Option(ctx.result).map(result => Type.Fun(base, `type`(result))(range(ctx))).getOrElse(base)
-
-  def typeApp(ctx: MinifumoParser.TypeAppContext): Type =
-    val base = typeAtom(ctx.typeAtom())
-    ctx.typeAppArgs().asScala.toList.map(typeAppArgs).foldLeft(base) { (acc, args) =>
-      Type.App(acc, args)(range(ctx))
-    }
-
-  def typeAtom(ctx: MinifumoParser.TypeAtomContext): Type =
-    if ctx.ID() != null then
-      Type.Name(ctx.ID().getText)(range(ctx))
-    else
-      Type.Paren(`type`(ctx.`type`()))(range(ctx))
-
-  def typeAppArgs(ctx: MinifumoParser.TypeAppArgsContext): List[Type] =
-    ctx.`type`().asScala.toList.map(`type`)
-
   def expr(ctx: MinifumoParser.ExprContext): Expr =
     ctx match
       case c: MinifumoParser.LitContext =>
@@ -108,7 +91,7 @@ object AstTransform:
       case c: MinifumoParser.VarContext =>
         Expr.Var(c.ID().getText)(range(c))
       case c: MinifumoParser.ParenContext =>
-        Expr.Paren(expr(c.expr()))(range(c))
+        expr(c.expr())
       case c: MinifumoParser.LambdaContext =>
         val (params, bodyExpr) = lambdaExpr(c)
         lambdaChain(params, bodyExpr, range(c))
@@ -140,7 +123,7 @@ object AstTransform:
         val right = expr(c.expr(1))
         if c.op.getText == "!=" then
           val eqExpr = opCall("eq", List(left, right), range(c))
-          Expr.Call(Expr.Var("opNot")(range(c)), Nil, List(eqExpr))(range(c))
+          makeCall(Expr.Var("opNot")(range(c)), Nil, List(eqExpr))(range(c))
         else
           opCall("eq", List(left, right), range(c))
       case c: MinifumoParser.AndContext =>
@@ -148,11 +131,11 @@ object AstTransform:
       case c: MinifumoParser.OrContext =>
         opCall("opOr", List(expr(c.expr(0)), expr(c.expr(1))), range(c))
       case c: MinifumoParser.LetInContext =>
-        val tpe = Option(c.`type`()).map(`type`)
-        Expr.LetIn(c.ID().getText, true, tpe, expr(c.expr(0)), expr(c.expr(1)))(range(c))
+        val tpe = Option(c.varType).map(expr)
+        Expr.LetIn(c.ID().getText, tpe, expr(c.expr(0)), expr(c.expr(1)))(range(c))
       case c: MinifumoParser.LetStmtContext =>
-        val tpe = Option(c.`type`()).map(`type`)
-        Expr.Bind(c.ID().getText, true, tpe, expr(c.expr()))(range(c))
+        val tpe = Option(c.varType).map(expr)
+        Expr.LetIn(c.ID().getText, tpe, expr(c.value), Expr.Hole()(range(c)))(range(c))
       case c: MinifumoParser.IfThenElseContext =>
         boolMatch(expr(c.expr(0)), expr(c.expr(1)), expr(c.expr(2)), range(c))
       case c: MinifumoParser.IfSuiteContext =>
@@ -164,13 +147,16 @@ object AstTransform:
       case c: MinifumoParser.UnitContext =>
         Expr.Lit(Literal.UnitLit()(range(c)))(range(c))
       case other =>
-        throw new IllegalArgumentException(s"Unexpected expr context: ${other.getClass.getSimpleName}")
+        throw new IllegalArgumentException(s"Unexpected expr context: ${other.getClass.getSimpleName} at ${range(other)} // ${other.getText()} // ${other.toStringTree(Arrays.asList(MinifumoParser.ruleNames*))}")
+
+  def makeCall(callee: Expr, implicitArgs: List[Expr], args: List[Expr])(source: SourceRange): Expr =
+    curriedCall(callee, implicitArgs, args, source)
 
   def argList(ctx: MinifumoParser.ArgListContext): List[Expr] =
     ctx.expr().asScala.toList.map(expr)
 
-  def typeArgs(ctx: MinifumoParser.TypeArgsContext): List[Type] =
-    ctx.`type`().asScala.toList.map(`type`)
+  def typeArgs(ctx: MinifumoParser.TypeArgsContext): List[Expr] =
+    ctx.expr().asScala.toList.map(expr)
 
   def matchCase(ctx: MinifumoParser.MatchCaseContext): MatchCase =
     MatchCase(pattern(ctx.pattern()), suite(ctx.suite()))(range(ctx))
@@ -205,18 +191,16 @@ object AstTransform:
   // Builds a curried call expression from explicit arguments.
   private def curriedCall(
       callee: Expr,
-      typeArgs: List[Type],
+      typeArgs: List[Expr],
       args: List[Expr],
       source: SourceRange
     ): Expr =
-    val baseCall =
-      args.headOption match
-        case Some(arg) => Expr.Call(callee, typeArgs, List(arg))(source)
-        case None => Expr.Call(callee, typeArgs, Nil)(source)
-    val withArgs = args.drop(1).foldLeft(baseCall) { (current, arg) =>
-      Expr.Call(current, Nil, List(arg))(source)
-    }
-    withArgs
+      (typeArgs, args) match
+        case (Nil, Nil) => callee
+        case (tArg :: tTail, _) =>
+          curriedCall(Expr.CallImplicit(callee, tArg)(callee.source.merge(tArg.source)), tTail, args, source)
+        case (_, arg :: tail) =>
+          curriedCall(Expr.Call(callee, arg)(callee.source.merge(arg.source)), Nil, tail, source)
 
   // Desugars an if-then-else expression into a Bool match.
   private def boolMatch(cond: Expr, thenExpr: Expr, elseExpr: Expr, source: SourceRange): Expr =
@@ -234,8 +218,7 @@ object AstTransform:
   private def lambdaParams(ctx: MinifumoParser.LambdaParamsContext): List[LambdaParam] =
     ctx match
       case single: MinifumoParser.LambdaSingleContext =>
-        val tpe = Option(single.`type`()).map(`type`)
-        List(LambdaParam(single.ID().getText, tpe)(range(single)))
+        Option(single.lambdaParam()).toList.map(lambdaParam)
       case multi: MinifumoParser.LambdaMultiContext =>
         multi.lambdaParam().asScala.toList.map(lambdaParam)
       case other =>
@@ -243,7 +226,7 @@ object AstTransform:
 
   // Parses a single lambda parameter with optional type.
   private def lambdaParam(ctx: MinifumoParser.LambdaParamContext): LambdaParam =
-    val tpe = Option(ctx.`type`()).map(`type`)
+    val tpe = Option(ctx.expr()).map(expr)
     LambdaParam(ctx.ID().getText, tpe)(range(ctx))
 
   // Builds a nested lambda chain from multiple parameters.
@@ -261,16 +244,13 @@ object AstTransform:
     exprs match
       case Nil =>
         unitExpr
+      case List(e) => e
       case head :: tail =>
         head match
-          case Expr.Bind(name, isConstant, tpe, value) =>
-            val bodyExpr = if tail.isEmpty then unitExpr else desugarBlock(tail, source)
-            Expr.LetIn(name, isConstant, tpe, value, bodyExpr)(head.source)
+          case Expr.LetIn(name, tpe, value, Expr.Hole()) =>
+            Expr.LetIn(name, tpe, value, desugarBlock(tail, source))(head.source)
           case other =>
-            if tail.isEmpty then
-              other
-            else
-              Expr.LetIn("_", true, None, other, desugarBlock(tail, source))(head.source)
+              Expr.LetIn("_", None, other, desugarBlock(tail, source))(head.source)
 
   private def unquote(text: String): String =
     if text.length >= 2 && text.head == '"' && text.last == '"' then
@@ -306,7 +286,7 @@ object AstTransform:
     val endPos = SourcePos(endToken.getLine, endToken.getCharPositionInLine + tokenTextLength(endToken) + 1)
     SourceRange(startPos, endPos)
 
-  
+
 
   private def tokenTextLength(token: Token): Int =
     Option(token.getText).fold(0)(_.length)

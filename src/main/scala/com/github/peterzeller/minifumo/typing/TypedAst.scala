@@ -4,26 +4,19 @@ import com.github.peterzeller.minifumo.ast
 import com.github.peterzeller.minifumo.ast.SourceRange
 
 object TypedAst:
-  enum Type:
-    case Name(value: String)
-    case App(base: Type, args: List[Type])
-    case Fun(params: List[Type], result: Type)
-    case Meta(id: Int)
-    case Unknown
-
   sealed trait Symbol:
     def name: String
-    def tpe: Type
+    def tpe: Expr
 
   sealed trait TermSymbol extends Symbol
 
-  final case class LocalSymbol(name: String, tpe: Type, id: Int) extends TermSymbol
-  final case class ParamSymbol(name: String, tpe: Type, id: Int) extends TermSymbol
-  final case class BuiltinValueSymbol(name: String, tpe: Type) extends TermSymbol
-  final case class ErrorSymbol(name: String, tpe: Type) extends Symbol
+  final case class LocalSymbol(name: String, tpe: Expr, id: Int) extends TermSymbol
+  final case class ParamSymbol(name: String, tpe: Expr, id: Int) extends TermSymbol
+  final case class BuiltinValueSymbol(name: String, tpe: Expr) extends TermSymbol
+  final case class ErrorSymbol(name: String, tpe: Expr) extends Symbol
 
-  final case class FunctionSymbol(name: String, typeParams: List[String], tpe: Type.Fun) extends Symbol
-  final case class CtorSymbol(name: String, typeParams: List[String], tpe: Type.Fun, arity: Int, resultType: Type)
+  final case class FunctionSymbol(name: String, typeParams: List[String], tpe: Expr) extends Symbol
+  final case class CtorSymbol(name: String, typeParams: List[String], tpe: Expr, arity: Int, resultType: Expr)
       extends Symbol
   case class Program(items: List[TopLevel])(val source: SourceRange)
 
@@ -37,36 +30,27 @@ object TypedAst:
       )(val source: SourceRange)
 
   final case class CtorDecl(symbol: CtorSymbol, fields: List[CtorField])(val source: SourceRange)
-  final case class CtorField(name: String, tpe: Type)(val source: SourceRange)
+  final case class CtorField(name: String, tpe: Expr)(val source: SourceRange)
 
   sealed trait Expr:
-    def tpe: Type
+    def tpe: Expr
     def source: SourceRange
 
   object Expr:
-    final case class Lit(value: ast.Literal, tpe: Type)(val source: SourceRange) extends Expr
-    final case class Var(symbol: Symbol, tpe: Type)(val source: SourceRange) extends Expr
-    final case class Paren(expr: Expr, tpe: Type)(val source: SourceRange) extends Expr
-    final case class CallFun(callee: Expr, args: List[Expr], tpe: Type)(val source: SourceRange)
+    final case class Lit(value: ast.Literal, tpe: Expr)(val source: SourceRange) extends Expr
+    final case class Var(symbol: Symbol, tpe: Expr)(val source: SourceRange) extends Expr
+    final case class CallFun(callee: Expr, args: Expr, tpe: Expr)(val source: SourceRange)
         extends Expr
-    final case class CallCtor(symbol: CtorSymbol, args: List[Expr], tpe: Type)(val source: SourceRange) extends Expr
-    final case class Lambda(param: LocalSymbol, body: Expr, tpe: Type)(val source: SourceRange) extends Expr
+    final case class CallCtor(symbol: CtorSymbol, args: List[Expr], tpe: Expr)(val source: SourceRange) extends Expr
+    final case class Lambda(param: LocalSymbol, body: Expr, tpe: Expr)(val source: SourceRange) extends Expr
     final case class LetIn(
         symbol: LocalSymbol,
         isConstant: Boolean,
-        declaredType: Option[Type],
+        declaredType: Option[Expr],
         value: Expr,
         body: Expr,
-        tpe: Type
+        tpe: Expr
       )(val source: SourceRange) extends Expr
-    final case class Bind(
-        symbol: LocalSymbol,
-        isConstant: Boolean,
-        declaredType: Option[Type],
-        value: Expr,
-        tpe: Type
-      )(val source: SourceRange) extends Expr
-    final case class Return(expr: Expr, tpe: Type)(val source: SourceRange) extends Expr
 
   final case class MatchCase(pattern: Pattern, body: Expr)(val source: SourceRange)
 
