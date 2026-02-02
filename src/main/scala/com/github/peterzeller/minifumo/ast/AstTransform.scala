@@ -101,9 +101,6 @@ object AstTransform:
         val args = Option(c.argList()).map(argList).getOrElse(Nil)
         val tArgs = Option(c.typeArgs()).map(typeArgs).getOrElse(Nil)
         curriedCall(expr(c.expr()), tArgs, args, range(c))
-      case c: MinifumoParser.TypeAppContext =>
-        val tArgs = typeArgs(c.typeArgs())
-        curriedCall(expr(c.expr()), tArgs, Nil, range(c))
       case c: MinifumoParser.DotContext =>
         // The expression x.f(a,b,c) is short for f(x,a,b,c)
         curriedCall(Expr.Var(c.ID().getText)(range(c)), Nil, expr(c.expr()) :: argList(c.argList()), range(c))

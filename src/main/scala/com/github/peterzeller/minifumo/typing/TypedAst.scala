@@ -15,9 +15,8 @@ object TypedAst:
   final case class BuiltinValueSymbol(name: String, tpe: Expr) extends TermSymbol
   final case class ErrorSymbol(name: String, tpe: Expr) extends Symbol
 
-  final case class FunctionSymbol(name: String, typeParams: List[String], tpe: Expr) extends Symbol
-  final case class CtorSymbol(name: String, typeParams: List[String], tpe: Expr, arity: Int, resultType: Expr)
-      extends Symbol
+  final case class FunctionSymbol(name: String, tpe: Expr) extends Symbol
+  final case class CtorSymbol(name: String, tpe: Expr) extends Symbol
   case class Program(items: List[TopLevel])(val source: SourceRange)
 
   enum TopLevel:
@@ -32,29 +31,30 @@ object TypedAst:
   final case class CtorDecl(symbol: CtorSymbol, fields: List[CtorField])(val source: SourceRange)
   final case class CtorField(name: String, tpe: Expr)(val source: SourceRange)
 
-  sealed trait Expr:
-    def tpe: Expr
+  enum Expr:
     def source: SourceRange
 
-  object Expr:
-    final case class Lit(value: ast.Literal, tpe: Expr)(val source: SourceRange) extends Expr
-    final case class Var(symbol: Symbol, tpe: Expr)(val source: SourceRange) extends Expr
-    final case class CallFun(callee: Expr, args: Expr, tpe: Expr)(val source: SourceRange)
-        extends Expr
-    final case class CallCtor(symbol: CtorSymbol, args: List[Expr], tpe: Expr)(val source: SourceRange) extends Expr
-    final case class Lambda(param: LocalSymbol, body: Expr, tpe: Expr)(val source: SourceRange) extends Expr
-    final case class LetIn(
+    case Lit(value: ast.Literal)(val source: SourceRange)
+    case Var(symbol: Symbol)(val source: SourceRange)
+    case App(callee: Expr, args: Expr, tpe: Expr)(val source: SourceRange)
+    case Pi(dom: Expr, cod: Expr)(val source: SourceRange)
+    case Sort()(val source: SourceRange)
+
+    case Lambda(param: LocalSymbol, body: Expr, tpe: Expr)(val source: SourceRange)
+    case LetIn(
         symbol: LocalSymbol,
         isConstant: Boolean,
-        declaredType: Option[Expr],
+        declaredType: Expr,
         value: Expr,
         body: Expr,
-        tpe: Expr
-      )(val source: SourceRange) extends Expr
+      )(val source: SourceRange)
 
-    case class Meta(index: Int) extends Expr
+    case Meta(index: Int, tpe: Expr)(val source: SourceRange)
 
-  final case class MatchCase(pattern: Pattern, body: Expr)(val source: SourceRange)
+    // placeholder when typing is unknown
+    case UnknownType(tpe: Expr)(val source: SourceRange)
+
+  class MatchCase(pattern: Pattern, body: Expr)(val source: SourceRange)
 
   enum Pattern:
     case Wildcard()(val source: SourceRange)
