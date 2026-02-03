@@ -4,7 +4,8 @@ import com.github.peterzeller.minifumo.ast
 import com.github.peterzeller.minifumo.ast.{AstTransform, SourceRange}
 import com.github.peterzeller.minifumo.parser.{SyntaxError, parseFile, parseInput}
 import com.github.peterzeller.minifumo.typing.TypeChecker.TypeError
-import com.github.peterzeller.minifumo.typing.TypedAst.Expr
+import com.github.peterzeller.minifumo.typing.TypedAst.Expr.UnknownType
+import com.github.peterzeller.minifumo.typing.TypedAst.{ErrorSymbol, Expr, GlobalNameSymbol, LocalSymbol}
 
 import java.nio.file.Path
 import scala.collection.mutable.ListBuffer
@@ -41,7 +42,7 @@ object GlobalSymbols:
   def buildGlobalSymbols(file: Path, prog: ast.ProgramFile, symbolCache: NameCache, onlyExported: Boolean): (Map[String, GlobalSymbol], List[TypeError]) =
     val (imports, errors1) = resolveImports(prog, symbolCache)
     val ownNames = buildGlobalNames(file, prog, false)
-    val preEnv = PreEnv(names = imports ++ ownNames)
+    val preEnv = PreEnv(globalNames = imports ++ ownNames)
     val errors = ListBuffer[TypeError](errors1*)
     var res = Map[String, GlobalSymbol]()
     for (symbols, es) <- prog.items.map(topLevelToGlobalSymbols(file, onlyExported, preEnv)) do
@@ -56,14 +57,53 @@ object GlobalSymbols:
 
   // environment for type checking signatures.
   // Has only limited information compared to real type checking
-  case class PreEnv(names: Map[String, GlobalName])
+  case class PreEnv(
+    globalNames: Map[String, GlobalName],
+    localNames: Map[String, LocalSymbol] = Map(),
+  )
 
   // performs basic checks (like name resolution) on an expression appearing in a signature.
   // Only basic language constructs are allowed in signatures, like Pi expressions, names, constants, literals, and function applications.
   // This means, that we don't need to do complex type checking in function signatures.
   // We also don't check function application, only translate the terms to the typed AST.
-  def checkSignatureExpr(e: ast.Expr, env: PreEnv): (Expr, List[TypeError]) =
-    ???
+  def checkSignatureExpr(expr: ast.Expr, env: PreEnv): (Expr, List[TypeError]) =
+    expr match
+      case ast.Expr.Lit(value) =>
+        (Expr.Lit(value)(expr.source), List())
+      case ast.Expr.Var(name) =>
+        // first lookup in local env
+        env.localNames.get(name) match
+          case Some(s) =>
+            (Expr.Var(s)(expr.source), List())
+          case None =>
+            // then lookup in global env
+            env.globalNames.get(name) match
+              case Some(n) =>
+                val s = GlobalNameSymbol(n.name, n.file)
+                (Expr.Var(s)(expr.source), List())
+              case None =>
+                (Expr.Var(ErrorSymbol(name, UnknownType()(SourceRange.empty)))(expr.source), List(TypeError(s"Could not find ${name}", expr.source)))
+      case ast.Expr.CallImplicit(callee, arg) =>
+        val (c, e1) = checkSignatureExpr(callee, env)
+        val (a, e2) = checkSignatureExpr(arg, env)
+        val t = TypedAst.Expr.UnknownType()(expr.source)
+        (TypedAst.Expr.AppImplicit(c, a, t)(expr.source), e1++e2)
+      case ast.Expr.Call(callee, arg) =>
+        val (c, e1) = checkSignatureExpr(callee, env)
+        val (a, e2) = checkSignatureExpr(arg, env)
+        val t = TypedAst.Expr.UnknownType()(expr.source)
+        (TypedAst.Expr.AppImplicit(c, a, t)(expr.source), e1++e2)
+      case ast.Expr.Lambda(param, body) =>
+        (TypedAst.Expr.UnknownType()(expr.source), List(TypeError("Cannot use lambda expressions in function signatures", expr.source)))
+      case ast.Expr.Pi(param, body) =>
+        (TypedAst.Expr.UnknownType()(expr.source), List(TypeError("Cannot use pi expressions in function signatures", expr.source)))
+      case ast.Expr.LetIn(name, tpe, value, body) =>
+        (TypedAst.Expr.UnknownType()(expr.source), List(TypeError("Cannot use let expressions in function signatures", expr.source)))
+      case ast.Expr.Match(scrutinee, cases) =>
+        (TypedAst.Expr.UnknownType()(expr.source), List(TypeError("Cannot use match expressions in function signatures", expr.source)))
+      case ast.Expr.Hole() =>
+        (TypedAst.Expr.UnknownType()(expr.source), List(TypeError("Cannot use hole expressions in function signatures", expr.source)))
+
 
   private def topLevelToGlobalSymbols(file: Path, onlyExported: Boolean, env: PreEnv)(t: ast.TopLevel): (Iterable[(String, SourceRange, GlobalSymbol)], Iterable[TypeError]) =
     t match

@@ -138,11 +138,11 @@ object AstTransform:
         val (baseParams, baseResult) = splitFunctionType(baseExpr)
         val allParams = baseParams :+ baseResult
         allParams.foldRight(resultExpr) { (paramType, acc) =>
-          val param = LambdaParam("_", Some(paramType))(range(c))
+          val param = PiParam("_", paramType)(range(c))
           Expr.Pi(param, acc)(range(c))
         }
       case c: MinifumoParser.DependentFunctionTypeContext =>
-        val param = LambdaParam(c.ID().getText, Some(expr(c.base)))(range(c))
+        val param = PiParam(c.ID().getText, expr(c.base))(range(c))
         Expr.Pi(param, expr(c.result))(range(c))
       case c: MinifumoParser.LetInContext =>
         val tpe = Option(c.varType).map(expr)
@@ -246,9 +246,9 @@ object AstTransform:
   // Splits a non-dependent function type into parameter types and the final result type.
   private def splitFunctionType(expr: Expr): (List[Expr], Expr) =
     expr match
-      case Expr.Pi(param, body) if param.name == "_" && param.tpe.nonEmpty =>
+      case Expr.Pi(param, body) =>
         val (params, result) = splitFunctionType(body)
-        (param.tpe.toList ++ params, result)
+        (param.tpe :: params, result)
       case _ => (Nil, expr)
 
   // Builds a nested lambda chain from multiple parameters.

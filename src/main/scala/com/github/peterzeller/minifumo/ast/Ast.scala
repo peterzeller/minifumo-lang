@@ -72,6 +72,8 @@ final case class CtorField(name: String, tpe: Expr)(val source: SourceRange)
 
 final case class FunParam(name: String, tpe: Expr)(val source: SourceRange)
 final case class LambdaParam(name: String, tpe: Option[Expr])(val source: SourceRange)
+final case class PiParam(name: String, tpe: Expr)(val source: SourceRange)
+
 
 enum Expr:
   case Lit(value: Literal)(val source: SourceRange)
@@ -89,7 +91,7 @@ enum Expr:
   // Let expressions, for example let x: Int = 5 in x + 1
 
   // Dependent function types (Pi types)
-  case Pi(param: LambdaParam, body: Expr)(val source: SourceRange)
+  case Pi(param: PiParam, body: Expr)(val source: SourceRange)
 
   case LetIn(name: String, tpe: Option[Expr], value: Expr, body: Expr)(val source: SourceRange)
   case Match(scrutinee: Expr, cases: List[MatchCase])(val source: SourceRange)
