@@ -47,7 +47,7 @@ object TypedAst:
     case Var(symbol: Symbol)(val source: SourceRange)
     case AppImplicit(callee: Expr, arg: Expr, tpe: Expr)(val source: SourceRange)
     case App(callee: Expr, arg: Expr, tpe: Expr)(val source: SourceRange)
-    case Pi(dom: Expr, cod: Expr)(val source: SourceRange)
+    case Pi(dom: Expr, cod: Expr, isImplicit: Boolean)(val source: SourceRange)
     case Sort()(val source: SourceRange)
 
     case Lambda(param: LocalSymbol, body: Expr, tpe: Expr)(val source: SourceRange)
@@ -63,6 +63,7 @@ object TypedAst:
 
     // placeholder when typing is unknown
     case UnknownType()(val source: SourceRange)
+    case Match(scrutinee: Expr, cases: List[MatchCase])(val source: SourceRange)
 
     def tpe(env: PreEnv): Expr =
       this match
@@ -83,15 +84,17 @@ object TypedAst:
         case Expr.Var(symbol) => symbol.tpe
         case Expr.AppImplicit(callee, arg, tpe) => tpe
         case Expr.App(callee, arg, tpe) => tpe
-        case Expr.Pi(dom, cod) => Sort()(SourceRange.empty)
+        case Expr.Pi(dom, cod, _) => Sort()(SourceRange.empty)
         case Expr.Sort() => Sort()(SourceRange.empty)
         case Expr.Lambda(param, body, tpe) => tpe
         case Expr.LetIn(symbol, isConstant, declaredType, value, body) => body.tpe(env)
         case Expr.Meta(index, tpe) => tpe
         case Expr.UnknownType() => Sort()(SourceRange.empty)
+        case Expr.Match(scrutinee, cases) =>
+          cases.headOption.map(_.body.tpe(env)).getOrElse(UnknownType()(SourceRange.empty))
 
 
-  class MatchCase(pattern: Pattern, body: Expr)(val source: SourceRange)
+  final case class MatchCase(pattern: Pattern, body: Expr)(val source: SourceRange)
 
   enum Pattern:
     case Wildcard()(val source: SourceRange)

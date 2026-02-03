@@ -2,6 +2,7 @@ package com.github.peterzeller.minifumo
 
 import com.github.peterzeller.minifumo.ast.{AstTransform, ProgramFile, SourcePos, SourceRange}
 import com.github.peterzeller.minifumo.interpreter.Interpreter
+import com.github.peterzeller.minifumo.builtins.Standard
 import com.github.peterzeller.minifumo.parser.{SyntaxError, parseInput}
 import com.github.peterzeller.minifumo.typing.{TypeChecker, TypedAst}
 import com.github.peterzeller.minifumo.typing.TypeChecker.TypeError
@@ -67,7 +68,12 @@ object Main:
     if syntaxErrors.nonEmpty then
       Left(renderSyntaxErrors(path, syntaxErrors))
     else
-      ???
+      val (typedProgram, typeErrors) = TypeChecker.checkProgram(program, TypeChecker.emptyExportEnv)
+      if typeErrors.nonEmpty then
+        Left(renderTypeErrors(path, typeErrors))
+      else
+        val combined = TypedAst.Program(Standard.typedProgram.items ++ typedProgram.items)(program.source)
+        Right(Interpreter.evalProg(combined, "main"))
 
   // Checks a directory of examples, reusing cached parse/import info across files.
   def checkDirectory(path: Path): List[String] =
