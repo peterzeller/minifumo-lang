@@ -90,6 +90,7 @@ expr
   | lambdaParams '=>' expr                    #Lambda
 
   // postfix
+  | expr typeArgs                             #TypeApply
   | expr typeArgs? '(' argList? ')'                                  #Call
   | expr '.' ID ('(' argList? ')')?           #Dot
 
