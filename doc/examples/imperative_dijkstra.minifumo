@@ -1,4 +1,4 @@
-fun main() unit
+fun main (): unit
     let dist1 = 0
     let dist2 = 4
     let dist3 = dist2 + 3

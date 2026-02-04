@@ -1,4 +1,4 @@
-fun main() unit
+fun main (): unit
     if false then println("loop", showString()) else unit
 
 // Output:

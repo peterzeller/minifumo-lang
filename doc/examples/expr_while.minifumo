@@ -1,4 +1,4 @@
-fun main() unit
+fun main (): unit
     if false then println("never", showString()) else unit
 
 // Output:

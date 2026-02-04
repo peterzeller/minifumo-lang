@@ -54,11 +54,10 @@ class GlobalSymbolsSuite extends munit.FunSuite:
   }
 
   test("resolveImports uses the name cache for imported symbols") {
-    val program = parseProgram("""
-      |import foo from "lib"
-      |fun main(): Int
-      |  1
-    """.stripMargin)
+    val program = ast.ProgramFile(
+      imports = List(ast.ImportStatement("foo", Some("lib"), None)(ast.SourceRange.empty)),
+      items = List()
+    )(ast.SourceRange.empty)
     val cache = fixedNameCache(
       Map("lib" -> Map("foo" -> GlobalName(Paths.get("lib"), "foo")))
     )
