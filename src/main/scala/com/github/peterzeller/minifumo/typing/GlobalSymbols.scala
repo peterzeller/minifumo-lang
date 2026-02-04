@@ -2,7 +2,7 @@ package com.github.peterzeller.minifumo.typing
 
 import com.github.peterzeller.minifumo.ast
 import com.github.peterzeller.minifumo.ast.{AstTransform, SourceRange}
-import com.github.peterzeller.minifumo.parser.{SyntaxError, parseFile, parseInput}
+import com.github.peterzeller.minifumo.parser.{SyntaxError, parseFile}
 import com.github.peterzeller.minifumo.typing.TypeChecker.TypeError
 import com.github.peterzeller.minifumo.typing.TypedAst.Expr.UnknownType
 import com.github.peterzeller.minifumo.typing.TypedAst.{ErrorSymbol, Expr, GlobalNameSymbol, LocalSymbol}
@@ -187,7 +187,6 @@ trait NameCache:
 class ProjectSymbolCache(projectRoot: Path) extends NameCache:
   private var astCache: Map[Path, (ast.ProgramFile, List[SyntaxError])] = Map()
   private var namesCache: Map[Path, Map[String, GlobalName]] = Map()
-  private var symbolCache: Map[Path, GlobalSymbols] = Map()
 
   def toPath(importPath: String): Path =
     projectRoot.resolve(importPath)

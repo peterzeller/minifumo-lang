@@ -131,19 +131,6 @@ object Main:
   private def loadProgram(path: Path, info: GlobalInfo): (ProgramFile, List[SyntaxError]) =
     info.parseCache.getOrElseUpdate(path, parseProgram(path))
 
-  // Resolves an import path relative to the project root, enforcing the .minifumo extension.
-  private def resolveImportPath(root: Path, pathText: String): Path =
-    val rawPath = Paths.get(pathText)
-    val withExtension =
-      if rawPath.toString.endsWith(".minifumo") then rawPath else Paths.get(s"${rawPath.toString}.minifumo")
-    root.resolve(withExtension).normalize()
-
-  // Finds the project root by walking up to locate minifumo.yml.
-  private def findProjectRoot(start: Path): Option[Path] =
-    Iterator.iterate(start)(_.getParent).takeWhile(_ != null).find { candidate =>
-      Files.exists(candidate.resolve("minifumo.yml"))
-    }
-
   // Renders a source range for error reporting.
   private def renderSourceRange(range: com.github.peterzeller.minifumo.ast.SourceRange): String =
     val start = range.start
