@@ -1,4 +1,4 @@
-fun main() unit
+fun main(): unit
     println(1 < 2, showBool())
 
 // Output: True

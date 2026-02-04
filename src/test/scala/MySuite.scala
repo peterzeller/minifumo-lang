@@ -20,10 +20,10 @@ class MySuite extends munit.FunSuite {
 
   test("interpreter evals main with a simple function call") {
     val (c, _) = parseInput("""
-      |fun id(x Int) Int
+      |fun id(x: Int): Int
       |    x
       |
-      |fun main() Int
+      |fun main(): Int
       |    id(3)
     """.stripMargin)
     val ast = AstTransform.program(c)
@@ -35,7 +35,7 @@ class MySuite extends munit.FunSuite {
 
   test("type checker can type ints") {
     val (c, _) = parseInput("""
-      |fun main() Int
+      |fun main(): Int
       |    let x = 1
       |    let y = 2
       |    y
@@ -47,10 +47,16 @@ class MySuite extends munit.FunSuite {
     assertEquals(result, intValue(2))
   }
 
-  test("type checker can handle if expressions") {
+  test("type checker can handle pattern matching on local data") {
     val (c, _) = parseInput("""
-      |fun main() Int
-      |    if true then 42 else 0
+      |data Maybe = None | Some(value: Int)
+      |
+      |fun main(): Int
+      |    match Some(42)
+      |        case None
+      |            0
+      |        case Some(value)
+      |            value
     """.stripMargin)
     val ast = AstTransform.program(c)
     val (typed, errors) = TypeChecker.checkProgram(ast, TypeChecker.emptyExportEnv)

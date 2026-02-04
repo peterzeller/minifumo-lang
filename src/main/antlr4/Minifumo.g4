@@ -49,7 +49,7 @@ ctorFields
   ;
 
 ctorField
-  : ID (':'? expr)?
+  : ID ':' expr
   ;
 
 // -------- Functions --------
@@ -59,7 +59,7 @@ funDecl
   ;
 
 funSig
-  : 'fun' ID implicitParams? '(' funParams? ')' ':'? returnType=expr
+  : 'fun' ID implicitParams? '(' funParams? ')' ':' returnType=expr
   ;
 
 funParams
@@ -67,7 +67,7 @@ funParams
   ;
 
 funParam
-  : ID (':'? expr)?
+  : ID ':' expr
   ;
 
 suite
@@ -137,7 +137,7 @@ lambdaParams
   ;
 
 lambdaParam
-  : ID (':'? expr)?
+  : ID (':' expr)?
   ;
 
 argList
