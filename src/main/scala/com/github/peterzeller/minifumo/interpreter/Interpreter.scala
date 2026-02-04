@@ -23,7 +23,7 @@ object Interpreter:
           if args.isEmpty then name else s"$name${args.map(_.toString).mkString("(", ", ", ")")}" 
         case Value.UnitVal => "unit"
         case Value.UndefinedVal => "undefined"
-        case Value.FuncVal(name, f) => s"<function $name>"
+        case Value.FuncVal(name, _) => s"<function $name>"
 
   /** Evaluates a function from the program by name. */
   def evalProg(prog: TypedAst.Program, funcName: String): Value =
@@ -33,7 +33,7 @@ object Interpreter:
       globals.update(symbol, buildCtorValue(symbol.name, arity))
     }
     functionBodies.foreach { case (symbol, info) =>
-      globals.update(symbol, buildFunctionValue(symbol.name, info.params, info.body, globals))
+      globals.update(symbol, buildFunctionValue(info.params, info.body, globals))
     }
     val entry = functionBodies.keys.find(_.name == funcName)
     entry match
@@ -70,7 +70,6 @@ object Interpreter:
 
   /** Builds a curried function value from its parameters and body. */
   private def buildFunctionValue(
-      name: String,
       params: List[TypedAst.ParamSymbol],
       body: TypedAst.Expr,
       globals: mutable.Map[TypedAst.Symbol, Value]
@@ -94,7 +93,6 @@ object Interpreter:
         locals.getOrElse(symbol, globals.getOrElse(symbol, Value.UndefinedVal))
       case TypedAst.Expr.Var(symbol) =>
         globals.getOrElse(symbol, Value.UndefinedVal)
-      case TypedAst.Expr.Var(_) => Value.UndefinedVal
       case TypedAst.Expr.App(callee, arg, _) =>
         val fn = evalExpr(callee, locals, globals)
         val argVal = evalExpr(arg, locals, globals)

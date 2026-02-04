@@ -2,7 +2,7 @@ package com.github.peterzeller.minifumo.parser
 import com.github.peterzeller.minifumo.antlr.MinifumoParser
 import com.github.peterzeller.minifumo.antlr.MinifumoParser.ProgramContext
 import com.github.peterzeller.minifumo.lexer.ExtendedLexer.ExtendedMinifumoLexer
-import org.antlr.v4.runtime.{ANTLRErrorListener, CharStream, CodePointCharStream, Parser}
+import org.antlr.v4.runtime.{ANTLRErrorListener, CharStream, Parser}
 import org.antlr.v4.runtime.atn.ATNConfigSet
 import org.antlr.v4.runtime.dfa.DFA
 

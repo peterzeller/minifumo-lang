@@ -56,10 +56,10 @@ object TypeChecker:
     val idSupply = IdSupply()
     val metaStore = MetaStore()
     val globals = buildGlobals(program, importedExports)
-    val signatureInfo = buildSignatures(program, globals, errors, idSupply)
+    val signatureInfo = buildSignatures(program, globals, idSupply)
     val typedItems = program.items.map {
       case decl: ast.TopLevel.DataDecl =>
-        buildDataDecl(decl, globals, errors, idSupply)
+        buildDataDecl(decl, globals, idSupply)
       case decl: ast.TopLevel.FunDecl =>
         val info = signatureInfo(decl.sig.name)
         val context = TypeContext(globals, Map())
@@ -148,7 +148,7 @@ object TypeChecker:
     val importedTypes = importedExports.types.map { case (name, source) =>
       name -> TypedAst.DatatypeSymbol(name, Paths.get(source))
     }
-    val importedFunctions = importedExports.functions.map { case (name, source) =>
+    val importedFunctions = importedExports.functions.map { case (name, _) =>
       name -> TypedAst.FunctionSymbol(name, TypedAst.Expr.UnknownType()(ast.SourceRange.empty))
     }
     val programTypes = program.items.collect {
@@ -178,7 +178,6 @@ object TypeChecker:
   private def buildSignatures(
       program: ast.ProgramFile,
       globals: GlobalEnv,
-      errors: ListBuffer[TypeError],
       idSupply: IdSupply
     ): Map[String, FunctionInfo] =
     val functionInfos = mutable.Map[String, FunctionInfo]()
@@ -214,14 +213,12 @@ object TypeChecker:
           val symbol = globals.functions.getOrElse(decl.sig.name, TypedAst.FunctionSymbol(decl.sig.name, funType)).copy(tpe = funType)
           globals.functions.update(decl.sig.name, symbol)
           functionInfos.update(decl.sig.name, FunctionInfo(symbol, implicitParams, explicitParams, returnType))
-        case _ =>
     functionInfos.toMap
 
   /** Builds a typed data declaration. */
   private def buildDataDecl(
       decl: ast.TopLevel.DataDecl,
       globals: GlobalEnv,
-      errors: ListBuffer[TypeError],
       idSupply: IdSupply
     ): TypedAst.TopLevel =
     val typeParams = decl.implicitParams.map(_.name)
@@ -377,7 +374,7 @@ object TypeChecker:
               check(arg, dom).map { argExpr =>
                 TypedAst.Expr.App(appliedExpr, argExpr, cod)(expr.source) -> cod
               }
-            case other => Left(List(TypeError("Expected a function", expr.source)))
+            case _ => Left(List(TypeError("Expected a function", expr.source)))
         }
       case ast.Expr.CallImplicit(callee, arg) =>
         infer(callee).flatMap { (calleeExpr, calleeType) =>
