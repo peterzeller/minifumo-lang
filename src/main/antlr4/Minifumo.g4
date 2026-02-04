@@ -28,16 +28,17 @@ topLevel
 // -------- ADTs --------
 
 dataDecl
-  : 'export'? 'data' typeName typeParams? '=' ctorDecl ('|' ctorDecl)* (NL+ | EOF)
+  : 'export'? 'data' typeName implicitParams? '=' ctorDecl? ('|' ctorDecl)*
   ;
 
 typeName
   : ID
   ;
 
-typeParams
-  : '[' ID (',' ID)* ']'
+implicitParams
+  : '[' funParam (',' funParam)* ']'
   ;
+
 
 ctorDecl
   : ID ctorFields?
@@ -48,7 +49,7 @@ ctorFields
   ;
 
 ctorField
-  : ID type
+  : ID ':' expr
   ;
 
 // -------- Functions --------
@@ -58,7 +59,7 @@ funDecl
   ;
 
 funSig
-  : 'fun' ID typeParams? '(' funParams? ')' type?
+  : 'fun' ID implicitParams? '(' funParams? ')' ':' returnType=expr
   ;
 
 funParams
@@ -66,7 +67,7 @@ funParams
   ;
 
 funParam
-  : ID type
+  : ID ':' expr
   ;
 
 suite
@@ -77,24 +78,6 @@ block
   : (NL)* expr (NL+ expr)* (NL)*
   ;
 
-// -------- Types --------
-
-type
-  : base=typeApp ('->' result=type)?
-  ;
-
-typeApp
-  : typeAtom typeAppArgs*
-  ;
-
-typeAtom
-  : ID
-  | '(' type ')'
-  ;
-
-typeAppArgs
-  : '[' type (',' type)* ']'
-  ;
 
 // -------- Expressions (ANTLR4 precedence via left recursion) --------
 // Highest precedence first, lowest last.
@@ -104,7 +87,7 @@ expr
   | ID                                        #Var
   | '(' expr ')'                              #Paren
   | '(' ')' # Unit
-  | lambdaParams '->' expr                    #Lambda
+  | lambdaParams '=>' expr                    #Lambda
 
   // postfix
   | expr typeArgs? '(' argList? ')'                                  #Call
@@ -125,13 +108,19 @@ expr
   | expr 'and' expr                            #And
   | expr 'or' expr                            #Or
 
+  // Function type
+  | base=expr '->' result=expr # FunctionType
+
+  // Dependent function type
+  | 'forall' ID ':' base=expr '.' result=expr # DependentFunctionType
+
   // ---- "statement-like" expressions (lowest precedence) ----
 
   // let/var with "in"
-  | 'let' ID type? '=' expr 'in' expr         #LetIn
+  | 'let' ID (':' varType=expr)? '=' value=expr 'in' body=expr         #LetIn
 
   // let binding statements
-  | 'let' ID type? '=' expr                   #LetStmt
+  | 'let' ID (':' varType=expr)? '=' value=expr                   #LetStmt
 
   // if
   | 'if' expr 'then' expr 'else' expr  #IfThenElse
@@ -142,12 +131,12 @@ expr
   ;
 
 lambdaParams
-  : ID type?                                  #LambdaSingle
+  : lambdaParam                                  #LambdaSingle
   | '(' lambdaParam (',' lambdaParam)* ')'    #LambdaMulti
   ;
 
 lambdaParam
-  : ID type?
+  : ID (':' expr)?
   ;
 
 argList
@@ -155,7 +144,7 @@ argList
   ;
 
 typeArgs
-  : '[' type (',' type)* ']'
+  : '[' expr (',' expr)* ']'
   ;
 
 matchCase

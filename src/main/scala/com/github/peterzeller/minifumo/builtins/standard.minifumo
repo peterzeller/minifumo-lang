@@ -870,3 +870,4 @@ fun treeMap[K, V](lt OpLt[K], eq Eq[K]) Map[Tree[K, V], K, V]
         treeMapPut(lt, eq),
         treeMapLookup(lt, eq)
     )
+

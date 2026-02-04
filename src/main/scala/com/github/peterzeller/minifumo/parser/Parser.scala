@@ -2,20 +2,28 @@ package com.github.peterzeller.minifumo.parser
 import com.github.peterzeller.minifumo.antlr.MinifumoParser
 import com.github.peterzeller.minifumo.antlr.MinifumoParser.ProgramContext
 import com.github.peterzeller.minifumo.lexer.ExtendedLexer.ExtendedMinifumoLexer
-import org.antlr.v4.runtime.ANTLRErrorListener
+import org.antlr.v4.runtime.{ANTLRErrorListener, CharStream, Parser}
 import org.antlr.v4.runtime.atn.ATNConfigSet
 import org.antlr.v4.runtime.dfa.DFA
-import org.antlr.v4.runtime.Parser
-import java.{util => ju}
+
+import java.util as ju
 import com.github.peterzeller.minifumo.ast.{SourcePos, SourceRange}
 import com.github.peterzeller.minifumo.common.MinifumoError
+
+import java.nio.file.Path
 
 case class SyntaxError(pos: SourcePos, message: String) extends MinifumoError:
   override def source: SourceRange = SourceRange(pos, pos)
 
 def parseInput(input: String): (ProgramContext, List[SyntaxError]) =
-
   val charStream = org.antlr.v4.runtime.CharStreams.fromString(input)
+  parseCharStream(charStream)
+  
+def parseFile(input: Path): (ProgramContext, List[SyntaxError]) =
+  val charStream = org.antlr.v4.runtime.CharStreams.fromPath(input)
+  parseCharStream(charStream)
+  
+def parseCharStream(charStream: CharStream): (ProgramContext, List[SyntaxError]) =  
   val lexer = new ExtendedMinifumoLexer(charStream)
   val errors = new ErrorCollector
   lexer.setErrorListener(errors)
