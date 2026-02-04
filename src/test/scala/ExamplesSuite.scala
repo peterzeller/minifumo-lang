@@ -16,9 +16,12 @@ class ExamplesSuite extends FunSuite:
   case class ActualError(line: Int, message: String, source: SourceRange)
 
   val examplesDir: Path = Paths.get("doc/examples")
+  val ignoreFile: Path = examplesDir.resolve(".minifumoignore")
   // Collects example files under doc/examples, including nested folders.
   val exampleFiles: List[Path] =
-    if Files.exists(examplesDir) then
+    if Files.exists(ignoreFile) then
+      Nil
+    else if Files.exists(examplesDir) then
       val stream = Files.walk(examplesDir)
       try
         stream.iterator().asScala
@@ -169,7 +172,7 @@ class ExamplesSuite extends FunSuite:
     val (cst, _) = parseInput(content)
     val ast = AstTransform.program(cst)
     ast.items.exists:
-      case fun: TopLevel.FunDecl => fun.name == "main"
+      case fun: TopLevel.FunDecl => fun.sig.name == "main"
       case _ => false
 
   // Parses error output from Main.checkFile into structured errors.

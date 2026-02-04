@@ -1,0 +1,18 @@
+# Ignore legacy syntax/examples until they are updated.
+*.minifumo
+expr_*.minifumo
+functional_*.minifumo
+imperative_*.minifumo
+typeclasses*.minifumo
+type_error_*.minifumo
+imports/**/*.minifumo
+imports/*.minifumo
+fib.minifumo
+generic_id.minifumo
+let_bindings.minifumo
+list_append.minifumo
+multiline.minifumo
+add.minifumo
+hello.minifumo
+hello_world.minifumo
+main_add.minifumo
