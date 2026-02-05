@@ -378,6 +378,8 @@ object TypeChecker:
       case (other, TypedAst.Expr.Meta(id, _)) =>
         solveMeta(id, other)
       case (TypedAst.Expr.Var(s1), TypedAst.Expr.Var(s2)) if s1 == s2 => Right(())
+      case (TypedAst.Expr.Var(p1: TypedAst.ParamSymbol), TypedAst.Expr.Var(p2: TypedAst.ParamSymbol))
+          if p1.name == p2.name => Right(())
       case (TypedAst.Expr.Lit(v1), TypedAst.Expr.Lit(v2)) if v1 == v2 => Right(())
       case (TypedAst.Expr.Sort(), TypedAst.Expr.Sort()) => Right(())
       case (TypedAst.Expr.App(c1, a1, _), TypedAst.Expr.App(c2, a2, _)) =>
