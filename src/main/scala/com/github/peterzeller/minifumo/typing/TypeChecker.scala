@@ -8,31 +8,33 @@ import com.github.peterzeller.minifumo.typing.TypedAst.*
 import java.nio.file.Paths
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
+import java.nio.file.Path
 
 object TypeChecker:
   final case class TypeError(message: String, source: ast.SourceRange) extends MinifumoError
 
 
   /** Type-checks a program */
-  def checkProgram(program: ast.ProgramFile, globalNames: NameCache & SymbolCache, importStandard: Boolean): (TypedAst.Program, List[TypeError]) =
+  def checkProgram(path: Path, program: ast.ProgramFile, globalNames: NameCache & SymbolCache, importStandard: Boolean): (TypedAst.Program, List[TypeError]) =
     val errors = ListBuffer[TypeError]()
     val idSupply = IdSupply()
     val metaStore = MetaStore()
-    val (symbolMap, importErrors) = GlobalSymbols.resolveImports(program, globalNames)
+    val (symbolMap, importErrors) = GlobalSymbols.buildGlobalSymbols(path, program, globalNames, false)
     val globals = GlobalEnv(names = symbolMap)
     val typedItems = program.items.map {
       case decl: ast.TopLevel.DataDecl =>
         buildDataDecl(decl, globals, idSupply)
       case decl: ast.TopLevel.FunDecl =>
-        val info = signatureInfo(decl.sig.name)
-        val context = TypeContext(globals, Map())
-          .withLocals(info.implicitParams)
-          .withLocals(info.params)
-        val typedBody = checkFunctionBody(decl.body, info.returnType, context, metaStore, idSupply, errors)
-        TypedAst.TopLevel.FunDecl(info.symbol, decl.sig.implicitParams.map(_.name), info.params, typedBody)(decl.source)
+        val context1 = TypeContext(globals, Map())
+        val (typedSig, context2, errs) = checkFunSig(decl.sig, context1)
+
+        val typedBody = checkFunctionBody(decl.body, typedSig.returnType, context2, metaStore, idSupply, errors)
+        TypedAst.TopLevel.FunDecl(typedSig, typedBody)(decl.source)
     }
     (TypedAst.Program(typedItems)(program.source), errors.toList)
 
+  private def checkFunSig(sig: ast.FunSig, env: TypeContext): (TypedAst.FunSig, TypeContext,  List[TypeError]) =
+    ???
 
   /** Provides a lookup interface for local and global symbols during type checking. */
   trait Context:
@@ -56,9 +58,7 @@ object TypeChecker:
   private final case class TypeContext(globals: GlobalEnv, locals: Map[String, LocalBinding]) extends Context:
     override def lookupSymbol(name: String): Option[TypedAst.Symbol] =
       locals.get(name).map(_.symbol)
-        .orElse(globals.functions.get(name))
-        .orElse(globals.ctors.get(name))
-        .orElse(globals.types.get(name))
+        .orElse(globals.names.get(name).map(g => TypedAst.GlobalSymbolSymbol(g.name, g.file, g)))
 
     override def lookupValue(symbol: TypedAst.TermSymbol): Option[TypedAst.Expr] =
       locals.values.find(_.symbol == symbol).flatMap(_.value)

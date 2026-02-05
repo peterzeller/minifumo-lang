@@ -22,6 +22,21 @@ object TypedAst:
 
   final case class FunctionSymbol(name: String, tpe: Expr) extends Symbol
   final case class CtorSymbol(name: String, tpe: Expr) extends Symbol
+
+  final case class GlobalSymbolSymbol(name: String, file: Path, g: GlobalSymbol) extends Symbol:
+    def tpe: Expr =
+      g.symbolSignature.match
+        case SymbolSignature.Def(tpe) => tpe
+        case SymbolSignature.Datatype(implicitParams) =>
+          def r(l: List[Expr]): Expr =
+            l match
+              case Nil => Expr.Sort()(SourceRange.empty)
+              case x::xs => Expr.Pi(x, r(xs), true)(SourceRange.empty)
+          r(implicitParams)
+
+
+
+
   final case class GlobalNameSymbol(name: String, file: Path) extends Symbol:
     def tpe: Expr = UnknownType()(SourceRange.empty)
 
@@ -30,11 +45,16 @@ object TypedAst:
   enum TopLevel:
     case DataDecl(name: String, typeParams: List[String], ctors: List[CtorDecl])(val source: SourceRange)
     case FunDecl(
-        symbol: FunctionSymbol,
-        typeParams: List[String],
-        params: List[ParamSymbol],
+        sig: FunSig,
         body: Expr
       )(val source: SourceRange)
+
+  case class FunSig(
+    symbol: FunctionSymbol,
+    typeParams: List[ParamSymbol],
+    params: List[ParamSymbol],
+    returnType: Expr,
+  )
 
   final case class CtorDecl(symbol: CtorSymbol, fields: List[CtorField])(val source: SourceRange)
   final case class CtorField(name: String, tpe: Expr)(val source: SourceRange)
