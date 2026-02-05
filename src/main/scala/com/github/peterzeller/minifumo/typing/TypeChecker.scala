@@ -174,6 +174,76 @@ object TypeChecker:
     )
     globals
 
+  /** Provides signatures of standard-library functions by name. */
+  private lazy val standardFunctionSignatures: Map[String, ast.FunSig] =
+    Standard.standardProgram.items.collect {
+      case ast.TopLevel.FunDecl(sig, _, _) => sig.name -> sig
+    }.toMap
+
+  // Builds typed function signature information from a parsed function signature.
+  private def buildFunctionInfoFromSignature(
+      sig: ast.FunSig,
+      globals: GlobalEnv,
+      idSupply: IdSupply
+    ): FunctionInfo =
+    val implicitParams = sig.implicitParams.map { param =>
+      val paramType = signatureExpr(param.tpe, globals, Map())
+      TypedAst.ParamSymbol(param.name, paramType, idSupply.freshLocalId())
+    }
+    val implicitEnv = implicitParams.map(p => p.name -> p).toMap
+    val explicitParams = sig.params.map { param =>
+      val paramType = signatureExpr(param.tpe, globals, implicitEnv)
+      TypedAst.ParamSymbol(param.name, paramType, idSupply.freshLocalId())
+    }
+    val returnType = signatureExpr(sig.returnType, globals, implicitEnv ++ explicitParams.map(p => p.name -> p).toMap)
+    val funType = buildPiType(implicitParams.map(_.tpe), explicitParams.map(_.tpe), returnType, sig.source)
+    val symbol = globals.functions.getOrElse(sig.name, TypedAst.FunctionSymbol(sig.name, funType)).copy(tpe = funType)
+    FunctionInfo(symbol, implicitParams, explicitParams, returnType)
+
+  // Replaces references to implicit parameter symbols with unknown types for first-order checking.
+  private def eraseImplicitParamRefs(expr: TypedAst.Expr, implicitParamIds: Set[Int]): TypedAst.Expr =
+    expr match
+      case TypedAst.Expr.Var(sym: TypedAst.ParamSymbol) if implicitParamIds.contains(sym.id) =>
+        TypedAst.Expr.UnknownType()(expr.source)
+      case TypedAst.Expr.App(callee, arg, tpe) =>
+        TypedAst.Expr.App(
+          eraseImplicitParamRefs(callee, implicitParamIds),
+          eraseImplicitParamRefs(arg, implicitParamIds),
+          eraseImplicitParamRefs(tpe, implicitParamIds)
+        )(expr.source)
+      case TypedAst.Expr.AppImplicit(callee, arg, tpe) =>
+        TypedAst.Expr.AppImplicit(
+          eraseImplicitParamRefs(callee, implicitParamIds),
+          eraseImplicitParamRefs(arg, implicitParamIds),
+          eraseImplicitParamRefs(tpe, implicitParamIds)
+        )(expr.source)
+      case TypedAst.Expr.Pi(dom, cod, isImplicit) =>
+        TypedAst.Expr.Pi(
+          eraseImplicitParamRefs(dom, implicitParamIds),
+          eraseImplicitParamRefs(cod, implicitParamIds),
+          isImplicit
+        )(expr.source)
+      case TypedAst.Expr.Lambda(param, body, tpe) =>
+        TypedAst.Expr.Lambda(
+          param,
+          eraseImplicitParamRefs(body, implicitParamIds),
+          eraseImplicitParamRefs(tpe, implicitParamIds)
+        )(expr.source)
+      case TypedAst.Expr.LetIn(symbol, isConstant, declaredType, value, body) =>
+        TypedAst.Expr.LetIn(
+          symbol,
+          isConstant,
+          eraseImplicitParamRefs(declaredType, implicitParamIds),
+          eraseImplicitParamRefs(value, implicitParamIds),
+          eraseImplicitParamRefs(body, implicitParamIds)
+        )(expr.source)
+      case TypedAst.Expr.Match(scrutinee, cases) =>
+        val rewrittenCases = cases.map(c =>
+          TypedAst.MatchCase(c.pattern, eraseImplicitParamRefs(c.body, implicitParamIds))(c.source)
+        )
+        TypedAst.Expr.Match(eraseImplicitParamRefs(scrutinee, implicitParamIds), rewrittenCases)(expr.source)
+      case other => other
+
   /** Builds outline signatures for all functions and constructors. */
   private def buildSignatures(
       program: ast.ProgramFile,
@@ -181,6 +251,16 @@ object TypeChecker:
       idSupply: IdSupply
     ): Map[String, FunctionInfo] =
     val functionInfos = mutable.Map[String, FunctionInfo]()
+    val localFunctionNames = program.items.collect { case decl: ast.TopLevel.FunDecl => decl.sig.name }.toSet
+
+    for (name, sig) <- standardFunctionSignatures if globals.functions.contains(name) && !localFunctionNames.contains(name) do
+      val info = buildFunctionInfoFromSignature(sig, globals, idSupply)
+      val implicitParamIds = info.implicitParams.map(_.id).toSet
+      val erasedType = eraseImplicitParamRefs(info.symbol.tpe, implicitParamIds)
+      val erasedSymbol = info.symbol.copy(tpe = erasedType)
+      globals.functions.update(name, erasedSymbol)
+      functionInfos.update(name, info.copy(symbol = erasedSymbol))
+
     for item <- program.items do
       item match
         case decl: ast.TopLevel.DataDecl =>
@@ -199,20 +279,9 @@ object TypeChecker:
               globals.ctors.update(ctor.name, symbol.copy(tpe = ctorType))
             }
         case decl: ast.TopLevel.FunDecl =>
-          val implicitParams = decl.sig.implicitParams.map { param =>
-            val paramType = signatureExpr(param.tpe, globals, Map())
-            TypedAst.ParamSymbol(param.name, paramType, idSupply.freshLocalId())
-          }
-          val implicitEnv = implicitParams.map(p => p.name -> p).toMap
-          val explicitParams = decl.sig.params.map { param =>
-            val paramType = signatureExpr(param.tpe, globals, implicitEnv)
-            TypedAst.ParamSymbol(param.name, paramType, idSupply.freshLocalId())
-          }
-          val returnType = signatureExpr(decl.sig.returnType, globals, implicitEnv ++ explicitParams.map(p => p.name -> p).toMap)
-          val funType = buildPiType(implicitParams.map(_.tpe), explicitParams.map(_.tpe), returnType, decl.source)
-          val symbol = globals.functions.getOrElse(decl.sig.name, TypedAst.FunctionSymbol(decl.sig.name, funType)).copy(tpe = funType)
-          globals.functions.update(decl.sig.name, symbol)
-          functionInfos.update(decl.sig.name, FunctionInfo(symbol, implicitParams, explicitParams, returnType))
+          val info = buildFunctionInfoFromSignature(decl.sig, globals, idSupply)
+          globals.functions.update(decl.sig.name, info.symbol)
+          functionInfos.update(decl.sig.name, info)
     functionInfos.toMap
 
   /** Builds a typed data declaration. */
@@ -256,12 +325,15 @@ object TypeChecker:
     expr match
       case ast.Expr.Lit(value) => TypedAst.Expr.Lit(value)(expr.source)
       case ast.Expr.Var(name) =>
-        locals.get(name)
-          .orElse(globals.types.get(name))
-          .orElse(globals.functions.get(name))
-          .orElse(globals.ctors.get(name))
-          .map(symbol => TypedAst.Expr.Var(symbol)(expr.source))
-          .getOrElse(TypedAst.Expr.Var(TypedAst.ErrorSymbol(name, TypedAst.Expr.UnknownType()(expr.source)))(expr.source))
+        if name == "unit" then
+          TypedAst.Expr.UnknownType()(expr.source)
+        else
+          locals.get(name)
+            .orElse(globals.types.get(name))
+            .orElse(globals.functions.get(name))
+            .orElse(globals.ctors.get(name))
+            .map(symbol => TypedAst.Expr.Var(symbol)(expr.source))
+            .getOrElse(TypedAst.Expr.Var(TypedAst.ErrorSymbol(name, TypedAst.Expr.UnknownType()(expr.source)))(expr.source))
       case ast.Expr.Call(callee, arg) =>
         val calleeExpr = signatureExpr(callee, globals, locals)
         val argExpr = signatureExpr(arg, globals, locals)
@@ -286,11 +358,11 @@ object TypeChecker:
       resultType: TypedAst.Expr,
       source: ast.SourceRange
     ): TypedAst.Expr =
-    val implicitPis = implicitParams.foldRight(resultType) { (dom, cod) =>
-      TypedAst.Expr.Pi(dom, cod, isImplicit = true)(source)
-    }
-    explicitParams.foldRight(implicitPis) { (dom, cod) =>
+    val explicitPis = explicitParams.foldRight(resultType) { (dom, cod) =>
       TypedAst.Expr.Pi(dom, cod, isImplicit = false)(source)
+    }
+    implicitParams.foldRight(explicitPis) { (dom, cod) =>
+      TypedAst.Expr.Pi(dom, cod, isImplicit = true)(source)
     }
 
   /** Checks if two types are definitionally equal, solving metas as needed. */
@@ -368,13 +440,23 @@ object TypeChecker:
         Right(typed -> tpe)
       case ast.Expr.Call(callee, arg) =>
         infer(callee).flatMap { (calleeExpr, calleeType) =>
-          val (appliedExpr, appliedType) = insertImplicitArgs(calleeExpr, calleeType, expr.source)
-          whnf(appliedType) match
-            case TypedAst.Expr.Pi(dom, cod, false) =>
-              check(arg, dom).map { argExpr =>
-                TypedAst.Expr.App(appliedExpr, argExpr, cod)(expr.source) -> cod
-              }
-            case _ => Left(List(TypeError("Expected a function", expr.source)))
+          whnf(calleeType) match
+            case TypedAst.Expr.Pi(_, _, true) if calleeExpr.isInstanceOf[TypedAst.Expr.Var] && calleeExpr.asInstanceOf[TypedAst.Expr.Var].symbol.isInstanceOf[TypedAst.CtorSymbol] =>
+              Left(List(TypeError(s"Missing type argument for ${prettyExpr(calleeExpr)}", expr.source)))
+            case _ =>
+              val (appliedExpr, appliedType) = insertImplicitArgs(calleeExpr, calleeType, expr.source)
+              whnf(appliedType) match
+                case TypedAst.Expr.Pi(dom, cod, false) =>
+                  check(arg, dom).map { argExpr =>
+                    TypedAst.Expr.App(appliedExpr, argExpr, cod)(expr.source) -> cod
+                  }
+                case TypedAst.Expr.UnknownType() =>
+                  val argResult = infer(arg)
+                  argResult.map { (argExpr, _) =>
+                    TypedAst.Expr.App(appliedExpr, argExpr, TypedAst.Expr.UnknownType()(expr.source))(expr.source) -> TypedAst.Expr.UnknownType()(expr.source)
+                  }
+                case other =>
+                  Left(List(TypeError(s"Expected a function, but expression has type ${prettyExpr(other)}", expr.source)))
         }
       case ast.Expr.CallImplicit(callee, arg) =>
         infer(callee).flatMap { (calleeExpr, calleeType) =>
@@ -383,7 +465,11 @@ object TypeChecker:
               check(arg, dom).map { argExpr =>
                 TypedAst.Expr.AppImplicit(calleeExpr, argExpr, cod)(expr.source) -> cod
               }
-            case _ => Left(List(TypeError("Expected an implicit function", expr.source)))
+            case TypedAst.Expr.UnknownType() =>
+              infer(arg).map { (argExpr, _) =>
+                TypedAst.Expr.AppImplicit(calleeExpr, argExpr, TypedAst.Expr.UnknownType()(expr.source))(expr.source) -> TypedAst.Expr.UnknownType()(expr.source)
+              }
+            case other => Left(List(TypeError(s"Expected an implicit function, but expression has type ${prettyExpr(other)}", expr.source)))
         }
       case ast.Expr.Lambda(param, body) =>
         val paramType = param.tpe.map(t => signatureExpr(t, ctx.globals, Map())).getOrElse(TypedAst.Expr.UnknownType()(expr.source))
@@ -453,7 +539,7 @@ object TypeChecker:
           isDefEq(inferredType, expectedNorm) match
             case Right(_) => Right(inferredExpr)
             case Left(errs) =>
-              Left(TypeError(s"Expected ${expectedNorm} but got ${inferredType}", expr.source) :: errs)
+              Left(TypeError(s"Expected ${prettyExpr(expectedNorm)} but got ${prettyExpr(inferredType)}", expr.source) :: errs)
         }
 
   /** Inserts implicit arguments as metas before explicit application. */
@@ -561,6 +647,25 @@ object TypeChecker:
     given ids: IdSupply = IdSupply()
     check(expr, expectedType)
 
+  // Renders typed expressions in a compact user-facing format for diagnostics.
+  private def prettyExpr(expr: TypedAst.Expr): String =
+    expr match
+      case TypedAst.Expr.UnknownType() => "_"
+      case TypedAst.Expr.Sort() => "Type"
+      case TypedAst.Expr.Var(symbol) => symbol.name
+      case TypedAst.Expr.Lit(ast.Literal.IntLit(_)) => "Int"
+      case TypedAst.Expr.Lit(ast.Literal.BoolLit(_)) => "Bool"
+      case TypedAst.Expr.Lit(ast.Literal.StringLit(_)) => "String"
+      case TypedAst.Expr.Lit(ast.Literal.UnitLit()) => "unit"
+      case TypedAst.Expr.Pi(dom, cod, true) => s"[${prettyExpr(dom)}] -> ${prettyExpr(cod)}"
+      case TypedAst.Expr.Pi(dom, cod, false) => s"${prettyExpr(dom)} -> ${prettyExpr(cod)}"
+      case TypedAst.Expr.App(callee, arg, _) => s"${prettyExpr(callee)}(${prettyExpr(arg)})"
+      case TypedAst.Expr.AppImplicit(callee, arg, _) => s"${prettyExpr(callee)}[${prettyExpr(arg)}]"
+      case TypedAst.Expr.Lambda(param, _, _) => s"(\\${param.name} => ...)"
+      case TypedAst.Expr.LetIn(symbol, _, _, _, _) => s"(let ${symbol.name} = ...)"
+      case TypedAst.Expr.Match(_, _) => "match"
+      case TypedAst.Expr.Meta(_, tpe) => s"? : ${prettyExpr(tpe)}"
+
   /** Determines the type of a literal value. */
   private def literalType(value: ast.Literal, ctx: TypeContext): TypedAst.Expr =
     val typeName = value match
@@ -618,6 +723,7 @@ object TypeChecker:
     def loop(tpe: TypedAst.Expr, acc: List[TypedAst.Expr]): List[TypedAst.Expr] =
       tpe match
         case TypedAst.Expr.Pi(dom, cod, false) => loop(cod, acc :+ dom)
+        case TypedAst.Expr.Pi(_, cod, true) => loop(cod, acc)
         case _ => acc
     loop(ctorType, Nil)
 

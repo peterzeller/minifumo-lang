@@ -87,7 +87,7 @@ class ExamplesSuite extends FunSuite:
     else if actualErrors.isEmpty then
       fail(s"Expected errors in ${path.getFileName} but type checker reported none.")
     else if expectedErrors.isEmpty then
-      fail(s"Unexpected errors in ${path.getFileName}:\n${formatErrors(actualErrors)}")
+      fail(s"Unexpected errors in ${path.getFileName}:\n${formatErrors(path, actualErrors)}")
     else
       val remainingExpected = ListBuffer.from(expectedErrors)
       actualErrors.foreach { actual =>
@@ -137,8 +137,20 @@ class ExamplesSuite extends FunSuite:
     }.toList
 
   // Formats a list of errors for reporting.
-  def formatErrors(errors: List[ActualError]): String =
-    errors.map(error => s"line ${error.line}: ${error.message}").mkString("\n")
+  def formatErrors(path: Path, errors: List[ActualError]): String =
+    val lines = Files.readAllLines(path).asScala.toList
+    errors.map { error =>
+      val lineIndex = error.line - 1
+      if lineIndex >= 0 && lineIndex < lines.length then
+        val sourceLine = lines(lineIndex)
+        val startColumn = math.max(1, error.source.start.column)
+        val endColumn = math.max(startColumn, error.source.end.column)
+        val underlineWidth = math.max(1, endColumn - startColumn + 1)
+        val underline = (" " * (startColumn - 1)) + ("^" * underlineWidth)
+        s"line ${error.line}: ${error.message}\n    ${sourceLine}\n    ${underline}"
+      else
+        s"line ${error.line}: ${error.message}"
+    }.mkString("\n")
 
   // Extracts expected output comments from the example source.
   def extractExpectedOutput(content: String): Option[String] =
@@ -173,11 +185,14 @@ class ExamplesSuite extends FunSuite:
 
   // Parses error output from Main.checkFile into structured errors.
   private def parseErrorMessage(message: String): Option[ActualError] =
-    val pattern = "^.+:(\\d+):(\\d+)(?:-\\d+:\\d+)?: (.+)$".r
+    val pattern = "^.+:(\\d+):(\\d+)(?:-(\\d+):(\\d+))?: (.+)$".r
     message match
-      case pattern(line, column, text) =>
-        val pos = com.github.peterzeller.minifumo.ast.SourcePos(line.toInt, column.toInt)
-        Some(ActualError(line.toInt, text, SourceRange(pos, pos)))
+      case pattern(line, column, endLine, endColumn, text) =>
+        val start = com.github.peterzeller.minifumo.ast.SourcePos(line.toInt, column.toInt)
+        val end =
+          if endLine == null || endColumn == null then start
+          else com.github.peterzeller.minifumo.ast.SourcePos(endLine.toInt, endColumn.toInt)
+        Some(ActualError(line.toInt, text, SourceRange(start, end)))
       case _ => None
 
   // Lists all example files in the examples directory.
