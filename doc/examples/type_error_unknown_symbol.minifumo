@@ -1,2 +1,2 @@
-fun usesUnknown (): Int
+fun usesUnknown() Int
     wadada // error: Unknown symbol: wadada

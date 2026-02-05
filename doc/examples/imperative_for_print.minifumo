@@ -1,6 +1,6 @@
-data List[A: Type] = Nil | Cons(head: A, tail: List[A]())
+data List[A] = Nil | Cons(head A, tail List[A])
 
-fun logAll (numbers: List[Int]()): unit
+fun logAll(numbers List[Int]) unit
     match numbers
         case Nil
             unit
@@ -8,7 +8,7 @@ fun logAll (numbers: List[Int]()): unit
             println(head, showInt())
             logAll(tail)
 
-fun main (): unit
+fun main() unit
     logAll(Cons(1, Cons(2, Cons(3, Nil))))
 
 // Output:

@@ -1,6 +1,6 @@
-data List[A: Type] = Nil | Cons(head: A, tail: List[A]())
+data List[A] = Nil | Cons(head A, tail List[A])
 
-fun printIncrement (values: List[Int]()): unit
+fun printIncrement(values List[Int]) unit
     match values
         case Nil
             unit
@@ -8,8 +8,8 @@ fun printIncrement (values: List[Int]()): unit
             println(head + 1, showInt())
             printIncrement(tail)
 
-fun main (): unit
-    let numbers List[Int]() = Cons(1, Cons(2, Cons(3, Nil)))
+fun main() unit
+    let numbers List[Int] = Cons(1, Cons(2, Cons(3, Nil)))
     printIncrement(numbers)
 
 // Output:

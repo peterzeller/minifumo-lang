@@ -1,4 +1,4 @@
-fun main (): unit
+fun main() unit
     println(true or false, showBool())
 
 // Output: True

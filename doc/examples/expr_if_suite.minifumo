@@ -1,4 +1,4 @@
-fun main (): unit
+fun main() unit
     if true
         println(1, showInt())
     else

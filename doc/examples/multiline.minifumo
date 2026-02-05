@@ -1,4 +1,4 @@
-fun main (): unit
+fun main() unit
     println("Line 1", showString())
     println("Line 2", showString())
 

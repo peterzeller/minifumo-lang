@@ -1,7 +1,7 @@
-fun id[T: Type] (x: T): T
+fun id[T](x T) T
     x
 
-fun main (): unit
+fun main() unit
     let value Int = id(42)
     println(value, showInt())
 

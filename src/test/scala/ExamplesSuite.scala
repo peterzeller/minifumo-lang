@@ -19,18 +19,14 @@ class ExamplesSuite extends FunSuite:
   val ignoreFile: Path = examplesDir.resolve(".minifumoignore")
   // Collects example files under doc/examples, including nested folders.
   val exampleFiles: List[Path] =
-    if Files.exists(ignoreFile) then
-      Nil
-    else if Files.exists(examplesDir) then
-      val stream = Files.walk(examplesDir)
-      try
-        stream.iterator().asScala
-          .filter(Files.isRegularFile(_))
-          .filter(_.toString.endsWith(".minifumo"))
-          .toList
-          .sortBy(_.toString)
-      finally
-        stream.close()
+    if Files.exists(examplesDir) then
+      val allExamples = listExampleFiles()
+      if Files.exists(ignoreFile) then
+        val ignored = ignoredExampleFiles(allExamples)
+        ignored.foreach(file => println(s"WARN: ignoring example ${file.toString}"))
+        allExamples.filterNot(ignored.contains)
+      else
+        allExamples
     else
       Nil
 
@@ -183,3 +179,27 @@ class ExamplesSuite extends FunSuite:
         val pos = com.github.peterzeller.minifumo.ast.SourcePos(line.toInt, column.toInt)
         Some(ActualError(line.toInt, text, SourceRange(pos, pos)))
       case _ => None
+
+  // Lists all example files in the examples directory.
+  private def listExampleFiles(): List[Path] =
+    val stream = Files.walk(examplesDir)
+    try
+      stream.iterator().asScala
+        .filter(Files.isRegularFile(_))
+        .filter(_.toString.endsWith(".minifumo"))
+        .toList
+        .sortBy(_.toString)
+    finally
+      stream.close()
+
+  // Determines which example files are ignored based on the ignore list.
+  private def ignoredExampleFiles(allExamples: List[Path]): List[Path] =
+    val patterns = Files.readAllLines(ignoreFile).asScala
+      .map(_.trim)
+      .filter(line => line.nonEmpty && !line.startsWith("#"))
+      .toList
+    val matchers = patterns.map(pattern => examplesDir.getFileSystem.getPathMatcher(s"glob:${pattern}"))
+    allExamples.filter { file =>
+      val relative = examplesDir.relativize(file)
+      matchers.exists(_.matches(relative))
+    }

@@ -1,13 +1,13 @@
-fun constInt (): Int
+fun constInt() Int
     42
 
-fun constBool (): Bool
+fun constBool() Bool
     true
 
-fun constString (): String
+fun constString() String
     "hi"
 
-fun main (): unit
+fun main() unit
     println(constInt(), showInt())
     println(constBool(), showBool())
     println(constString(), showString())
