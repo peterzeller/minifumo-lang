@@ -529,6 +529,38 @@ object TypeChecker:
         TypedAst.Expr.Match(substitute(scrutinee, symbol, value), newCases)(term.source)
       case other => other
 
+  /** Exposes substitution for tests. */
+  private[typing] def substituteForTest(term: TypedAst.Expr, symbol: TypedAst.LocalSymbol, value: TypedAst.Expr): TypedAst.Expr =
+    substitute(term, symbol, value)
+
+  /** Infers an expression in a test context built from a program and exports. */
+  private[typing] def inferInTestContext(
+      program: ast.ProgramFile,
+      expr: ast.Expr,
+      exports: ExportEnv = emptyExportEnv
+    ): CheckResult[(TypedAst.Expr, TypedAst.Expr)] =
+    val globals = buildGlobals(program, exports)
+    given ctx: TypeContext = TypeContext(globals, Map())
+    given metas: MetaContext = MetaStore()
+    given ids: IdSupply = IdSupply()
+    infer(expr)
+
+  /** Checks an expression in a test context against a named type. */
+  private[typing] def checkInTestContext(
+      program: ast.ProgramFile,
+      expr: ast.Expr,
+      expectedTypeName: String,
+      exports: ExportEnv = emptyExportEnv
+    ): CheckResult[TypedAst.Expr] =
+    val globals = buildGlobals(program, exports)
+    val expectedType = globals.types.get(expectedTypeName)
+      .map(sym => TypedAst.Expr.Var(sym)(expr.source))
+      .getOrElse(TypedAst.Expr.UnknownType()(expr.source))
+    given ctx: TypeContext = TypeContext(globals, Map())
+    given metas: MetaContext = MetaStore()
+    given ids: IdSupply = IdSupply()
+    check(expr, expectedType)
+
   /** Determines the type of a literal value. */
   private def literalType(value: ast.Literal, ctx: TypeContext): TypedAst.Expr =
     val typeName = value match
