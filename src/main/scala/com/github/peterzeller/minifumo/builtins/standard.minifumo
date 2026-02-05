@@ -1,18 +1,18 @@
-export data Type= Type
+export data Type = Type
 
-export data Bool= True | False
+export data Bool = True | False
 
-export data Nat= Zero | Suc(n: Nat)
+export data Nat = Zero | Suc(n: Nat)
 
-export data Int= Int(positive: Bool, n: Nat)
+export data Int = Int(positive: Bool, n: Nat)
 
-export data List[T: Type] = Nil | Cons(head: T, tail: List[T]())
+export data List[T: Type] = Nil | Cons(head: T, tail: List[T])
 
-export data Tree[K: Type, V: Type] = Leaf | Node(key: K, value: V, left: Tree[K, V](), right: Tree[K, V]())
+export data Tree[K: Type, V: Type] = Leaf | Node(key: K, value: V, left: Tree[K, V], right: Tree[K, V])
 
-export data Char= Char(rune: Nat)
+export data Char = Char(rune: Nat)
 
-export data String= String(value: List[Char]())
+export data String = String(value: List[Char])
 
 export data OpNeg[T: Type] = OpNeg(opNeg: T -> T)
 
@@ -45,7 +45,7 @@ export data Map[M: Type, K: Type, V: Type] = Map(put: M -> K -> V -> M, lookup: 
 export data Set[S: Type, T: Type] = Set(contains: S -> T -> Bool, add: S -> T -> S)
 
 // Returns the negation of the Bool value.
-fun opNot (value: Bool): Bool
+fun opNot(value: Bool): Bool
     match value
         case True
             False
@@ -53,79 +53,79 @@ fun opNot (value: Bool): Bool
             True
 
 // Returns True when both Bool values are equal.
-fun boolEq (a: Bool, b: Bool): Bool
+fun boolEq(a: Bool, b: Bool): Bool
     match eqBool()
         case Eq(eqFn)
             eqFn(a, b)
 
 // Returns True when both Int values are equal.
-fun eq (a: Int, b: Int): Bool
+fun eq(a: Int, b: Int): Bool
     match eqInt()
         case Eq(eqFn)
             eqFn(a, b)
 
 // Negates an Int value.
-fun opNeg (value: Int): Int
+fun opNeg(value: Int): Int
     match opNegInt()
         case OpNeg(opNegFn)
             opNegFn(value)
 
 // Adds two Int values together.
-fun opPlus (a: Int, b: Int): Int
+fun opPlus(a: Int, b: Int): Int
     match opPlusInt()
         case OpPlus(opPlusFn)
             opPlusFn(a, b)
 
 // Subtracts the second Int from the first.
-fun opMinus (a: Int, b: Int): Int
+fun opMinus(a: Int, b: Int): Int
     match opMinusInt()
         case OpMinus(opMinusFn)
             opMinusFn(a, b)
 
 // Multiplies two Int values.
-fun opTimes (a: Int, b: Int): Int
+fun opTimes(a: Int, b: Int): Int
     match opTimesInt()
         case OpTimes(opTimesFn)
             opTimesFn(a, b)
 
 // Divides the first Int by the second.
-fun opDiv (a: Int, b: Int): Int
+fun opDiv(a: Int, b: Int): Int
     match opDivInt()
         case OpDiv(opDivFn)
             opDivFn(a, b)
 
 // Computes the remainder of the first Int divided by the second.
-fun opMod (a: Int, b: Int): Int
+fun opMod(a: Int, b: Int): Int
     match opModInt()
         case OpMod(opModFn)
             opModFn(a, b)
 
 // Returns True if the first Int is less than the second.
-fun opLt (a: Int, b: Int): Bool
+fun opLt(a: Int, b: Int): Bool
     match opLtInt()
         case OpLt(opLtFn)
             opLtFn(a, b)
 
 // Returns True if the first Int is less than or equal to the second.
-fun opLe (a: Int, b: Int): Bool
+fun opLe(a: Int, b: Int): Bool
     match opLeInt()
         case OpLe(opLeFn)
             opLeFn(a, b)
 
 // Computes the logical and of two Bool values.
-fun opAnd (a: Bool, b: Bool): Bool
+fun opAnd(a: Bool, b: Bool): Bool
     match opAndBool()
         case OpAnd(opAndFn)
             opAndFn(a, b)
 
 // Computes the logical or of two Bool values.
-fun opOr (a: Bool, b: Bool): Bool
+fun opOr(a: Bool, b: Bool): Bool
     match opOrBool()
         case OpOr(opOrFn)
             opOrFn(a, b)
 
 // Returns True when the Nat is Zero.
-fun natIsZero (n: Nat): Bool
+fun natIsZero(n: Nat): Bool
     match n
         case Zero
             True
@@ -133,7 +133,7 @@ fun natIsZero (n: Nat): Bool
             False
 
 // Returns True when both Nat values are equal.
-fun natEq (a: Nat, b: Nat): Bool
+fun natEq(a: Nat, b: Nat): Bool
     match a
         case Zero
             match b
@@ -149,7 +149,7 @@ fun natEq (a: Nat, b: Nat): Bool
                     natEq(aTail, bTail)
 
 // Returns True when the first Nat is less than the second.
-fun natLt (a: Nat, b: Nat): Bool
+fun natLt(a: Nat, b: Nat): Bool
     match a
         case Zero
             match b
@@ -165,14 +165,14 @@ fun natLt (a: Nat, b: Nat): Bool
                     natLt(aTail, bTail)
 
 // Returns True when the first Nat is less than or equal to the second.
-fun natLe (a: Nat, b: Nat): Bool
+fun natLe(a: Nat, b: Nat): Bool
     if natLt(a, b)
         True
     else
         natEq(a, b)
 
 // Adds two Nat values.
-fun natAdd (a: Nat, b: Nat): Nat
+fun natAdd(a: Nat, b: Nat): Nat
     match a
         case Zero
             b
@@ -180,7 +180,7 @@ fun natAdd (a: Nat, b: Nat): Nat
             Suc(natAdd(tail, b))
 
 // Subtracts the second Nat from the first, returning Zero when underflowing.
-fun natSub (a: Nat, b: Nat): Nat
+fun natSub(a: Nat, b: Nat): Nat
     match a
         case Zero
             Zero
@@ -192,7 +192,7 @@ fun natSub (a: Nat, b: Nat): Nat
                     natSub(aTail, bTail)
 
 // Multiplies two Nat values.
-fun natMul (a: Nat, b: Nat): Nat
+fun natMul(a: Nat, b: Nat): Nat
     match a
         case Zero
             Zero
@@ -200,7 +200,7 @@ fun natMul (a: Nat, b: Nat): Nat
             natAdd(b, natMul(tail, b))
 
 // Divides the first Nat by the second.
-fun natDiv (a: Nat, b: Nat): Nat
+fun natDiv(a: Nat, b: Nat): Nat
     if natIsZero(b)
         Zero
     else
@@ -210,7 +210,7 @@ fun natDiv (a: Nat, b: Nat): Nat
             Suc(natDiv(natSub(a, b), b))
 
 // Computes the remainder of the first Nat divided by the second.
-fun natMod (a: Nat, b: Nat): Nat
+fun natMod(a: Nat, b: Nat): Nat
     if natIsZero(b)
         a
     else
@@ -220,7 +220,7 @@ fun natMod (a: Nat, b: Nat): Nat
             natMod(natSub(a, b), b)
 
 // Normalizes an Int so zero is always positive.
-fun intNormalize (positive: Bool, n: Nat): Int
+fun intNormalize(positive: Bool, n: Nat): Int
     match n
         case Zero
             Int(True, Zero)
@@ -228,7 +228,7 @@ fun intNormalize (positive: Bool, n: Nat): Int
             Int(positive, n)
 
 // Returns True when the Int represents a negative value.
-fun intIsNegative (value: Int): Bool
+fun intIsNegative(value: Int): Bool
     match value
         case Int(positive, n)
             match positive
@@ -242,7 +242,7 @@ fun intIsNegative (value: Int): Bool
                             True
 
 // Extracts the Nat component from a non-negative Int.
-fun intToNat (value: Int): Nat
+fun intToNat(value: Int): Nat
     match value
         case Int(positive, n)
             match positive
@@ -252,11 +252,11 @@ fun intToNat (value: Int): Nat
                     Zero
 
 // Converts a non-negative Int literal into a Nat value.
-fun natFromInt (value: Int): Nat
+fun natFromInt(value: Int): Nat
     intToNat(value)
 
 // Returns True when the two Int values are equal.
-fun intEq (a: Int, b: Int): Bool
+fun intEq(a: Int, b: Int): Bool
     match a
         case Int(positiveA, nA)
             match b
@@ -273,7 +273,7 @@ fun intEq (a: Int, b: Int): Bool
                             False
 
 // Negates an Int value.
-fun intNeg (value: Int): Int
+fun intNeg(value: Int): Int
     match value
         case Int(positive, n)
             match n
@@ -287,7 +287,7 @@ fun intNeg (value: Int): Int
                             Int(True, n)
 
 // Adds two Int values.
-fun intAdd (a: Int, b: Int): Int
+fun intAdd(a: Int, b: Int): Int
     match a
         case Int(positiveA, nA)
             match b
@@ -301,11 +301,11 @@ fun intAdd (a: Int, b: Int): Int
                             intNormalize(positiveA, natSub(nA, nB))
 
 // Subtracts one Int from another.
-fun intSub (a: Int, b: Int): Int
+fun intSub(a: Int, b: Int): Int
     intAdd(a, intNeg(b))
 
 // Multiplies two Int values.
-fun intMul (a: Int, b: Int): Int
+fun intMul(a: Int, b: Int): Int
     match a
         case Int(positiveA, nA)
             match b
@@ -319,7 +319,7 @@ fun intMul (a: Int, b: Int): Int
                             intNormalize(boolEq(positiveA, positiveB), natMul(nA, nB))
 
 // Divides one Int by another.
-fun intDiv (a: Int, b: Int): Int
+fun intDiv(a: Int, b: Int): Int
     match a
         case Int(positiveA, nA)
             match b
@@ -333,7 +333,7 @@ fun intDiv (a: Int, b: Int): Int
                             intNormalize(boolEq(positiveA, positiveB), natDiv(nA, nB))
 
 // Computes the remainder of dividing one Int by another.
-fun intMod (a: Int, b: Int): Int
+fun intMod(a: Int, b: Int): Int
     match a
         case Int(positiveA, nA)
             match b
@@ -344,7 +344,7 @@ fun intMod (a: Int, b: Int): Int
                         intNormalize(positiveA, natMod(nA, nB))
 
 // Returns True when the first Int is less than the second.
-fun intLt (a: Int, b: Int): Bool
+fun intLt(a: Int, b: Int): Bool
     match a
         case Int(positiveA, nA)
             match b
@@ -364,14 +364,14 @@ fun intLt (a: Int, b: Int): Bool
                                     natLt(nB, nA)
 
 // Returns True when the first Int is less than or equal to the second.
-fun intLe (a: Int, b: Int): Bool
+fun intLe(a: Int, b: Int): Bool
     if intLt(a, b)
         True
     else
         intEq(a, b)
 
 // Returns True when two Char values are equal.
-fun charEq (a: Char, b: Char): Bool
+fun charEq(a: Char, b: Char): Bool
     match a
         case Char(left)
             match b
@@ -379,7 +379,7 @@ fun charEq (a: Char, b: Char): Bool
                     natEq(left, right)
 
 // Returns True when the first Char is less than the second.
-fun charLt (a: Char, b: Char): Bool
+fun charLt(a: Char, b: Char): Bool
     match a
         case Char(left)
             match b
@@ -387,7 +387,7 @@ fun charLt (a: Char, b: Char): Bool
                     natLt(left, right)
 
 // Appends two lists together.
-fun listAppend[T: Type] (left: List[T](), right: List[T]()): List[T]()
+fun listAppend[T: Type](left: List[T], right: List[T]): List[T]
     match left
         case Nil
             right
@@ -395,7 +395,7 @@ fun listAppend[T: Type] (left: List[T](), right: List[T]()): List[T]()
             Cons(head, listAppend(tail, right))
 
 // Returns the element at the given Nat index.
-fun listGetNat[T: Type] (values: List[T](), index: Nat): T
+fun listGetNat[T: Type](values: List[T], index: Nat): T
     match values
         case Nil
             undefined
@@ -407,7 +407,7 @@ fun listGetNat[T: Type] (values: List[T](), index: Nat): T
                     listGetNat(tail, rest)
 
 // Updates the element at the given Nat index.
-fun listSetNat[T: Type] (values: List[T](), index: Nat, value: T): List[T]()
+fun listSetNat[T: Type](values: List[T], index: Nat, value: T): List[T]
     match values
         case Nil
             Nil
@@ -419,7 +419,7 @@ fun listSetNat[T: Type] (values: List[T](), index: Nat, value: T): List[T]()
                     Cons(head, listSetNat(tail, rest, value))
 
 // Checks whether a list contains the given value.
-fun listContains[T: Type] (values: List[T](), value: T, eq: Eq[T]()): Bool
+fun listContains[T: Type](values: List[T], value: T, eq: Eq[T]): Bool
     match eq
         case Eq(eqFn)
             match values
@@ -432,7 +432,7 @@ fun listContains[T: Type] (values: List[T](), value: T, eq: Eq[T]()): Bool
                         listContains(tail, value, eq)
 
 // Returns True when two lists are equal.
-fun listEq[T: Type] (left: List[T](), right: List[T](), eq: Eq[T]()): Bool
+fun listEq[T: Type](left: List[T], right: List[T], eq: Eq[T]): Bool
     match eq
         case Eq(eqFn)
             match left
@@ -453,7 +453,7 @@ fun listEq[T: Type] (left: List[T](), right: List[T](), eq: Eq[T]()): Bool
                                 False
 
 // Returns True when the first list of Char is less than the second.
-fun charListLt (left: List[Char](), right: List[Char]()): Bool
+fun charListLt(left: List[Char], right: List[Char]): Bool
     match left
         case Nil
             match right
@@ -472,7 +472,7 @@ fun charListLt (left: List[Char](), right: List[Char]()): Bool
                         charLt(leftHead, rightHead)
 
 // Returns True when the first list of Char is less than or equal to the second.
-fun charListLe (left: List[Char](), right: List[Char]()): Bool
+fun charListLe(left: List[Char], right: List[Char]): Bool
     if charListLt(left, right)
         True
     else
@@ -482,7 +482,7 @@ fun charListLe (left: List[Char](), right: List[Char]()): Bool
             False
 
 // Appends two String values.
-fun stringAppend (a: String, b: String): String
+fun stringAppend(a: String, b: String): String
     match a
         case String(left)
             match b
@@ -490,15 +490,15 @@ fun stringAppend (a: String, b: String): String
                     String(listAppend(left, right))
 
 // Builds a single-character String.
-fun stringFromChar (value: Char): String
+fun stringFromChar(value: Char): String
     String(Cons(value, Nil))
 
 // Builds a Char from a digit Nat (0-9).
-fun digitChar (value: Nat): Char
+fun digitChar(value: Nat): Char
     Char(natAdd(natFromInt(48), value))
 
 // Converts a Nat into a base-10 String.
-fun natToString (value: Nat): String
+fun natToString(value: Nat): String
     if natLt(value, natFromInt(10))
         stringFromChar(digitChar(value))
     else
@@ -507,7 +507,7 @@ fun natToString (value: Nat): String
         )
 
 // Converts an Int into a base-10 String.
-fun intToString (value: Int): String
+fun intToString(value: Int): String
     match value
         case Int(positive, n)
             if natIsZero(n)
@@ -520,7 +520,7 @@ fun intToString (value: Int): String
                         stringAppend("-", natToString(n))
 
 // Returns True when the first String is less than the second.
-fun stringLt (a: String, b: String): Bool
+fun stringLt(a: String, b: String): Bool
     match a
         case String(left)
             match b
@@ -528,7 +528,7 @@ fun stringLt (a: String, b: String): Bool
                     charListLt(left, right)
 
 // Returns True when the first String is less than or equal to the second.
-fun stringLe (a: String, b: String): Bool
+fun stringLe(a: String, b: String): Bool
     match a
         case String(left)
             match b
@@ -536,7 +536,7 @@ fun stringLe (a: String, b: String): Bool
                     charListLe(left, right)
 
 // Converts a list into a String using Cons/Nil notation.
-fun listToString[T: Type] (values: List[T](), s: Show[T]()): String
+fun listToString[T: Type](values: List[T], s: Show[T]): String
     match s
         case Show(showFn)
             match values
@@ -549,16 +549,16 @@ fun listToString[T: Type] (values: List[T](), s: Show[T]()): String
                     )
 
 // Defines a stub println that returns unit.
-fun println[T: Type] (value: T, s: Show[T]()): unit
+fun println[T: Type](value: T, s: Show[T]): unit
     match s
         case Show(showFn)
             printlnString(showFn(value))
 
-fun printlnString (value: String): unit
+fun printlnString(value: String): unit
     ()
 
 // Compares two Bool values.
-fun eqBoolFn (a: Bool, b: Bool): Bool
+fun eqBoolFn(a: Bool, b: Bool): Bool
     match a
         case True
             match b
@@ -574,35 +574,35 @@ fun eqBoolFn (a: Bool, b: Bool): Bool
                     True
 
 // Builds the Bool equality dictionary.
-fun eqBool (): Eq[Bool]()
+fun eqBool(): Eq[Bool]
     Eq(eqBoolFn)
 
 // Compares two Nat values.
-fun eqNatFn (a: Nat, b: Nat): Bool
+fun eqNatFn(a: Nat, b: Nat): Bool
     natEq(a, b)
 
 // Builds the Nat equality dictionary.
-fun eqNat (): Eq[Nat]()
+fun eqNat(): Eq[Nat]
     Eq(eqNatFn)
 
 // Compares two Int values.
-fun eqIntFn (a: Int, b: Int): Bool
+fun eqIntFn(a: Int, b: Int): Bool
     intEq(a, b)
 
 // Builds the Int equality dictionary.
-fun eqInt (): Eq[Int]()
+fun eqInt(): Eq[Int]
     Eq(eqIntFn)
 
 // Compares two Char values.
-fun eqCharFn (a: Char, b: Char): Bool
+fun eqCharFn(a: Char, b: Char): Bool
     charEq(a, b)
 
 // Builds the Char equality dictionary.
-fun eqChar (): Eq[Char]()
+fun eqChar(): Eq[Char]
     Eq(eqCharFn)
 
 // Compares two String values.
-fun eqStringFn (a: String, b: String): Bool
+fun eqStringFn(a: String, b: String): Bool
     match a
         case String(left)
             match b
@@ -610,11 +610,11 @@ fun eqStringFn (a: String, b: String): Bool
                     listEq(left, right, eqChar())
 
 // Builds the String equality dictionary.
-fun eqString (): Eq[String]()
+fun eqString(): Eq[String]
     Eq(eqStringFn)
 
 // Converts a Bool value to a String.
-fun showBoolFn (value: Bool): String
+fun showBoolFn(value: Bool): String
     match value
         case True
             "True"
@@ -622,105 +622,105 @@ fun showBoolFn (value: Bool): String
             "False"
 
 // Builds the Bool show dictionary.
-fun showBool (): Show[Bool]()
+fun showBool(): Show[Bool]
     Show(showBoolFn)
 
 // Converts a Nat value to a String.
-fun showNatFn (value: Nat): String
+fun showNatFn(value: Nat): String
     natToString(value)
 
 // Builds the Nat show dictionary.
-fun showNat (): Show[Nat]()
+fun showNat(): Show[Nat]
     Show(showNatFn)
 
 // Converts an Int value to a String.
-fun showIntFn (value: Int): String
+fun showIntFn(value: Int): String
     intToString(value)
 
 // Builds the Int show dictionary.
-fun showInt (): Show[Int]()
+fun showInt(): Show[Int]
     Show(showIntFn)
 
 // Converts a String value to a String.
-fun showStringFn (value: String): String
+fun showStringFn(value: String): String
     value
 
 // Builds the String show dictionary.
-fun showString (): Show[String]()
+fun showString(): Show[String]
     Show(showStringFn)
 
 // Converts a value to a String using the supplied Show instance.
-fun show[T: Type] (value: T, s: Show[T]()): String
+fun show[T: Type](value: T, s: Show[T]): String
     match s
         case Show(showFn)
             showFn(value)
 
 // Negates an Int value.
-fun opNegIntFn (value: Int): Int
+fun opNegIntFn(value: Int): Int
     intNeg(value)
 
 // Builds the Int negation dictionary.
-fun opNegInt (): OpNeg[Int]()
+fun opNegInt(): OpNeg[Int]
     OpNeg(opNegIntFn)
 
 // Adds two Int values.
-fun opPlusIntFn (a: Int, b: Int): Int
+fun opPlusIntFn(a: Int, b: Int): Int
     intAdd(a, b)
 
 // Builds the Int addition dictionary.
-fun opPlusInt (): OpPlus[Int]()
+fun opPlusInt(): OpPlus[Int]
     OpPlus(opPlusIntFn)
 
 // Subtracts two Int values.
-fun opMinusIntFn (a: Int, b: Int): Int
+fun opMinusIntFn(a: Int, b: Int): Int
     intSub(a, b)
 
 // Builds the Int subtraction dictionary.
-fun opMinusInt (): OpMinus[Int]()
+fun opMinusInt(): OpMinus[Int]
     OpMinus(opMinusIntFn)
 
 // Multiplies two Int values.
-fun opTimesIntFn (a: Int, b: Int): Int
+fun opTimesIntFn(a: Int, b: Int): Int
     intMul(a, b)
 
 // Builds the Int multiplication dictionary.
-fun opTimesInt (): OpTimes[Int]()
+fun opTimesInt(): OpTimes[Int]
     OpTimes(opTimesIntFn)
 
 // Divides two Int values.
-fun opDivIntFn (a: Int, b: Int): Int
+fun opDivIntFn(a: Int, b: Int): Int
     intDiv(a, b)
 
 // Builds the Int division dictionary.
-fun opDivInt (): OpDiv[Int]()
+fun opDivInt(): OpDiv[Int]
     OpDiv(opDivIntFn)
 
 // Computes the remainder of dividing two Int values.
-fun opModIntFn (a: Int, b: Int): Int
+fun opModIntFn(a: Int, b: Int): Int
     intMod(a, b)
 
 // Builds the Int modulo dictionary.
-fun opModInt (): OpMod[Int]()
+fun opModInt(): OpMod[Int]
     OpMod(opModIntFn)
 
 // Compares two Int values for ordering.
-fun opLtIntFn (a: Int, b: Int): Bool
+fun opLtIntFn(a: Int, b: Int): Bool
     intLt(a, b)
 
 // Builds the Int less-than dictionary.
-fun opLtInt (): OpLt[Int]()
+fun opLtInt(): OpLt[Int]
     OpLt(opLtIntFn)
 
 // Compares two Int values for ordering.
-fun opLeIntFn (a: Int, b: Int): Bool
+fun opLeIntFn(a: Int, b: Int): Bool
     intLe(a, b)
 
 // Builds the Int less-than-or-equal dictionary.
-fun opLeInt (): OpLe[Int]()
+fun opLeInt(): OpLe[Int]
     OpLe(opLeIntFn)
 
 // Computes the logical and of two Bool values.
-fun opAndBoolFn (a: Bool, b: Bool): Bool
+fun opAndBoolFn(a: Bool, b: Bool): Bool
     match a
         case True
             b
@@ -728,11 +728,11 @@ fun opAndBoolFn (a: Bool, b: Bool): Bool
             False
 
 // Builds the Bool and dictionary.
-fun opAndBool (): OpAnd[Bool]()
+fun opAndBool(): OpAnd[Bool]
     OpAnd(opAndBoolFn)
 
 // Computes the logical or of two Bool values.
-fun opOrBoolFn (a: Bool, b: Bool): Bool
+fun opOrBoolFn(a: Bool, b: Bool): Bool
     match a
         case True
             True
@@ -740,62 +740,62 @@ fun opOrBoolFn (a: Bool, b: Bool): Bool
             b
 
 // Builds the Bool or dictionary.
-fun opOrBool (): OpOr[Bool]()
+fun opOrBool(): OpOr[Bool]
     OpOr(opOrBoolFn)
 
 // Concatenates two String values.
-fun opPlusStringFn (a: String, b: String): String
+fun opPlusStringFn(a: String, b: String): String
     stringAppend(a, b)
 
 // Builds the String concatenation dictionary.
-fun opPlusString (): OpPlus[String]()
+fun opPlusString(): OpPlus[String]
     OpPlus(opPlusStringFn)
 
 // Compares two String values for ordering.
-fun opLtStringFn (a: String, b: String): Bool
+fun opLtStringFn(a: String, b: String): Bool
     stringLt(a, b)
 
 // Builds the String less-than dictionary.
-fun opLtString (): OpLt[String]()
+fun opLtString(): OpLt[String]
     OpLt(opLtStringFn)
 
 // Compares two String values for ordering.
-fun opLeStringFn (a: String, b: String): Bool
+fun opLeStringFn(a: String, b: String): Bool
     stringLe(a, b)
 
 // Builds the String less-than-or-equal dictionary.
-fun opLeString (): OpLe[String]()
+fun opLeString(): OpLe[String]
     OpLe(opLeStringFn)
 
 // Concatenates two lists.
-fun opPlusListFn[T: Type] (a: List[T](), b: List[T]()): List[T]()
+fun opPlusListFn[T: Type](a: List[T], b: List[T]): List[T]
     listAppend(a, b)
 
 // Builds the list concatenation dictionary.
-fun opPlusList[T: Type] (): OpPlus[List[T]()]()
+fun opPlusList[T: Type](): OpPlus[List[T]]
     OpPlus(opPlusListFn)
 
 // Gets list sequence operations.
 // Gets a list element by index using an equality dictionary.
-fun listSequenceGet[T: Type] (eq: Eq[T](), seq: List[T](), index: Int): T
+fun listSequenceGet[T: Type](eq: Eq[T], seq: List[T], index: Int): T
     if intIsNegative(index)
         undefined
     else
         listGetNat(seq, intToNat(index))
 
 // Sets a list element by index.
-fun listSequenceSet[T: Type] (eq: Eq[T](), seq: List[T](), index: Int, value: T): List[T]()
+fun listSequenceSet[T: Type](eq: Eq[T], seq: List[T], index: Int, value: T): List[T]
     if intIsNegative(index)
         seq
     else
         listSetNat(seq, intToNat(index), value)
 
 // Checks whether a list contains a value.
-fun listSequenceContains[T: Type] (eq: Eq[T](), seq: List[T](), value: T): Bool
+fun listSequenceContains[T: Type](eq: Eq[T], seq: List[T], value: T): Bool
     listContains(seq, value, eq)
 
 // Builds the list sequence dictionary.
-fun listSequence[T: Type] (eq: Eq[T]()): Sequence[List[T](), T]()
+fun listSequence[T: Type](eq: Eq[T]): Sequence[List[T], T]
     Sequence(
         listSequenceGet(eq),
         listSequenceSet(eq),
@@ -804,25 +804,25 @@ fun listSequence[T: Type] (eq: Eq[T]()): Sequence[List[T](), T]()
 
 // Gets list set operations.
 // Checks whether a list-based set contains a value.
-fun listSetContains[T: Type] (eq: Eq[T](), set: List[T](), value: T): Bool
+fun listSetContains[T: Type](eq: Eq[T], set: List[T], value: T): Bool
     listContains(set, value, eq)
 
 // Adds a value to a list-based set.
-fun listSetAdd[T: Type] (eq: Eq[T](), set: List[T](), value: T): List[T]()
+fun listSetAdd[T: Type](eq: Eq[T], set: List[T], value: T): List[T]
     if listContains(set, value, eq)
         set
     else
         Cons(value, set)
 
 // Builds the list set dictionary.
-fun listSet[T: Type] (eq: Eq[T]()): Set[List[T](), T]()
+fun listSet[T: Type](eq: Eq[T]): Set[List[T], T]
     Set(
         listSetContains(eq),
         listSetAdd(eq)
     )
 
 // Inserts a key/value pair into the tree.
-fun treePut[K: Type, V: Type] (tree: Tree[K, V](), key: K, value: V, lt: OpLt[K](), eq: Eq[K]()): Tree[K, V]()
+fun treePut[K: Type, V: Type](tree: Tree[K, V], key: K, value: V, lt: OpLt[K], eq: Eq[K]): Tree[K, V]
     match lt
         case OpLt(ltFn)
             match eq
@@ -840,7 +840,7 @@ fun treePut[K: Type, V: Type] (tree: Tree[K, V](), key: K, value: V, lt: OpLt[K]
                                     Node(k, v, left, treePut(right, key, value, lt, eq))
 
 // Looks up a key in the tree.
-fun treeLookup[K: Type, V: Type] (tree: Tree[K, V](), key: K, lt: OpLt[K](), eq: Eq[K]()): V
+fun treeLookup[K: Type, V: Type](tree: Tree[K, V], key: K, lt: OpLt[K], eq: Eq[K]): V
     match lt
         case OpLt(ltFn)
             match eq
@@ -859,17 +859,16 @@ fun treeLookup[K: Type, V: Type] (tree: Tree[K, V](), key: K, lt: OpLt[K](), eq:
 
 // Builds a tree map instance.
 // Inserts a key/value pair into a tree map.
-fun treeMapPut[K: Type, V: Type] (lt: OpLt[K](), eq: Eq[K](), tree: Tree[K, V](), key: K, value: V): Tree[K, V]()
+fun treeMapPut[K: Type, V: Type](lt: OpLt[K], eq: Eq[K], tree: Tree[K, V], key: K, value: V): Tree[K, V]
     treePut(tree, key, value, lt, eq)
 
 // Looks up a value in a tree map.
-fun treeMapLookup[K: Type, V: Type] (lt: OpLt[K](), eq: Eq[K](), tree: Tree[K, V](), key: K): V
+fun treeMapLookup[K: Type, V: Type](lt: OpLt[K], eq: Eq[K], tree: Tree[K, V], key: K): V
     treeLookup(tree, key, lt, eq)
 
 // Builds the tree map dictionary.
-fun treeMap[K: Type, V: Type] (lt: OpLt[K](), eq: Eq[K]()): Map[Tree[K, V](), K, V]()
+fun treeMap[K: Type, V: Type](lt: OpLt[K], eq: Eq[K]): Map[Tree[K, V], K, V]
     Map(
         treeMapPut(lt, eq),
         treeMapLookup(lt, eq)
     )
-

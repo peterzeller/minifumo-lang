@@ -1,4 +1,4 @@
-fun main() unit
+fun main(): unit
     let x = 1
     let y = 2
     println(x + y, showInt())

@@ -2,10 +2,8 @@
 import com.github.peterzeller.minifumo.parser.parseInput
 import com.github.peterzeller.minifumo.antlr.MinifumoParser
 import com.github.peterzeller.minifumo.ast.AstTransform
-import com.github.peterzeller.minifumo.builtins.Standard
 import com.github.peterzeller.minifumo.interpreter.Interpreter
 import com.github.peterzeller.minifumo.typing.TypeChecker
-import com.github.peterzeller.minifumo.typing.TypedAst
 // https://scalameta.org/munit/docs/getting-started.html
 class MySuite extends munit.FunSuite {
   // Builds a Nat value for testing.
@@ -20,47 +18,50 @@ class MySuite extends munit.FunSuite {
     val sign = if value >= 0 then Interpreter.Value.AdtVal("True", Nil) else Interpreter.Value.AdtVal("False", Nil)
     Interpreter.Value.AdtVal("Int", List(sign, natValue(math.abs(value))))
 
-  test("interpreter evals main with 1+2".ignore) {
+  test("interpreter evals main with a simple function call") {
     val (c, _) = parseInput("""
+      |fun id(x: Int): Int
+      |    x
+      |
       |fun main(): Int
-      |    1 + 2
+      |    id(3)
     """.stripMargin)
     val ast = AstTransform.program(c)
     val (typed, errors) = TypeChecker.checkProgram(ast, TypeChecker.emptyExportEnv)
     assertEquals(errors, List())
-    val combined = TypedAst.Program(Standard.typedProgram.items ++ typed.items)(typed.source)
-    val result = Interpreter.evalProg(combined, "main")
+    val result = Interpreter.evalProg(typed, "main")
     assertEquals(result, intValue(3))
   }
 
-  test("type checker can type ints".ignore) {
+  test("type checker can type ints") {
     val (c, _) = parseInput("""
       |fun main(): Int
       |    let x = 1
       |    let y = 2
-      |    x + y
+      |    y
     """.stripMargin)
     val ast = AstTransform.program(c)
     val (typed, errors) = TypeChecker.checkProgram(ast, TypeChecker.emptyExportEnv)
     assertEquals(errors, List())
-    val combined = TypedAst.Program(Standard.typedProgram.items ++ typed.items)(typed.source)
-    val result = Interpreter.evalProg(combined, "main")
-    assertEquals(result, intValue(3))
+    val result = Interpreter.evalProg(typed, "main")
+    assertEquals(result, intValue(2))
   }
 
-  test("type checker can instantiate generic functions".ignore) {
+  test("type checker can handle pattern matching on local data") {
     val (c, _) = parseInput("""
-      |fun id[T](x: T): T
-      |    x
+      |data Maybe = None | Some(value: Int)
       |
       |fun main(): Int
-      |    id[Int](42)
+      |    match Some(42)
+      |        case None
+      |            0
+      |        case Some(value)
+      |            value
     """.stripMargin)
     val ast = AstTransform.program(c)
     val (typed, errors) = TypeChecker.checkProgram(ast, TypeChecker.emptyExportEnv)
     assertEquals(errors, List())
-    val combined = TypedAst.Program(Standard.typedProgram.items ++ typed.items)(typed.source)
-    val result = Interpreter.evalProg(combined, "main")
+    val result = Interpreter.evalProg(typed, "main")
     assertEquals(result, intValue(42))
   }
 

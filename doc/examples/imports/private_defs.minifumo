@@ -1,6 +1,6 @@
 data Hidden = Hidden
 
-fun secret() Int
+fun secret(): Int
     1
 
-data HiddenClass[T] = HiddenClass(hidden T -> Int)
+data HiddenClass[T: Type] = HiddenClass(hidden: T -> Int)

@@ -1,13 +1,13 @@
 // Sized data type for custom list and tree data types.
 
-data MyList[T] = Nil | Cons(head T, tail MyList[T])
+data MyList[T: Type] = Nil | Cons(head: T, tail: MyList[T])
 
-data Tree[T] = Leaf(value T) | Node(left Tree[T], right Tree[T])
+data Tree[T: Type] = Leaf(value: T) | Node(left: Tree[T], right: Tree[T])
 
-data Sized[T] = Sized(size T -> Int)
+data Sized[T: Type] = Sized(size: T -> Int)
 
 // Computes the size of a list.
-fun listSize[T](value MyList[T]) Int
+fun listSize[T: Type](value: MyList[T]): Int
     match value
         case Nil
             0
@@ -15,7 +15,7 @@ fun listSize[T](value MyList[T]) Int
             1 + listSize(tail)
 
 // Computes the size of a tree.
-fun treeSize[T](value Tree[T]) Int
+fun treeSize[T: Type](value: Tree[T]): Int
     match value
         case Leaf(_)
             1
@@ -23,24 +23,24 @@ fun treeSize[T](value Tree[T]) Int
             1 + treeSize(left) + treeSize(right)
 
 // Builds a Sized dictionary for lists.
-fun sizedList[T]() Sized[MyList[T]]
+fun sizedList[T: Type](): Sized[MyList[T]]
     Sized(listSize)
 
 // Builds a Sized dictionary for trees.
-fun sizedTree[T]() Sized[Tree[T]]
+fun sizedTree[T: Type](): Sized[Tree[T]]
     Sized(treeSize)
 
 // Computes the total size of the list and tree.
-fun totalSize[T](list MyList[T], tree Tree[T], s1 Sized[MyList[T]], s2 Sized[Tree[T]]) Int
+fun totalSize[T: Type](list: MyList[T], tree: Tree[T], s1: Sized[MyList[T]], s2: Sized[Tree[T]]): Int
     match s1
         case Sized(listSizeFn)
             match s2
                 case Sized(treeSizeFn)
                     listSizeFn(list) + treeSizeFn(tree)
 
-fun main() unit
-    let list MyList[Int] = Cons(1, Cons(2, Nil))
-    let tree Tree[Int] = Node(Leaf(1), Node(Leaf(2), Leaf(3)))
+fun main(): unit
+    let list: MyList[Int] = Cons(1, Cons(2, Nil))
+    let tree: Tree[Int] = Node(Leaf(1), Node(Leaf(2), Leaf(3)))
     println(totalSize[Int](list, tree, sizedList(), sizedTree()), showInt())
 
 // Output:
