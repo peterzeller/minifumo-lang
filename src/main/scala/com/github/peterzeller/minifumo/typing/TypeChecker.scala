@@ -12,51 +12,14 @@ import scala.collection.mutable.ListBuffer
 object TypeChecker:
   final case class TypeError(message: String, source: ast.SourceRange) extends MinifumoError
 
-  case class ExportEnv(
-                      types: Map[String, String],
-                      functions: Map[String, String]
-                      )
 
-  /** Provides an empty export environment. */
-  def emptyExportEnv: ExportEnv = ExportEnv(
-    Map(),
-    Map(),
-  )
-
-  /** Adds standard library exports to the given environment. */
-  def withStandardExports(env: ExportEnv): ExportEnv =
-    ExportEnv(
-      types = Standard.standardExports.types ++ env.types,
-      functions = Standard.standardExports.functions ++ env.functions,
-    )
-
-  /** Extracts exported names from the program and merges them into the export environment. */
-  def extractExports(standardProgram: ast.ProgramFile, env: ExportEnv, includeNonExported: Boolean): (ExportEnv, List[TypeError]) =
-    val errors = ListBuffer[TypeError]()
-    var types = env.types
-    var functions = env.functions
-    for item <- standardProgram.items do
-      item match
-        case ast.TopLevel.DataDecl(name, _, _, exported) if exported || includeNonExported =>
-          if types.contains(name) || functions.contains(name) then
-            errors.addOne(TypeError(s"Name ${name} is already exported", item.source))
-          else
-            types = types + (name -> name)
-        case ast.TopLevel.FunDecl(sig, _, exported) if exported || includeNonExported =>
-          if types.contains(sig.name) || functions.contains(sig.name) then
-            errors.addOne(TypeError(s"Name ${sig.name} is already exported", sig.source))
-          else
-            functions = functions + (sig.name -> sig.name)
-        case _ =>
-    (ExportEnv(types, functions), errors.toList)
-
-  /** Type-checks a program without implicitly importing the standard library. */
-  def checkProgramWithoutStandard(program: ast.ProgramFile, importedExports: ExportEnv): (TypedAst.Program, List[TypeError]) =
+  /** Type-checks a program */
+  def checkProgram(program: ast.ProgramFile, globalNames: NameCache & SymbolCache, importStandard: Boolean): (TypedAst.Program, List[TypeError]) =
     val errors = ListBuffer[TypeError]()
     val idSupply = IdSupply()
     val metaStore = MetaStore()
-    val globals = buildGlobals(program, importedExports)
-    val signatureInfo = buildSignatures(program, globals, idSupply)
+    val (symbolMap, importErrors) = GlobalSymbols.resolveImports(program, globalNames)
+    val globals = GlobalEnv(names = symbolMap)
     val typedItems = program.items.map {
       case decl: ast.TopLevel.DataDecl =>
         buildDataDecl(decl, globals, idSupply)
@@ -70,9 +33,6 @@ object TypeChecker:
     }
     (TypedAst.Program(typedItems)(program.source), errors.toList)
 
-  /** Type-checks a program while importing the standard library. */
-  def checkProgram(program: ast.ProgramFile, importedExports: ExportEnv): (TypedAst.Program, List[TypeError]) =
-    checkProgramWithoutStandard(program, withStandardExports(importedExports))
 
   /** Provides a lookup interface for local and global symbols during type checking. */
   trait Context:
@@ -89,9 +49,7 @@ object TypeChecker:
 
   /** Stores global symbols for type checking. */
   private final case class GlobalEnv(
-      types: mutable.Map[String, TypedAst.DatatypeSymbol],
-      ctors: mutable.Map[String, TypedAst.CtorSymbol],
-      functions: mutable.Map[String, TypedAst.FunctionSymbol]
+      names: Map[String, GlobalSymbol]
     )
 
   /** Implements a context with local bindings and global symbols. */
@@ -143,42 +101,6 @@ object TypeChecker:
       returnType: TypedAst.Expr
     )
 
-  /** Builds the initial global environment from program and imported exports. */
-  private def buildGlobals(program: ast.ProgramFile, importedExports: ExportEnv): GlobalEnv =
-    val importedTypes = importedExports.types.map { case (name, source) =>
-      name -> TypedAst.DatatypeSymbol(name, Paths.get(source))
-    }
-    val importedFunctions = importedExports.functions.map { case (name, _) =>
-      name -> TypedAst.FunctionSymbol(name, TypedAst.Expr.UnknownType()(ast.SourceRange.empty))
-    }
-    val programTypes = program.items.collect {
-      case ast.TopLevel.DataDecl(name, _, _, _) =>
-        name -> TypedAst.DatatypeSymbol(name, Paths.get("<local>"))
-    }.toMap
-    val programFunctions = program.items.collect {
-      case ast.TopLevel.FunDecl(sig, _, _) =>
-        sig.name -> TypedAst.FunctionSymbol(sig.name, TypedAst.Expr.UnknownType()(sig.source))
-    }.toMap
-    val programCtors = program.items.collect {
-      case ast.TopLevel.DataDecl(_, _, ctors, _) =>
-        ctors.map(ctor => ctor.name -> TypedAst.CtorSymbol(ctor.name, TypedAst.Expr.UnknownType()(ctor.source)))
-    }.flatten.toMap
-    val globals = GlobalEnv(
-      mutable.Map.from(importedTypes ++ programTypes),
-      mutable.Map.from(programCtors),
-      mutable.Map.from(importedFunctions ++ programFunctions)
-    )
-    globals.functions.update(
-      "undefined",
-      TypedAst.FunctionSymbol("undefined", TypedAst.Expr.UnknownType()(ast.SourceRange.empty))
-    )
-    globals
-
-  /** Provides signatures of standard-library functions by name. */
-  private lazy val standardFunctionSignatures: Map[String, ast.FunSig] =
-    Standard.standardProgram.items.collect {
-      case ast.TopLevel.FunDecl(sig, _, _) => sig.name -> sig
-    }.toMap
 
   // Builds typed function signature information from a parsed function signature.
   private def buildFunctionInfoFromSignature(
@@ -433,7 +355,9 @@ object TypeChecker:
     expr match
       case ast.Expr.Var(name) =>
         ctx.lookupSymbol(name) match
-          case Some(symbol) => Right(TypedAst.Expr.Var(symbol)(expr.source) -> symbol.tpe)
+          case Some(symbol) =>
+            println(s"Looking up symbol ${name} returns symbol ${symbol} ")
+            Right(TypedAst.Expr.Var(symbol)(expr.source) -> symbol.tpe)
           case None =>
             Left(List(TypeError(s"Unknown symbol ${name}", expr.source)))
       case ast.Expr.Lit(value) =>
@@ -471,7 +395,7 @@ object TypeChecker:
               infer(arg).map { (argExpr, _) =>
                 TypedAst.Expr.AppImplicit(calleeExpr, argExpr, TypedAst.Expr.UnknownType()(expr.source))(expr.source) -> TypedAst.Expr.UnknownType()(expr.source)
               }
-            case other => Left(List(TypeError(s"Expected an implicit function, but expression has type ${prettyExpr(other)}", expr.source)))
+            case other => Left(List(TypeError(s"Expected an implicit function, but expression ${prettyExpr(calleeExpr)} has type ${prettyExpr(other)}", expr.source)))
         }
       case ast.Expr.Lambda(param, body) =>
         val paramType = param.tpe.map(t => signatureExpr(t, ctx.globals, Map())).getOrElse(TypedAst.Expr.UnknownType()(expr.source))
@@ -794,3 +718,19 @@ object TypeChecker:
     fieldTypes.map(fieldType => substituteTypeParams(fieldType, subst))
 
   type CheckResult[T] = Either[List[TypeError], T]
+
+  def formatError(path: String, sourceLines: Vector[String], error: TypeError): String =
+    val lineNr = error.source.start.line
+    val msgHead = s"Error in $path:${lineNr}:${error.source.start.column}"
+    if 0 < lineNr && lineNr <= sourceLines.length then
+      val errorLine = sourceLines(lineNr-1)
+      val lineNrString = lineNr.toString()
+      val startColumn = error.source.start.column
+      val endColumn = if error.source.end.line == lineNr then startColumn + 1 else error.source.end.column
+      s"""|$msgHead
+          |$lineNrString | ${errorLine}
+          |${" " * (lineNrString.length + endColumn)}${"^" * (endColumn - startColumn)}
+          |${error.message}
+      """.stripMargin('|')
+    else
+      s"$msgHead: ${error.message}"

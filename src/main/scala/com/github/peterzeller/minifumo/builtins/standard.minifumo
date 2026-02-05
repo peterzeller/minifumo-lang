@@ -40,7 +40,7 @@ export data Show[T: Type] = Show(show: T -> String)
 
 export data Sequence[S: Type, T: Type] = Sequence(get: S -> Int -> T, set: S -> Int -> T -> S, contains: S -> T -> Bool)
 
-export data Map[M: Type, K: Type, V: Type] = Map(put: M -> K -> V -> M, lookup: M -> K -> V)
+export data Map[M: Type, K: Type, V: Type] = makeMap(put: M -> K -> V -> M, lookup: M -> K -> V)
 
 export data Set[S: Type, T: Type] = Set(contains: S -> T -> Bool, add: S -> T -> S)
 
@@ -868,7 +868,7 @@ fun treeMapLookup[K: Type, V: Type](lt: OpLt[K], eq: Eq[K], tree: Tree[K, V], ke
 
 // Builds the tree map dictionary.
 fun treeMap[K: Type, V: Type](lt: OpLt[K], eq: Eq[K]): Map[Tree[K, V], K, V]
-    Map[Tree[K, V], K, V](
+    makeMap[Tree[K, V], K, V](
         treeMapPut[K, V](lt, eq),
         treeMapLookup[K, V](lt, eq)
     )

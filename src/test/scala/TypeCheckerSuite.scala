@@ -124,3 +124,16 @@ class TypeCheckerSuite extends munit.FunSuite:
     assertEquals(errors, List())
   }
 
+  test("can construct generic list") {
+    val program = parseProgram("""
+      |data Type = makeType
+      |data Num = makeNum
+      |data Foo[T: Type] = makeFoo(t: T)
+      |
+      |fun test(): Foo[Foo[Num]]
+      |  let x: Foo[Foo[Num]] = makeFoo[Foo[Num]](makeFoo[Num](makeNum))
+      |  x
+    """.stripMargin)
+    val (_, errors) = TypeChecker.checkProgramWithoutStandard(program, TypeChecker.emptyExportEnv)
+    assertEquals(errors, List())
+  }

@@ -18,8 +18,7 @@ object TypedAst:
   final case class ParamSymbol(name: String, tpe: Expr, id: Int) extends TermSymbol
   final case class BuiltinValueSymbol(name: String, tpe: Expr) extends TermSymbol
   final case class ErrorSymbol(name: String, tpe: Expr) extends Symbol
-  final case class DatatypeSymbol(name: String, file: Path) extends Symbol:
-    def tpe: Expr = Sort()(SourceRange.empty)
+  final case class DatatypeSymbol(name: String, tpe: Expr, file: Path) extends Symbol
 
   final case class FunctionSymbol(name: String, tpe: Expr) extends Symbol
   final case class CtorSymbol(name: String, tpe: Expr) extends Symbol
@@ -71,16 +70,16 @@ object TypedAst:
           value match
             case Literal.IntLit(value) =>
               val i = env.globalNames("Int")
-              Expr.Var(DatatypeSymbol(i.name, i.file))(SourceRange.empty)
+              Expr.Var(DatatypeSymbol(i.name, Sort()(SourceRange.empty), i.file))(SourceRange.empty)
             case Literal.BoolLit(value) =>
               val i = env.globalNames("Bool")
-              Expr.Var(DatatypeSymbol(i.name, i.file))(SourceRange.empty)
+              Expr.Var(DatatypeSymbol(i.name, Sort()(SourceRange.empty), i.file))(SourceRange.empty)
             case Literal.StringLit(value) =>
               val i = env.globalNames("String")
-              Expr.Var(DatatypeSymbol(i.name, i.file))(SourceRange.empty)
+              Expr.Var(DatatypeSymbol(i.name, Sort()(SourceRange.empty), i.file))(SourceRange.empty)
             case Literal.UnitLit() =>
               val i = env.globalNames("Unit")
-              Expr.Var(DatatypeSymbol(i.name, i.file))(SourceRange.empty)
+              Expr.Var(DatatypeSymbol(i.name, Sort()(SourceRange.empty), i.file))(SourceRange.empty)
         case Expr.Var(symbol) => symbol.tpe
         case Expr.AppImplicit(callee, arg, tpe) => tpe
         case Expr.App(callee, arg, tpe) => tpe

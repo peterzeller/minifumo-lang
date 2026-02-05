@@ -9,6 +9,9 @@ import com.github.peterzeller.minifumo.typing.TypedAst.{ErrorSymbol, Expr, Globa
 
 import java.nio.file.Path
 import scala.collection.mutable.ListBuffer
+import com.github.peterzeller.minifumo.builtins.Standard
+import com.github.peterzeller.minifumo.parser.parseInput
+import scala.compiletime.ops.double
 
 
 case class GlobalSymbols(
@@ -39,12 +42,29 @@ object GlobalSymbols:
       case _ =>
         List()
 
-  def buildGlobalSymbols(file: Path, prog: ast.ProgramFile, symbolCache: NameCache, onlyExported: Boolean): (Map[String, GlobalSymbol], List[TypeError]) =
+  def buildGlobalSymbols(file: Path, prog: ast.ProgramFile, symbolCache: NameCache&SymbolCache, onlyExported: Boolean): (Map[String, GlobalSymbol], List[TypeError]) =
     val (imports, errors1) = resolveImports(prog, symbolCache)
     val ownNames = buildGlobalNames(file, prog, false)
     val preEnv = PreEnv(globalNames = imports ++ ownNames)
     val errors = ListBuffer[TypeError](errors1*)
     var res = Map[String, GlobalSymbol]()
+
+    if !onlyExported then
+      // also add imported ones
+      for i <- prog.imports do
+        i.from match
+          case Some(path) =>
+            val symbolMap = symbolCache.globalSymbols(path)
+            symbolMap.get(i.name) match
+              case Some(is) =>
+                if res.contains(i.name) then
+                  errors.addOne(TypeError(s"Name ${i.name} is already defined", i.source))
+                res += i.name -> is
+              case None =>
+                errors.addOne(TypeError(s"Name ${i.name} not found in ${path}", i.source))
+          case None =>
+            errors.addOne(TypeError(s"Import without from clause not supported", i.source))
+
     for (symbols, es) <- prog.items.map(topLevelToGlobalSymbols(file, onlyExported, preEnv)) do
       errors.addAll(es)
       for (name, source, sym) <- symbols do
@@ -184,30 +204,45 @@ object GlobalSymbols:
 trait NameCache:
   def globalNames(path: String): Map[String, GlobalName]
 
-class ProjectSymbolCache(projectRoot: Path) extends NameCache:
-  private var astCache: Map[Path, (ast.ProgramFile, List[SyntaxError])] = Map()
-  private var namesCache: Map[Path, Map[String, GlobalName]] = Map()
+
+trait SymbolCache:
+  def globalSymbols(path: String): Map[String, GlobalSymbol]
+
+class ProjectSymbolCache(projectRoot: Path) extends NameCache with SymbolCache:
+  private var astCache: Map[String, (ast.ProgramFile, List[SyntaxError])] = Map()
+  private var namesCache: Map[String, Map[String, GlobalName]] = Map()
+  private var symbolCache: Map[String, Map[String, GlobalSymbol]] = Map()
 
   def toPath(importPath: String): Path =
     projectRoot.resolve(importPath)
 
-  def getAst(path: Path): (ast.ProgramFile, List[SyntaxError]) =
+  def getAst(path: String): (ast.ProgramFile, List[SyntaxError]) =
     astCache.get(path) match
       case Some(a) => a
       case None =>
-        val (cst, syntaxErrors) = parseFile(path)
+        val (cst, syntaxErrors) =
+          if path == "standard.minifumo" then
+            parseInput(Standard.loadStandardSource())
+          else
+            parseFile(toPath(path))
         val ast = AstTransform.program(cst)
         val r = (ast, syntaxErrors)
         astCache += path -> r
         r
 
-  def globalNames(importPath: String): Map[String, GlobalName] =
-    globalNames(toPath(importPath))
 
-  def globalNames(path: Path): Map[String, GlobalName] =
+  def globalNames(path: String): Map[String, GlobalName] =
     namesCache.get(path) match
       case Some(m) => m
       case None =>
-        val r = GlobalSymbols.buildGlobalNames(path, getAst(path)._1, true)
+        val r = GlobalSymbols.buildGlobalNames(toPath(path), getAst(path)._1, true)
         namesCache += path -> r
+        r
+
+  def globalSymbols(path: String): Map[String, GlobalSymbol] =
+    symbolCache.get(path) match
+      case Some(m) => m
+      case None =>
+        val (r,_) = GlobalSymbols.buildGlobalSymbols(toPath(path), getAst(path)._1, this, true)
+        symbolCache += path -> r
         r
