@@ -718,19 +718,29 @@ object TypeChecker:
             val symbol = TypedAst.CtorSymbol(name, TypedAst.Expr.UnknownType()(pattern.source))
             (TypedAst.Pattern.Ctor(symbol, Nil)(pattern.source), Map(), List(TypeError(s"Unknown constructor ${name}", pattern.source)))
 
-  // Collects implicit parameters, explicit field types, and result type from a constructor signature.
-  private def decomposeCtorType(ctorType: TypedAst.Expr): (List[TypedAst.ParamSymbol], List[TypedAst.Expr], TypedAst.Expr) =
-    def loop(tpe: TypedAst.Expr, implicitParams: List[TypedAst.ParamSymbol], fields: List[TypedAst.Expr]): (List[TypedAst.ParamSymbol], List[TypedAst.Expr], TypedAst.Expr) =
+  // Collects explicit field types and result type from a constructor signature.
+  private def decomposeCtorType(ctorType: TypedAst.Expr): (List[TypedAst.Expr], TypedAst.Expr) =
+    def loop(tpe: TypedAst.Expr, fields: List[TypedAst.Expr]): (List[TypedAst.Expr], TypedAst.Expr) =
       tpe match
-        case TypedAst.Expr.Pi(dom, cod, true) =>
-          dom match
-            case TypedAst.Expr.Var(param: TypedAst.ParamSymbol) => loop(cod, implicitParams :+ param, fields)
-            case _ => loop(cod, implicitParams, fields)
         case TypedAst.Expr.Pi(dom, cod, false) =>
-          loop(cod, implicitParams, fields :+ dom)
+          loop(cod, fields :+ dom)
+        case TypedAst.Expr.Pi(_, cod, true) =>
+          loop(cod, fields)
         case _ =>
-          (implicitParams, fields, tpe)
-    loop(ctorType, Nil, Nil)
+          (fields, tpe)
+    loop(ctorType, Nil)
+
+  // Collects parameter symbol ids that appear in a type expression.
+  private def collectParamIds(expr: TypedAst.Expr): Set[Int] =
+    expr match
+      case TypedAst.Expr.Var(param: TypedAst.ParamSymbol) => Set(param.id)
+      case TypedAst.Expr.App(callee, arg, tpe) => collectParamIds(callee) ++ collectParamIds(arg) ++ collectParamIds(tpe)
+      case TypedAst.Expr.AppImplicit(callee, arg, tpe) => collectParamIds(callee) ++ collectParamIds(arg) ++ collectParamIds(tpe)
+      case TypedAst.Expr.Pi(dom, cod, _) => collectParamIds(dom) ++ collectParamIds(cod)
+      case TypedAst.Expr.Lambda(_, body, tpe) => collectParamIds(body) ++ collectParamIds(tpe)
+      case TypedAst.Expr.LetIn(_, _, declaredType, value, body) => collectParamIds(declaredType) ++ collectParamIds(value) ++ collectParamIds(body)
+      case TypedAst.Expr.Match(scrutinee, cases) => collectParamIds(scrutinee) ++ cases.flatMap(c => collectParamIds(c.body)).toSet
+      case _ => Set.empty
 
   // Derives substitutions for constructor type parameters by comparing template and expected result types.
   private def collectTypeParamSubst(
@@ -776,8 +786,8 @@ object TypeChecker:
 
   /** Extracts constructor field types from a constructor type. */
   private def extractCtorFieldTypes(ctorType: TypedAst.Expr, expectedType: TypedAst.Expr): List[TypedAst.Expr] =
-    val (implicitParams, fieldTypes, resultType) = decomposeCtorType(ctorType)
-    val paramIds = implicitParams.map(_.id).toSet
+    val (fieldTypes, resultType) = decomposeCtorType(ctorType)
+    val paramIds = collectParamIds(resultType)
     val subst = collectTypeParamSubst(resultType, expectedType, paramIds, Map())
     fieldTypes.map(fieldType => substituteTypeParams(fieldType, subst))
 

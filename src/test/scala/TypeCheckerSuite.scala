@@ -108,3 +108,19 @@ class TypeCheckerSuite extends munit.FunSuite:
     assert(result.isRight)
     assertEquals(assignments.get(0), Some(literal))
   }
+
+  test("pattern matching substitutes constructor type parameters without standard library") {
+    val program = parseProgram("""
+      |data Type = Type
+      |data Num = Num
+      |data Foo[T: Type] = Bar(t: T)
+      |
+      |fun bla(f: Foo[Num]): Num
+      |  match f
+      |    case Bar(x)
+      |      x
+    """.stripMargin)
+    val (_, errors) = TypeChecker.checkProgramWithoutStandard(program, TypeChecker.emptyExportEnv)
+    assertEquals(errors, List())
+  }
+
