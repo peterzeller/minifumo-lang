@@ -4,7 +4,7 @@ import com.github.peterzeller.minifumo.ast.{AstTransform, ProgramFile, SourcePos
 import com.github.peterzeller.minifumo.interpreter.Interpreter
 import com.github.peterzeller.minifumo.builtins.Standard
 import com.github.peterzeller.minifumo.parser.{SyntaxError, parseInput}
-import com.github.peterzeller.minifumo.typing.{TypeChecker, TypedAst}
+import com.github.peterzeller.minifumo.typing.{ProjectSymbolCache, TypeChecker, TypedAst}
 import com.github.peterzeller.minifumo.typing.TypeChecker.TypeError
 
 import java.nio.file.{Files, Path, Paths}
@@ -13,14 +13,6 @@ import scala.collection.mutable
 import scala.util.{Try, Using}
 
 object Main:
-  // Stores shared caches for parsing and export resolution across multiple files.
-  final case class GlobalInfo(
-      parseCache: mutable.Map[Path, (ProgramFile, List[SyntaxError])],
-      exportCache: mutable.Map[Path, TypeChecker.ExportEnv],
-      resolvedExportCache: mutable.Map[Path, (TypeChecker.ExportEnv, List[TypeError])],
-      typedProgramCache: mutable.Map[Path, (TypedAst.Program, List[TypeError])],
-      resolving: mutable.Set[Path]
-    )
 
   // Creates a new cache container for resolving imports within a project.
   private def newGlobalInfo(): GlobalInfo =
@@ -68,12 +60,12 @@ object Main:
     if syntaxErrors.nonEmpty then
       Left(renderSyntaxErrors(path, syntaxErrors))
     else
-      val (typedProgram, typeErrors) = TypeChecker.checkProgram(program, TypeChecker.emptyExportEnv)
+      val globalNames = new ProjectSymbolCache(findProjectRoot(path))
+      val (typedProgram, typeErrors) = TypeChecker.checkProgram(path, program, globalNames, true)
       if typeErrors.nonEmpty then
         Left(renderTypeErrors(path, typeErrors))
       else
-        val combined = TypedAst.Program(Standard.typedProgram.items ++ typedProgram.items)(program.source)
-        Right(Interpreter.evalProg(combined, "main"))
+        Right(Interpreter.evalProg(typedProgram, "main", globalNames))
 
   // Checks a directory of examples, reusing cached parse/import info across files.
   def checkDirectory(path: Path): List[String] =
@@ -96,7 +88,7 @@ object Main:
     checkFile(path, newGlobalInfo())
 
   // Checks a file using shared caches to avoid reparsing across a project.
-  private def checkFile(path: Path, info: GlobalInfo): List[String] =
+  private def checkFile(path: Path, info: ProjectSymbolCache): List[String] =
     val (program, syntaxErrors) = loadProgram(path, info)
     if syntaxErrors.nonEmpty then
       renderSyntaxErrors(path, syntaxErrors)
@@ -128,11 +120,11 @@ object Main:
 
 
   // Loads and caches syntax parsing results for a file path.
-  private def loadProgram(path: Path, info: GlobalInfo): (ProgramFile, List[SyntaxError]) =
+  private def loadProgram(path: Path, info: ProjectSymbolCache): (ProgramFile, List[SyntaxError]) =
     info.parseCache.getOrElseUpdate(path, parseProgram(path))
 
   // Renders a source range for error reporting.
-  private def renderSourceRange(range: com.github.peterzeller.minifumo.ast.SourceRange): String =
+  private def renderSourceRange(range: SourceRange): String =
     val start = range.start
     val end = range.end
     if start == end then

@@ -11,6 +11,8 @@ import java.nio.file.Path
 import scala.collection.mutable.ListBuffer
 import com.github.peterzeller.minifumo.builtins.Standard
 import com.github.peterzeller.minifumo.parser.parseInput
+
+import scala.annotation.tailrec
 import scala.compiletime.ops.double
 
 
@@ -207,6 +209,19 @@ trait NameCache:
 
 trait SymbolCache:
   def globalSymbols(path: String): Map[String, GlobalSymbol]
+
+// find the folder that contains minifumo.yml
+@tailrec
+def findProjectRoot(path: Path): Path =
+  if path.toFile.isDirectory then
+    if path.resolve("minifumo.yml").toFile.exists() then
+      return path
+  val parent = path.getParent
+  if parent == path then
+    throw new RuntimeException("could not minifumo project root")
+  findProjectRoot(path.getParent)  
+  
+  
 
 class ProjectSymbolCache(projectRoot: Path) extends NameCache with SymbolCache:
   private var astCache: Map[String, (ast.ProgramFile, List[SyntaxError])] = Map()
