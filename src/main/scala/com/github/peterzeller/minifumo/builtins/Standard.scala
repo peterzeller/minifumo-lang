@@ -2,7 +2,6 @@ package com.github.peterzeller.minifumo.builtins
 
 import com.github.peterzeller.minifumo.ast.{AstTransform, ProgramFile}
 import com.github.peterzeller.minifumo.parser.parseInput
-import com.github.peterzeller.minifumo.typing.{TypeChecker, TypedAst}
 
 import java.nio.file.{Files, Paths}
 

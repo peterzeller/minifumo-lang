@@ -5,7 +5,7 @@ import com.github.peterzeller.minifumo.ast.{AstTransform, SourceRange}
 import com.github.peterzeller.minifumo.parser.{SyntaxError, parseFile}
 import com.github.peterzeller.minifumo.typing.TypeChecker.TypeError
 import com.github.peterzeller.minifumo.typing.TypedAst.Expr.UnknownType
-import com.github.peterzeller.minifumo.typing.TypedAst.{ErrorSymbol, Expr, GlobalNameSymbol, LocalSymbol}
+import com.github.peterzeller.minifumo.typing.TypedAst.{ErrorSymbol, Expr, GlobalNameSymbol, GlobalSymbolSymbol, LocalSymbol}
 
 import java.nio.file.Path
 import scala.collection.mutable.ListBuffer
@@ -13,7 +13,6 @@ import com.github.peterzeller.minifumo.builtins.Standard
 import com.github.peterzeller.minifumo.parser.parseInput
 
 import scala.annotation.tailrec
-import scala.compiletime.ops.double
 
 
 case class GlobalSymbols(
@@ -23,7 +22,9 @@ case class GlobalSymbols(
 
 case class GlobalName(file: Path, name: String)
 
-case class GlobalSymbol(file: Path, name: String, symbolSignature: SymbolSignature)
+case class GlobalSymbol(file: Path, name: String, symbolSignature: SymbolSignature):
+  def toSymbol: GlobalSymbolSymbol =
+    GlobalSymbolSymbol(name, file, this)
 
 enum SymbolSignature:
   case Def(tpe: Expr)
@@ -219,9 +220,9 @@ def findProjectRoot(path: Path): Path =
   val parent = path.getParent
   if parent == path then
     throw new RuntimeException("could not minifumo project root")
-  findProjectRoot(path.getParent)  
-  
-  
+  findProjectRoot(path.getParent)
+
+
 
 class ProjectSymbolCache(projectRoot: Path) extends NameCache with SymbolCache:
   private var astCache: Map[String, (ast.ProgramFile, List[SyntaxError])] = Map()
@@ -230,6 +231,10 @@ class ProjectSymbolCache(projectRoot: Path) extends NameCache with SymbolCache:
 
   def toPath(importPath: String): Path =
     projectRoot.resolve(importPath)
+
+  def makeRelative(path: Path): String = {
+    projectRoot.relativize(path).toString
+  }
 
   def getAst(path: String): (ast.ProgramFile, List[SyntaxError]) =
     astCache.get(path) match

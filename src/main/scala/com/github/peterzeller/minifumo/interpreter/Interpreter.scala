@@ -5,7 +5,6 @@ import com.github.peterzeller.minifumo.typing.{ProjectSymbolCache, TypedAst}
 import com.github.peterzeller.minifumo.typing.TypedAst.*
 
 import scala.collection.mutable
-import scala.util.control.NoStackTrace
 
 object Interpreter:
   enum Value:
@@ -27,59 +26,13 @@ object Interpreter:
 
   /** Evaluates a function from the program by name. */
   def evalProg(prog: TypedAst.Program, funcName: String, gobalNames: ProjectSymbolCache): Value =
-    val (functionBodies, ctorArities) = indexProgram(prog)
-    val globals = mutable.Map[TypedAst.Symbol, Value]()
-    ctorArities.foreach { case (symbol, arity) =>
-      globals.update(symbol, buildCtorValue(symbol.name, arity))
-    }
-    functionBodies.foreach { case (symbol, info) =>
-      globals.update(symbol, buildFunctionValue(info.params, info.body, globals))
-    }
-    val entry = functionBodies.keys.find(_.name == funcName)
-    entry match
-      case Some(symbol) =>
-        globals.getOrElse(symbol, Value.UndefinedVal)
-      case None =>
-        throw new RuntimeException(s"Unknown function $funcName") with NoStackTrace
+    evalFunc(prog, funcName, List())
+
+  def evalFunc(prog: TypedAst.Program, funcName: String, args: List[Value]) =
+    ???
 
   /** Describes a function body for evaluation. */
   private final case class FunctionBody(params: List[TypedAst.ParamSymbol], body: TypedAst.Expr)
-
-  /** Indexes functions and constructor arities in a typed program. */
-  private def indexProgram(prog: TypedAst.Program): (Map[TypedAst.FunctionSymbol, FunctionBody], Map[TypedAst.CtorSymbol, Int]) =
-    val functions = mutable.Map[TypedAst.FunctionSymbol, FunctionBody]()
-    val ctors = mutable.Map[TypedAst.CtorSymbol, Int]()
-    prog.items.foreach {
-      case TypedAst.TopLevel.FunDecl(symbol, _, params, body) =>
-        functions.update(symbol, FunctionBody(params, body))
-      case TypedAst.TopLevel.DataDecl(_, _, ctorDecls) =>
-        ctorDecls.foreach { ctor =>
-          ctors.update(ctor.symbol, ctor.fields.size)
-        }
-    }
-    (functions.toMap, ctors.toMap)
-
-  /** Builds a curried constructor value with the given arity. */
-  private def buildCtorValue(name: String, arity: Int): Value =
-    def loop(args: List[Value]): Value =
-      if args.length >= arity then
-        Value.AdtVal(name, args.reverse)
-      else
-        Value.FuncVal(name, value => loop(value :: args))
-    loop(Nil)
-
-  /** Builds a curried function value from its parameters and body. */
-  private def buildFunctionValue(
-      params: List[TypedAst.ParamSymbol],
-      body: TypedAst.Expr,
-      globals: mutable.Map[TypedAst.Symbol, Value]
-    ): Value =
-    def loop(remaining: List[TypedAst.ParamSymbol], localEnv: Map[TypedAst.TermSymbol, Value]): Value =
-      remaining match
-        case Nil => evalExpr(body, localEnv, globals)
-        case param :: tail =>
-          Value.FuncVal(param.name, value => loop(tail, localEnv + (param -> value)))
-    loop(params, Map())
 
   /** Evaluates an expression with the given local and global environments. */
   private def evalExpr(

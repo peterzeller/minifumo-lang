@@ -1,11 +1,9 @@
 package com.github.peterzeller.minifumo.typing
 
 import com.github.peterzeller.minifumo.ast
-import com.github.peterzeller.minifumo.builtins.Standard
 import com.github.peterzeller.minifumo.common.MinifumoError
 import com.github.peterzeller.minifumo.typing.TypedAst.*
 
-import java.nio.file.Paths
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 import java.nio.file.Path
@@ -20,6 +18,7 @@ object TypeChecker:
     val idSupply = IdSupply()
     val metaStore = MetaStore()
     val (symbolMap, importErrors) = GlobalSymbols.buildGlobalSymbols(path, program, globalNames, false)
+    errors.addAll(importErrors)
     val globals = GlobalEnv(names = symbolMap)
     val typedItems = program.items.map {
       case decl: ast.TopLevel.DataDecl =>
@@ -27,6 +26,7 @@ object TypeChecker:
       case decl: ast.TopLevel.FunDecl =>
         val context1 = TypeContext(globals, Map())
         val (typedSig, context2, errs) = checkFunSig(decl.sig, context1)
+        errors.addAll(errs)
 
         val typedBody = checkFunctionBody(decl.body, typedSig.returnType, context2, metaStore, idSupply, errors)
         TypedAst.TopLevel.FunDecl(typedSig, typedBody)(decl.source)
@@ -101,111 +101,6 @@ object TypeChecker:
       returnType: TypedAst.Expr
     )
 
-
-  // Builds typed function signature information from a parsed function signature.
-  private def buildFunctionInfoFromSignature(
-      sig: ast.FunSig,
-      globals: GlobalEnv,
-      idSupply: IdSupply
-    ): FunctionInfo =
-    val implicitParams = sig.implicitParams.map { param =>
-      val paramType = signatureExpr(param.tpe, globals, Map())
-      TypedAst.ParamSymbol(param.name, paramType, idSupply.freshLocalId())
-    }
-    val implicitEnv = implicitParams.map(p => p.name -> p).toMap
-    val explicitParams = sig.params.map { param =>
-      val paramType = signatureExpr(param.tpe, globals, implicitEnv)
-      TypedAst.ParamSymbol(param.name, paramType, idSupply.freshLocalId())
-    }
-    val returnType = signatureExpr(sig.returnType, globals, implicitEnv ++ explicitParams.map(p => p.name -> p).toMap)
-    val funType = buildPiType(implicitParams.map(_.tpe), explicitParams.map(_.tpe), returnType, sig.source)
-    val symbol = globals.functions.getOrElse(sig.name, TypedAst.FunctionSymbol(sig.name, funType)).copy(tpe = funType)
-    FunctionInfo(symbol, implicitParams, explicitParams, returnType)
-
-  // Replaces references to implicit parameter symbols with unknown types for first-order checking.
-  private def eraseImplicitParamRefs(expr: TypedAst.Expr, implicitParamIds: Set[Int]): TypedAst.Expr =
-    expr match
-      case TypedAst.Expr.Var(sym: TypedAst.ParamSymbol) if implicitParamIds.contains(sym.id) =>
-        TypedAst.Expr.UnknownType()(expr.source)
-      case TypedAst.Expr.App(callee, arg, tpe) =>
-        TypedAst.Expr.App(
-          eraseImplicitParamRefs(callee, implicitParamIds),
-          eraseImplicitParamRefs(arg, implicitParamIds),
-          eraseImplicitParamRefs(tpe, implicitParamIds)
-        )(expr.source)
-      case TypedAst.Expr.AppImplicit(callee, arg, tpe) =>
-        TypedAst.Expr.AppImplicit(
-          eraseImplicitParamRefs(callee, implicitParamIds),
-          eraseImplicitParamRefs(arg, implicitParamIds),
-          eraseImplicitParamRefs(tpe, implicitParamIds)
-        )(expr.source)
-      case TypedAst.Expr.Pi(dom, cod, isImplicit) =>
-        TypedAst.Expr.Pi(
-          eraseImplicitParamRefs(dom, implicitParamIds),
-          eraseImplicitParamRefs(cod, implicitParamIds),
-          isImplicit
-        )(expr.source)
-      case TypedAst.Expr.Lambda(param, body, tpe) =>
-        TypedAst.Expr.Lambda(
-          param,
-          eraseImplicitParamRefs(body, implicitParamIds),
-          eraseImplicitParamRefs(tpe, implicitParamIds)
-        )(expr.source)
-      case TypedAst.Expr.LetIn(symbol, isConstant, declaredType, value, body) =>
-        TypedAst.Expr.LetIn(
-          symbol,
-          isConstant,
-          eraseImplicitParamRefs(declaredType, implicitParamIds),
-          eraseImplicitParamRefs(value, implicitParamIds),
-          eraseImplicitParamRefs(body, implicitParamIds)
-        )(expr.source)
-      case TypedAst.Expr.Match(scrutinee, cases) =>
-        val rewrittenCases = cases.map(c =>
-          TypedAst.MatchCase(c.pattern, eraseImplicitParamRefs(c.body, implicitParamIds))(c.source)
-        )
-        TypedAst.Expr.Match(eraseImplicitParamRefs(scrutinee, implicitParamIds), rewrittenCases)(expr.source)
-      case other => other
-
-  /** Builds outline signatures for all functions and constructors. */
-  private def buildSignatures(
-      program: ast.ProgramFile,
-      globals: GlobalEnv,
-      idSupply: IdSupply
-    ): Map[String, FunctionInfo] =
-    val functionInfos = mutable.Map[String, FunctionInfo]()
-    val localFunctionNames = program.items.collect { case decl: ast.TopLevel.FunDecl => decl.sig.name }.toSet
-
-    for (name, sig) <- standardFunctionSignatures if globals.functions.contains(name) && !localFunctionNames.contains(name) do
-      val info = buildFunctionInfoFromSignature(sig, globals, idSupply)
-      val implicitParamIds = info.implicitParams.map(_.id).toSet
-      val erasedType = eraseImplicitParamRefs(info.symbol.tpe, implicitParamIds)
-      val erasedSymbol = info.symbol.copy(tpe = erasedType)
-      globals.functions.update(name, erasedSymbol)
-      functionInfos.update(name, info.copy(symbol = erasedSymbol))
-
-    for item <- program.items do
-      item match
-        case decl: ast.TopLevel.DataDecl =>
-          val typeParams = decl.implicitParams.map { param =>
-            val paramType = signatureExpr(param.tpe, globals, Map())
-            TypedAst.ParamSymbol(param.name, paramType, idSupply.freshLocalId())
-          }
-          val dataType = TypedAst.Expr.Var(globals.types(decl.name))(decl.source)
-          val appliedType = typeParams.foldLeft(dataType) { (acc, param) =>
-            TypedAst.Expr.AppImplicit(acc, TypedAst.Expr.Var(param)(decl.source), TypedAst.Expr.UnknownType()(decl.source))(decl.source)
-          }
-          for ctor <- decl.ctors do
-            val fieldTypes = ctor.fields.map { field => signatureExpr(field.tpe, globals, typeParams.map(p => p.name -> p).toMap) }
-            val ctorType = buildPiType(typeParams.map(_.tpe), fieldTypes, appliedType, decl.source)
-            globals.ctors.get(ctor.name).foreach { symbol =>
-              globals.ctors.update(ctor.name, symbol.copy(tpe = ctorType))
-            }
-        case decl: ast.TopLevel.FunDecl =>
-          val info = buildFunctionInfoFromSignature(decl.sig, globals, idSupply)
-          globals.functions.update(decl.sig.name, info.symbol)
-          functionInfos.update(decl.sig.name, info)
-    functionInfos.toMap
-
   /** Builds a typed data declaration. */
   private def buildDataDecl(
       decl: ast.TopLevel.DataDecl,
@@ -222,7 +117,14 @@ object TypeChecker:
         val fieldType = signatureExpr(field.tpe, globals, localTypeParams)
         TypedAst.CtorField(field.name, fieldType)(field.source)
       }
-      val symbol = globals.ctors.getOrElse(ctor.name, TypedAst.CtorSymbol(ctor.name, TypedAst.Expr.UnknownType()(ctor.source)))
+      val symbol: CtorSymbol =
+        globals.names.get(ctor.name) match {
+          case Some(symbol) =>
+            val (s, _) = globalSymbolToCtorSymbol(symbol)
+            s
+          case None =>
+            TypedAst.CtorSymbol(ctor.name, TypedAst.Expr.UnknownType()(ctor.source))
+        }
       TypedAst.CtorDecl(symbol, fields)(ctor.source)
     }
     TypedAst.TopLevel.DataDecl(decl.name, typeParams, ctorDecls)(decl.source)
@@ -250,12 +152,15 @@ object TypeChecker:
         if name == "unit" then
           TypedAst.Expr.UnknownType()(expr.source)
         else
-          locals.get(name)
-            .orElse(globals.types.get(name))
-            .orElse(globals.functions.get(name))
-            .orElse(globals.ctors.get(name))
-            .map(symbol => TypedAst.Expr.Var(symbol)(expr.source))
-            .getOrElse(TypedAst.Expr.Var(TypedAst.ErrorSymbol(name, TypedAst.Expr.UnknownType()(expr.source)))(expr.source))
+          locals.get(name) match
+            case Some(symbol) =>
+              TypedAst.Expr.Var(symbol)(expr.source)
+            case None =>
+              globals.names.get(name) match
+                case Some(symbol) =>
+                  TypedAst.Expr.Var(symbol.toSymbol)(expr.source)
+                case None =>
+                  TypedAst.Expr.Var(TypedAst.ErrorSymbol(name, TypedAst.Expr.UnknownType()(expr.source)))(expr.source)
       case ast.Expr.Call(callee, arg) =>
         val calleeExpr = signatureExpr(callee, globals, locals)
         val argExpr = signatureExpr(arg, globals, locals)
@@ -273,19 +178,6 @@ object TypeChecker:
       case _ =>
         TypedAst.Expr.UnknownType()(expr.source)
 
-  /** Builds a Pi-type chain for implicit and explicit parameters. */
-  private def buildPiType(
-      implicitParams: List[TypedAst.Expr],
-      explicitParams: List[TypedAst.Expr],
-      resultType: TypedAst.Expr,
-      source: ast.SourceRange
-    ): TypedAst.Expr =
-    val explicitPis = explicitParams.foldRight(resultType) { (dom, cod) =>
-      TypedAst.Expr.Pi(dom, cod, isImplicit = false)(source)
-    }
-    implicitParams.foldRight(explicitPis) { (dom, cod) =>
-      TypedAst.Expr.Pi(dom, cod, isImplicit = true)(source)
-    }
 
   /** Checks if two types are definitionally equal, solving metas as needed. */
   def isDefEq(t1: TypedAst.Expr, t2: TypedAst.Expr)
@@ -545,33 +437,33 @@ object TypeChecker:
   private[typing] def substituteForTest(term: TypedAst.Expr, symbol: TypedAst.LocalSymbol, value: TypedAst.Expr): TypedAst.Expr =
     substitute(term, symbol, value)
 
-  /** Infers an expression in a test context built from a program and exports. */
-  private[typing] def inferInTestContext(
-      program: ast.ProgramFile,
-      expr: ast.Expr,
-      exports: ExportEnv = emptyExportEnv
-    ): CheckResult[(TypedAst.Expr, TypedAst.Expr)] =
-    val globals = buildGlobals(program, exports)
-    given ctx: TypeContext = TypeContext(globals, Map())
-    given metas: MetaContext = MetaStore()
-    given ids: IdSupply = IdSupply()
-    infer(expr)
+//  /** Infers an expression in a test context built from a program and exports. */
+//  private[typing] def inferInTestContext(
+//      program: ast.ProgramFile,
+//      expr: ast.Expr,
+//      exports: ExportEnv = emptyExportEnv
+//    ): CheckResult[(TypedAst.Expr, TypedAst.Expr)] =
+//    val globals = buildGlobals(program, exports)
+//    given ctx: TypeContext = TypeContext(globals, Map())
+//    given metas: MetaContext = MetaStore()
+//    given ids: IdSupply = IdSupply()
+//    infer(expr)
 
-  /** Checks an expression in a test context against a named type. */
-  private[typing] def checkInTestContext(
-      program: ast.ProgramFile,
-      expr: ast.Expr,
-      expectedTypeName: String,
-      exports: ExportEnv = emptyExportEnv
-    ): CheckResult[TypedAst.Expr] =
-    val globals = buildGlobals(program, exports)
-    val expectedType = globals.types.get(expectedTypeName)
-      .map(sym => TypedAst.Expr.Var(sym)(expr.source))
-      .getOrElse(TypedAst.Expr.UnknownType()(expr.source))
-    given ctx: TypeContext = TypeContext(globals, Map())
-    given metas: MetaContext = MetaStore()
-    given ids: IdSupply = IdSupply()
-    check(expr, expectedType)
+//  /** Checks an expression in a test context against a named type. */
+//  private[typing] def checkInTestContext(
+//      program: ast.ProgramFile,
+//      expr: ast.Expr,
+//      expectedTypeName: String,
+//      exports: ProjectSymbolCache
+//    ): CheckResult[TypedAst.Expr] =
+//    val globals = buildGlobals(program, exports)
+//    val expectedType = globals.types.get(expectedTypeName)
+//      .map(sym => TypedAst.Expr.Var(sym)(expr.source))
+//      .getOrElse(TypedAst.Expr.UnknownType()(expr.source))
+//    given ctx: TypeContext = TypeContext(globals, Map())
+//    given metas: MetaContext = MetaStore()
+//    given ids: IdSupply = IdSupply()
+//    check(expr, expectedType)
 
   // Renders typed expressions in a compact user-facing format for diagnostics.
   private def prettyExpr(expr: TypedAst.Expr): String =
@@ -599,8 +491,8 @@ object TypeChecker:
       case ast.Literal.BoolLit(_) => "Bool"
       case ast.Literal.StringLit(_) => "String"
       case ast.Literal.UnitLit() => "Unit"
-    ctx.globals.types.get(typeName)
-      .map(sym => TypedAst.Expr.Var(sym)(value.source))
+    ctx.globals.names.get(typeName)
+      .map(sym => TypedAst.Expr.Var(GlobalSymbolSymbol(sym.name, sym.file, sym))(value.source))
       .getOrElse(TypedAst.Expr.UnknownType()(value.source))
 
   /** Checks a pattern against the expected scrutinee type. */
@@ -620,18 +512,22 @@ object TypeChecker:
         else List(TypeError("Pattern literal type mismatch", pattern.source))
         (typed, Map(), err)
       case ast.Pattern.BinderOrCtor0(name) =>
-        ctx.globals.ctors.get(name) match
+        ctx.globals.names.get(name) match
           case Some(symbol) =>
-            val typed = TypedAst.Pattern.Ctor(symbol, Nil)(pattern.source)
-            (typed, Map(), List())
+            // if the symbol exists and is a constructor, match against the constructor
+            val (ctorSymbol, ctorErrors) = globalSymbolToCtorSymbol(symbol)
+            val typed = TypedAst.Pattern.Ctor(ctorSymbol, Nil)(pattern.source)
+            (typed, Map(), ctorErrors)
           case None =>
+            // if the symbol does not exist, match against binder
             val symbol = TypedAst.LocalSymbol(name, expectedType, ids.freshLocalId())
             val typed = TypedAst.Pattern.Binder(symbol)(pattern.source)
             (typed, Map(name -> LocalBinding(symbol, None)), List())
       case ast.Pattern.Ctor(name, args) =>
-        ctx.globals.ctors.get(name) match
+        ctx.globals.names.get(name) match
           case Some(symbol) =>
-            val fieldTypes = extractCtorFieldTypes(symbol.tpe, expectedType)
+            val (ctorSymbol, ctorErrors) = globalSymbolToCtorSymbol(symbol)
+            val fieldTypes = extractCtorFieldTypes(ctorSymbol.tpe, expectedType)
             val paddedFieldTypes = fieldTypes.padTo(args.length, TypedAst.Expr.UnknownType()(pattern.source))
             val argResults = args.zip(paddedFieldTypes).map { (arg, fieldType) =>
               checkPattern(arg, fieldType, ctx, ids)
@@ -639,10 +535,13 @@ object TypeChecker:
             val errors = argResults.flatMap(_._3)
             val bindings = argResults.flatMap(_._2).toMap
             val typedArgs = argResults.map(_._1)
-            (TypedAst.Pattern.Ctor(symbol, typedArgs)(pattern.source), bindings, errors)
+            (TypedAst.Pattern.Ctor(ctorSymbol, typedArgs)(pattern.source), bindings, errors ++ ctorErrors)
           case None =>
             val symbol = TypedAst.CtorSymbol(name, TypedAst.Expr.UnknownType()(pattern.source))
             (TypedAst.Pattern.Ctor(symbol, Nil)(pattern.source), Map(), List(TypeError(s"Unknown constructor ${name}", pattern.source)))
+
+  private def globalSymbolToCtorSymbol(s: GlobalSymbol): (CtorSymbol, List[TypeError]) =
+    ???
 
   // Collects explicit field types and result type from a constructor signature.
   private def decomposeCtorType(ctorType: TypedAst.Expr): (List[TypedAst.Expr], TypedAst.Expr) =

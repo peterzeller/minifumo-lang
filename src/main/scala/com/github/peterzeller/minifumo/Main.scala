@@ -2,21 +2,15 @@ package com.github.peterzeller.minifumo
 
 import com.github.peterzeller.minifumo.ast.{AstTransform, ProgramFile, SourcePos, SourceRange}
 import com.github.peterzeller.minifumo.interpreter.Interpreter
-import com.github.peterzeller.minifumo.builtins.Standard
 import com.github.peterzeller.minifumo.parser.{SyntaxError, parseInput}
-import com.github.peterzeller.minifumo.typing.{ProjectSymbolCache, TypeChecker, TypedAst}
+import com.github.peterzeller.minifumo.typing.{ProjectSymbolCache, TypeChecker, findProjectRoot}
 import com.github.peterzeller.minifumo.typing.TypeChecker.TypeError
 
 import java.nio.file.{Files, Path, Paths}
 import scala.jdk.CollectionConverters.*
-import scala.collection.mutable
 import scala.util.{Try, Using}
 
 object Main:
-
-  // Creates a new cache container for resolving imports within a project.
-  private def newGlobalInfo(): GlobalInfo =
-    GlobalInfo(mutable.Map.empty, mutable.Map.empty, mutable.Map.empty, mutable.Map.empty, mutable.Set.empty)
 
   // Entry point for the CLI.
   def main(args: Array[String]): Unit =
@@ -72,20 +66,21 @@ object Main:
     if !Files.exists(path) then
       List(s"Directory not found: ${path.toString}")
     else
-      val info = newGlobalInfo()
+      val globalNames = new ProjectSymbolCache(findProjectRoot(path))
       Try {
         Using.resource(Files.list(path)) { stream =>
           stream.iterator().asScala.toList
             .filter(Files.isRegularFile(_))
             .filter(_.toString.endsWith(".minifumo"))
             .sortBy(_.toString)
-            .flatMap(checkFile(_, info))
+            .flatMap(checkFile(_, globalNames))
         }
       }.getOrElse(List(s"Failed reading directory: ${path.toString}"))
 
   // Checks a single file for syntax and type errors, including imports.
   def checkFile(path: Path): List[String] =
-    checkFile(path, newGlobalInfo())
+    val globalNames = new ProjectSymbolCache(findProjectRoot(path))
+    checkFile(path, globalNames)
 
   // Checks a file using shared caches to avoid reparsing across a project.
   private def checkFile(path: Path, info: ProjectSymbolCache): List[String] =
@@ -93,7 +88,7 @@ object Main:
     if syntaxErrors.nonEmpty then
       renderSyntaxErrors(path, syntaxErrors)
     else
-      val (_, errors) = TypeChecker.checkProgram(program, TypeChecker.emptyExportEnv)
+      val (_, errors) = TypeChecker.checkProgram(path, program, info, true)
       if errors.isEmpty then
         Nil
       else
@@ -121,7 +116,7 @@ object Main:
 
   // Loads and caches syntax parsing results for a file path.
   private def loadProgram(path: Path, info: ProjectSymbolCache): (ProgramFile, List[SyntaxError]) =
-    info.parseCache.getOrElseUpdate(path, parseProgram(path))
+    info.getAst(info.makeRelative(path))
 
   // Renders a source range for error reporting.
   private def renderSourceRange(range: SourceRange): String =
