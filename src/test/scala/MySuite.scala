@@ -3,7 +3,9 @@ import com.github.peterzeller.minifumo.parser.parseInput
 import com.github.peterzeller.minifumo.antlr.MinifumoParser
 import com.github.peterzeller.minifumo.ast.AstTransform
 import com.github.peterzeller.minifumo.interpreter.Interpreter
-import com.github.peterzeller.minifumo.typing.TypeChecker
+import com.github.peterzeller.minifumo.typing.{ProjectSymbolCache, TypeChecker}
+
+import java.nio.file.Path
 // https://scalameta.org/munit/docs/getting-started.html
 class MySuite extends munit.FunSuite {
   // Builds a Nat value for testing.
@@ -18,6 +20,9 @@ class MySuite extends munit.FunSuite {
     val sign = if value >= 0 then Interpreter.Value.AdtVal("True", Nil) else Interpreter.Value.AdtVal("False", Nil)
     Interpreter.Value.AdtVal("Int", List(sign, natValue(math.abs(value))))
 
+  private val dummyPath: Path = Path.of("dummy.minifumo")
+  private val dummyCache = new ProjectSymbolCache(Path.of("."))
+
   test("interpreter evals main with a simple function call") {
     val (c, _) = parseInput("""
       |fun id(x: Int): Int
@@ -27,7 +32,7 @@ class MySuite extends munit.FunSuite {
       |    id(3)
     """.stripMargin)
     val ast = AstTransform.program(c)
-    val (typed, errors) = TypeChecker.checkProgram(ast, TypeChecker.emptyExportEnv)
+    val (typed, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true)
     assertEquals(errors, List())
     val result = Interpreter.evalProg(typed, "main")
     assertEquals(result, intValue(3))
@@ -41,7 +46,7 @@ class MySuite extends munit.FunSuite {
       |    y
     """.stripMargin)
     val ast = AstTransform.program(c)
-    val (typed, errors) = TypeChecker.checkProgram(ast, TypeChecker.emptyExportEnv)
+    val (typed, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true)
     assertEquals(errors, List())
     val result = Interpreter.evalProg(typed, "main")
     assertEquals(result, intValue(2))
@@ -59,7 +64,7 @@ class MySuite extends munit.FunSuite {
       |            value
     """.stripMargin)
     val ast = AstTransform.program(c)
-    val (typed, errors) = TypeChecker.checkProgram(ast, TypeChecker.emptyExportEnv)
+    val (typed, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true)
     assertEquals(errors, List())
     val result = Interpreter.evalProg(typed, "main")
     assertEquals(result, intValue(42))

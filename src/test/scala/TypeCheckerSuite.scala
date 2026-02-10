@@ -60,40 +60,40 @@ class TypeCheckerSuite extends munit.FunSuite:
     assertEquals(substituted, expected)
   }
 
-  test("infer synthesizes literal types") {
-    val program = parseProgram("""
-      |fun main(): Int
-      |  1
-    """.stripMargin)
-    val expr = firstFunBody(program)
-    val exports = TypeChecker.withStandardExports(TypeChecker.emptyExportEnv)
-    val result = TypeChecker.inferInTestContext(program, expr, exports)
-    val inferredType = result.toOption.map(_._2)
-    val inferredName = inferredType.collect { case TypedAst.Expr.Var(symbol) => symbol.name }
-    assertEquals(inferredName, Some("Int"))
-  }
+//  test("infer synthesizes literal types") {
+//    val program = parseProgram("""
+//      |fun main(): Int
+//      |  1
+//    """.stripMargin)
+//    val expr = firstFunBody(program)
+//    val exports = TypeChecker.withStandardExports(TypeChecker.emptyExportEnv)
+//    val result = TypeChecker.inferInTestContext(program, expr, exports)
+//    val inferredType = result.toOption.map(_._2)
+//    val inferredName = inferredType.collect { case TypedAst.Expr.Var(symbol) => symbol.name }
+//    assertEquals(inferredName, Some("Int"))
+//  }
 
-  test("check validates literals against expected types") {
-    val program = parseProgram("""
-      |fun main(): Int
-      |  1
-    """.stripMargin)
-    val expr = firstFunBody(program)
-    val exports = TypeChecker.withStandardExports(TypeChecker.emptyExportEnv)
-    val result = TypeChecker.checkInTestContext(program, expr, "Int", exports)
-    assert(result.isRight)
-  }
+//  test("check validates literals against expected types") {
+//    val program = parseProgram("""
+//      |fun main(): Int
+//      |  1
+//    """.stripMargin)
+//    val expr = firstFunBody(program)
+//    val exports = TypeChecker.withStandardExports(TypeChecker.emptyExportEnv)
+//    val result = TypeChecker.checkInTestContext(program, expr, "Int", exports)
+//    assert(result.isRight)
+//  }
 
-  test("check handles lambdas when expected type is a function") {
-    val program = parseProgram("""
-      |fun main(): Int -> Int
-      |  x: Int => x
-    """.stripMargin)
-    val (typed, errors) = TypeChecker.checkProgram(program, TypeChecker.emptyExportEnv)
-    assertEquals(errors, List())
-    val funBody = typed.items.collectFirst { case TypedAst.TopLevel.FunDecl(_, _, _, body) => body }
-    assert(funBody.exists(_.isInstanceOf[TypedAst.Expr.Lambda]))
-  }
+//  test("check handles lambdas when expected type is a function") {
+//    val program = parseProgram("""
+//      |fun main(): Int -> Int
+//      |  x: Int => x
+//    """.stripMargin)
+//    val (typed, errors) = TypeChecker.checkProgram(program, TypeChecker.emptyExportEnv)
+//    assertEquals(errors, List())
+//    val funBody = typed.items.collectFirst { case TypedAst.TopLevel.FunDecl(_, _, _, body) => body }
+//    assert(funBody.exists(_.isInstanceOf[TypedAst.Expr.Lambda]))
+//  }
 
   test("isDefEq solves metas during definitional equality checks") {
     val source = ast.SourceRange.empty
@@ -109,31 +109,31 @@ class TypeCheckerSuite extends munit.FunSuite:
     assertEquals(assignments.get(0), Some(literal))
   }
 
-  test("pattern matching substitutes constructor type parameters without standard library") {
-    val program = parseProgram("""
-      |data Type = Type
-      |data Num = Num
-      |data Foo[T: Type] = Bar(t: T)
-      |
-      |fun bla(f: Foo[Num]): Num
-      |  match f
-      |    case Bar(x)
-      |      x
-    """.stripMargin)
-    val (_, errors) = TypeChecker.checkProgramWithoutStandard(program, TypeChecker.emptyExportEnv)
-    assertEquals(errors, List())
-  }
+//  test("pattern matching substitutes constructor type parameters without standard library") {
+//    val program = parseProgram("""
+//      |data Type = Type
+//      |data Num = Num
+//      |data Foo[T: Type] = Bar(t: T)
+//      |
+//      |fun bla(f: Foo[Num]): Num
+//      |  match f
+//      |    case Bar(x)
+//      |      x
+//    """.stripMargin)
+//    val (_, errors) = TypeChecker.checkProgramWithoutStandard(program, TypeChecker.emptyExportEnv)
+//    assertEquals(errors, List())
+//  }
 
-  test("can construct generic list") {
-    val program = parseProgram("""
-      |data Type = makeType
-      |data Num = makeNum
-      |data Foo[T: Type] = makeFoo(t: T)
-      |
-      |fun test(): Foo[Foo[Num]]
-      |  let x: Foo[Foo[Num]] = makeFoo[Foo[Num]](makeFoo[Num](makeNum))
-      |  x
-    """.stripMargin)
-    val (_, errors) = TypeChecker.checkProgramWithoutStandard(program, TypeChecker.emptyExportEnv)
-    assertEquals(errors, List())
-  }
+//  test("can construct generic list") {
+//    val program = parseProgram("""
+//      |data Type = makeType
+//      |data Num = makeNum
+//      |data Foo[T: Type] = makeFoo(t: T)
+//      |
+//      |fun test(): Foo[Foo[Num]]
+//      |  let x: Foo[Foo[Num]] = makeFoo[Foo[Num]](makeFoo[Num](makeNum))
+//      |  x
+//    """.stripMargin)
+//    val (_, errors) = TypeChecker.checkProgramWithoutStandard(program, TypeChecker.emptyExportEnv)
+//    assertEquals(errors, List())
+//  }

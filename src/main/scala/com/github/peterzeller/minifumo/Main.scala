@@ -59,7 +59,7 @@ object Main:
       if typeErrors.nonEmpty then
         Left(renderTypeErrors(path, typeErrors))
       else
-        Right(Interpreter.evalProg(typedProgram, "main", globalNames))
+        Right(Interpreter.evalProg(typedProgram, "main"))
 
   // Checks a directory of examples, reusing cached parse/import info across files.
   def checkDirectory(path: Path): List[String] =

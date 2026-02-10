@@ -1,8 +1,10 @@
 package com.github.peterzeller.minifumo.typing
 
 import com.github.peterzeller.minifumo.ast
+import com.github.peterzeller.minifumo.ast.SourceRange
 import com.github.peterzeller.minifumo.common.MinifumoError
 import com.github.peterzeller.minifumo.typing.TypedAst.*
+import com.github.peterzeller.minifumo.typing.TypedAst.Expr.Sort
 
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
@@ -33,8 +35,19 @@ object TypeChecker:
     }
     (TypedAst.Program(typedItems)(program.source), errors.toList)
 
-  private def checkFunSig(sig: ast.FunSig, env: TypeContext): (TypedAst.FunSig, TypeContext,  List[TypeError]) =
-    ???
+  private def checkFunSig(sig: ast.FunSig, env: TypeContext): (TypedAst.FunSig, TypeContext,  List[TypeError]) = {
+    throw new RuntimeException(s"Checking of fun sig $sig is not yet implemented")
+//    var mEnv = env
+//    val errors = mutable.ListBuffer[TypeError]()
+//    // first check the implicit params
+//    for p <- sig.implicitParams do {
+//      // check(p.tpe, Sort()(SourceRange.empty))
+//      ???
+//    }
+//
+//    val fnType: Expr = ???
+//    (FunctionSymbol(sig.name, fnType), ???, mEnv, errors.toList)
+  }
 
   /** Provides a lookup interface for local and global symbols during type checking. */
   trait Context:

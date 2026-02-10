@@ -1,7 +1,7 @@
 package com.github.peterzeller.minifumo.interpreter
 
 import com.github.peterzeller.minifumo.ast.Literal
-import com.github.peterzeller.minifumo.typing.{ProjectSymbolCache, TypedAst}
+import com.github.peterzeller.minifumo.typing.TypedAst
 import com.github.peterzeller.minifumo.typing.TypedAst.*
 
 import scala.collection.mutable
@@ -25,7 +25,7 @@ object Interpreter:
         case Value.FuncVal(name, _) => s"<function $name>"
 
   /** Evaluates a function from the program by name. */
-  def evalProg(prog: TypedAst.Program, funcName: String, gobalNames: ProjectSymbolCache): Value =
+  def evalProg(prog: TypedAst.Program, funcName: String): Value =
     evalFunc(prog, funcName, List())
 
   def evalFunc(prog: TypedAst.Program, funcName: String, args: List[Value]) =
