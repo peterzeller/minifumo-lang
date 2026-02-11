@@ -27,7 +27,7 @@ object TypeChecker:
         buildDataDecl(decl, globals, idSupply)
       case decl: ast.TopLevel.FunDecl =>
         val context1 = TypeContext(globals, Map())
-        val (typedSig, context2, errs) = checkFunSig(decl.sig, context1)
+        val (typedSig, context2, errs) = checkFunSig(decl.sig)(using context1, metaStore, idSupply)
         errors.addAll(errs)
 
         val typedBody = checkFunctionBody(decl.body, typedSig.returnType, context2, metaStore, idSupply, errors)
@@ -35,18 +35,53 @@ object TypeChecker:
     }
     (TypedAst.Program(typedItems)(program.source), errors.toList)
 
-  private def checkFunSig(sig: ast.FunSig, env: TypeContext): (TypedAst.FunSig, TypeContext,  List[TypeError]) = {
-    throw new RuntimeException(s"Checking of fun sig $sig is not yet implemented")
-//    var mEnv = env
-//    val errors = mutable.ListBuffer[TypeError]()
-//    // first check the implicit params
-//    for p <- sig.implicitParams do {
-//      // check(p.tpe, Sort()(SourceRange.empty))
-//      ???
-//    }
-//
-//    val fnType: Expr = ???
-//    (FunctionSymbol(sig.name, fnType), ???, mEnv, errors.toList)
+  private def checkFunSig(sig: ast.FunSig)(implicit ctx: TypeContext, metas: MetaContext, ids: IdSupply): (TypedAst.FunSig, TypeContext,  List[TypeError]) = {
+//    throw new RuntimeException(s"Checking of fun sig $sig is not yet implemented")
+    var mEnv = ctx
+    val errors = mutable.ListBuffer[TypeError]()
+    val typedImplicitParams = mutable.ListBuffer[TypedAst.ParamSymbol]()
+    val typedParams = mutable.ListBuffer[TypedAst.ParamSymbol]()
+    // first check the implicit params
+    for p <- sig.implicitParams do
+      val paramType: Expr =
+        check(p.tpe, Sort()(SourceRange.empty))(using mEnv) match
+          case Left(errs) =>
+            errors.addAll(errs)
+            TypedAst.Expr.UnknownType()(p.tpe.source)
+          case Right(t) => t
+
+      val paramSymbol = ParamSymbol(p.name, paramType, ids.freshLocalId())
+      mEnv = mEnv.withLocal(paramSymbol, Some(paramType))
+      typedImplicitParams.addOne(paramSymbol)
+    // next check the explicit params
+    for p <- sig.params do
+      val paramType: Expr =
+        check(p.tpe, Sort()(SourceRange.empty))(using mEnv) match
+          case Left(errs) =>
+            errors.addAll(errs)
+            TypedAst.Expr.UnknownType()(p.tpe.source)
+          case Right(t) => t
+
+      val paramSymbol = ParamSymbol(p.name, paramType, ids.freshLocalId())
+      mEnv = mEnv.withLocal(paramSymbol, Some(paramType))
+      typedParams.addOne(paramSymbol)
+
+    val returnType =
+      check(sig.returnType, Sort()(SourceRange.empty))(using mEnv) match
+        case Left(errs) =>
+          errors.addAll(errs)
+          TypedAst.Expr.UnknownType()(sig.returnType.source)
+        case Right(t) => t
+
+    // construct function type as Pi type by going backwards
+    var fnType: Expr = returnType
+    for p <- typedParams.reverseIterator do
+      fnType = TypedAst.Expr.Pi(p.tpe, fnType, false)(p.tpe.source.merge(fnType.source))
+    for p <- typedImplicitParams.reverseIterator do
+      fnType = TypedAst.Expr.Pi(p.tpe, fnType, true)(p.tpe.source.merge(fnType.source))
+
+    val sym = FunctionSymbol(sig.name, fnType)
+    (TypedAst.FunSig(sym, typedImplicitParams.toList, typedParams.toList, returnType), mEnv, errors.toList)
   }
 
   /** Provides a lookup interface for local and global symbols during type checking. */
