@@ -48,7 +48,8 @@ object GlobalSymbols:
   def buildGlobalSymbols(file: Path, prog: ast.ProgramFile, symbolCache: NameCache&SymbolCache, onlyExported: Boolean): (Map[String, GlobalSymbol], List[TypeError]) =
     val (imports, errors1) = resolveImports(prog, symbolCache)
     val ownNames = buildGlobalNames(file, prog, false)
-    val preEnv = PreEnv(globalNames = imports ++ ownNames)
+    val standardLibraryNames = buildGlobalNames(Path.of("standard.minifumo"), Standard.standardProgram, true)
+    val preEnv = PreEnv(globalNames = standardLibraryNames ++ imports ++ ownNames)
     val errors = ListBuffer[TypeError](errors1*)
     var res = Map[String, GlobalSymbol]()
 
@@ -93,6 +94,8 @@ object GlobalSymbols:
     expr match
       case ast.Expr.Lit(value) =>
         (Expr.Lit(value)(expr.source), List())
+      case ast.Expr.Var("Type") =>
+        (Expr.Sort()(expr.source), List())
       case ast.Expr.Var(name) =>
         // first lookup in local env
         env.localNames.get(name) match

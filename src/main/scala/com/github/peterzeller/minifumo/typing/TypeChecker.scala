@@ -2,6 +2,7 @@ package com.github.peterzeller.minifumo.typing
 
 import com.github.peterzeller.minifumo.ast
 import com.github.peterzeller.minifumo.ast.SourceRange
+import com.github.peterzeller.minifumo.builtins.Standard
 import com.github.peterzeller.minifumo.common.MinifumoError
 import com.github.peterzeller.minifumo.typing.TypedAst.*
 import com.github.peterzeller.minifumo.typing.TypedAst.Expr.Sort
@@ -11,29 +12,40 @@ import scala.collection.mutable.ListBuffer
 import java.nio.file.Path
 
 object TypeChecker:
-  final case class TypeError(message: String, source: ast.SourceRange) extends MinifumoError
+  final case class TypeError(message: String, source: ast.SourceRange) extends MinifumoError:
+    throw new RuntimeException(s"Constructed type error $message at line ${source.start.line}")
 
 
   /** Type-checks a program */
   def checkProgram(path: Path, program: ast.ProgramFile, globalNames: NameCache & SymbolCache, importStandard: Boolean): (TypedAst.Program, List[TypeError]) =
-    val errors = ListBuffer[TypeError]()
-    val idSupply = IdSupply()
-    val metaStore = MetaStore()
-    val (symbolMap, importErrors) = GlobalSymbols.buildGlobalSymbols(path, program, globalNames, false)
-    errors.addAll(importErrors)
-    val globals = GlobalEnv(names = symbolMap)
-    val typedItems = program.items.map {
-      case decl: ast.TopLevel.DataDecl =>
-        buildDataDecl(decl, globals, idSupply)
-      case decl: ast.TopLevel.FunDecl =>
-        val context1 = TypeContext(globals, Map())
-        val (typedSig, context2, errs) = checkFunSig(decl.sig)(using context1, metaStore, idSupply)
-        errors.addAll(errs)
+    try
+      val errors = ListBuffer[TypeError]()
+      val idSupply = IdSupply()
+      val metaStore = MetaStore()
+      var (symbolMap, importErrors) = GlobalSymbols.buildGlobalSymbols(path, program, globalNames, false)
+      if importStandard then
+        // import the standard library symbols into the program file scope
+        val (standardLibSymbolMap, standardLibImportErrors) = GlobalSymbols.buildGlobalSymbols(Path.of("standard.minifumo"), Standard.standardProgram, globalNames, false)
+        symbolMap ++= standardLibSymbolMap
+        importErrors ++= standardLibImportErrors
+      errors.addAll(importErrors)
+      val globals = GlobalEnv(names = symbolMap)
+      val typedItems = program.items.map {
+        case decl: ast.TopLevel.DataDecl =>
+          buildDataDecl(decl, globals, idSupply)
+        case decl: ast.TopLevel.FunDecl =>
+          val context1 = TypeContext(globals, Map())
+          val (typedSig, context2, errs) = checkFunSig(decl.sig)(using context1, metaStore, idSupply)
+          errors.addAll(errs)
 
-        val typedBody = checkFunctionBody(decl.body, typedSig.returnType, context2, metaStore, idSupply, errors)
-        TypedAst.TopLevel.FunDecl(typedSig, typedBody)(decl.source)
-    }
-    (TypedAst.Program(typedItems)(program.source), errors.toList)
+          val typedBody = checkFunctionBody(decl.body, typedSig.returnType, context2, metaStore, idSupply, errors)
+          TypedAst.TopLevel.FunDecl(typedSig, typedBody)(decl.source)
+      }
+      (TypedAst.Program(typedItems)(program.source), errors.toList)
+    catch
+      case e: Exception =>
+        throw new RuntimeException(s"error checking $path", e)
+
 
   private def checkFunSig(sig: ast.FunSig)(implicit ctx: TypeContext, metas: MetaContext, ids: IdSupply): (TypedAst.FunSig, TypeContext,  List[TypeError]) = {
 //    throw new RuntimeException(s"Checking of fun sig $sig is not yet implemented")
@@ -229,30 +241,31 @@ object TypeChecker:
 
   /** Checks if two types are definitionally equal, solving metas as needed. */
   def isDefEq(t1: TypedAst.Expr, t2: TypedAst.Expr)
-             (implicit ctx: Context, metas: MetaContext): CheckResult[Unit] =
+             (implicit ctx: Context, metas: MetaContext): Boolean =
+    println(s"checking equality of $t1 and $t2")
     val norm1 = whnf(t1)
     val norm2 = whnf(t2)
     (norm1, norm2) match
-      case (TypedAst.Expr.UnknownType(), _) => Right(())
-      case (_, TypedAst.Expr.UnknownType()) => Right(())
+      case (TypedAst.Expr.UnknownType(), _) => true
+      case (_, TypedAst.Expr.UnknownType()) => true
       case (TypedAst.Expr.Meta(id, _), other) =>
         solveMeta(id, other)
       case (other, TypedAst.Expr.Meta(id, _)) =>
         solveMeta(id, other)
-      case (TypedAst.Expr.Var(s1), TypedAst.Expr.Var(s2)) if s1 == s2 => Right(())
+      case (TypedAst.Expr.Var(s1), TypedAst.Expr.Var(s2)) if s1 == s2 => true
       case (TypedAst.Expr.Var(p1: TypedAst.ParamSymbol), TypedAst.Expr.Var(p2: TypedAst.ParamSymbol))
-          if p1.name == p2.name => Right(())
-      case (TypedAst.Expr.Lit(v1), TypedAst.Expr.Lit(v2)) if v1 == v2 => Right(())
-      case (TypedAst.Expr.Sort(), TypedAst.Expr.Sort()) => Right(())
+          if p1.name == p2.name => true
+      case (TypedAst.Expr.Lit(v1), TypedAst.Expr.Lit(v2)) if v1 == v2 => true
+      case (TypedAst.Expr.Sort(), TypedAst.Expr.Sort()) => true
       case (TypedAst.Expr.App(c1, a1, _), TypedAst.Expr.App(c2, a2, _)) =>
-        combine(isDefEq(c1, c2), isDefEq(a1, a2))
+        isDefEq(c1, c2) && isDefEq(a1, a2)
       case (TypedAst.Expr.AppImplicit(c1, a1, _), TypedAst.Expr.AppImplicit(c2, a2, _)) =>
-        combine(isDefEq(c1, c2), isDefEq(a1, a2))
+        isDefEq(c1, c2) && isDefEq(a1, a2)
       case (TypedAst.Expr.Lambda(p1, b1, _), TypedAst.Expr.Lambda(p2, b2, _)) =>
-        combine(isDefEq(p1.tpe, p2.tpe), isDefEq(b1, b2))
+        isDefEq(p1.tpe, p2.tpe) && isDefEq(b1, b2)
       case (TypedAst.Expr.Pi(d1, c1, i1), TypedAst.Expr.Pi(d2, c2, i2)) if i1 == i2 =>
-        combine(isDefEq(d1, d2), isDefEq(c1, c2))
-      case _ => Left(List(TypeError("Type mismatch", norm1.source.merge(norm2.source))))
+        isDefEq(d1, d2) && isDefEq(c1, c2)
+      case _ => false
 
   /** Reduces a term to weak head normal form. */
   def whnf(term: TypedAst.Expr)(implicit ctx: Context, metas: MetaContext): TypedAst.Expr =
@@ -397,15 +410,21 @@ object TypeChecker:
           TypedAst.Expr.Lambda(paramSymbol, bodyExpr, expectedNorm)(expr.source)
         }
       case (ast.Expr.Match(scrutinee, cases), _) =>
-        infer(expr).flatMap { (inferredExpr, inferredType) =>
-          isDefEq(inferredType, expectedNorm).map(_ => inferredExpr)
-        }
+        infer(expr) match
+          case Right(x) =>
+            val inferredType = x._1
+            if isDefEq(inferredType, expectedNorm) then
+              Right(x._2)
+            else
+              Left(List(TypeError(s"Expected $expectedNorm, but found expression of type $inferredType", expr.source)))
+          case Left(err) =>
+            Left(err)
       case _ =>
         infer(expr).flatMap { (inferredExpr, inferredType) =>
-          isDefEq(inferredType, expectedNorm) match
-            case Right(_) => Right(inferredExpr)
-            case Left(errs) =>
-              Left(TypeError(s"Expected ${prettyExpr(expectedNorm)} but got ${prettyExpr(inferredType)}", expr.source) :: errs)
+          if isDefEq(inferredType, expectedNorm) then
+            Right(inferredExpr)
+          else
+            Left(List(TypeError(s"Expected ${prettyExpr(expectedNorm)} but got ${prettyExpr(inferredType)}", expr.source)))
         }
 
   /** Inserts implicit arguments as metas before explicit application. */
@@ -432,12 +451,12 @@ object TypeChecker:
 
   /** Checks whether a meta-variable can be solved with a term. */
   private def solveMeta(metaId: Int, term: TypedAst.Expr)
-                       (implicit metas: MetaContext): CheckResult[Unit] =
+                       (implicit metas: MetaContext): Boolean =
     if occurs(metaId, term) then
-      Left(List(TypeError("Occurs check failed", term.source)))
+      false
     else
       metas.assign(metaId, term)
-      Right(())
+      true
 
   /** Performs an occurs check for a meta-variable inside a term. */
   private def occurs(metaId: Int, term: TypedAst.Expr): Boolean =

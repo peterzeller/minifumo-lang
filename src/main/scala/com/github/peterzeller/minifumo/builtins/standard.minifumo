@@ -1,4 +1,4 @@
-export data Type = Type
+export data Unit = MakeUnit
 
 export data Bool = True | False
 
@@ -548,14 +548,14 @@ fun listToString[T: Type](values: List[T], s: Show[T]): String
                         stringAppend(showFn(head), stringAppend(", ", stringAppend(listToString[T](tail, s), ")")))
                     )
 
-// Defines a stub println that returns unit.
-fun println[T: Type](value: T, s: Show[T]): unit
+// Defines a stub println that returns Unit.
+fun println[T: Type](value: T, s: Show[T]): Unit
     match s
         case Show(showFn)
             printlnString(showFn(value))
 
-fun printlnString(value: String): unit
-    ()
+fun printlnString(value: String): Unit
+    MakeUnit
 
 // Compares two Bool values.
 fun eqBoolFn(a: Bool, b: Bool): Bool
