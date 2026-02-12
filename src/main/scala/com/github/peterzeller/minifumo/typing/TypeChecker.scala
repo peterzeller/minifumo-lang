@@ -55,12 +55,8 @@ object TypeChecker:
     val typedParams = mutable.ListBuffer[TypedAst.LocalSymbol]()
     // first check the implicit params
     for p <- sig.implicitParams do
-      val paramType: Expr =
-        check(p.tpe, Sort()(SourceRange.empty))(using mEnv) match
-          case Left(errs) =>
-            errors.addAll(errs)
-            TypedAst.Expr.UnknownType()(p.tpe.source)
-          case Right(t) => t
+      val (paramType, errs) = check(p.tpe, Sort()(SourceRange.empty))(using mEnv)
+      errors.addAll(errs)
 
       val localSymbol = LocalSymbol(p.name, paramType, ids.freshLocalId())
       mEnv = mEnv.withLocal(localSymbol, Some(paramType))
@@ -196,13 +192,10 @@ object TypeChecker:
       context: TypeContext,
       metas: MetaContext,
       idSupply: IdSupply,
-      errors: ListBuffer[TypeError]
-    ): TypedAst.Expr =
-    check(body, returnType)(using context, metas, idSupply) match
-      case Right(expr) => expr
-      case Left(errs) =>
-        errors.addAll(errs)
-        TypedAst.Expr.UnknownType()(body.source)
+      errors: ListBuffer[TypeError]): TypedAst.Expr =
+    val (typedBody, errs) = check(body, returnType)(using context, metas, idSupply)
+    errors.addAll(errs)
+    typedBody
 
   /** Translates a signature expression to a typed expression. */
   private def signatureExpr(expr: ast.Expr, globals: GlobalEnv, locals: Map[String, TypedAst.TermSymbol]): TypedAst.Expr =
@@ -321,148 +314,111 @@ object TypeChecker:
 
   /** Infers the type of an expression, producing a typed expression alongside its type. */
   private def infer(expr: ast.Expr)
-                   (implicit ctx: TypeContext, metas: MetaContext, ids: IdSupply): CheckResult[(TypedAst.Expr, TypedAst.Expr)] =
+                   (implicit ctx: TypeContext, metas: MetaContext, ids: IdSupply): (TypedAst.Expr, TypedAst.Expr, List[TypeError]) =
+    println(s"inferring type of $expr")
     expr match
       case ast.Expr.Var(name) =>
         ctx.lookupSymbol(name) match
           case Some(symbol) =>
             println(s"Looking up symbol ${name} returns symbol ${symbol} ")
-            Right(TypedAst.Expr.Var(symbol)(expr.source) -> symbol.tpe)
+            (TypedAst.Expr.Var(symbol)(expr.source), symbol.tpe, List())
           case None =>
-            Left(List(TypeError(s"Unknown symbol ${name}", expr.source)))
+            val errs = List(TypeError(s"Unknown symbol ${name}", expr.source))
+            (TypedAst.Expr.Var(???)(expr.source), ???, errs)
       case ast.Expr.Lit(value) =>
         val typed = TypedAst.Expr.Lit(value)(expr.source)
         val tpe = literalType(value, ctx)
-        Right(typed -> tpe)
+        (typed, tpe, List())
       case ast.Expr.Call(callee, arg) =>
-        infer(callee).flatMap { (calleeExpr, calleeType) =>
-          whnf(calleeType) match
-            case TypedAst.Expr.Pi(_, _, true) if calleeExpr.isInstanceOf[TypedAst.Expr.Var] && calleeExpr.asInstanceOf[TypedAst.Expr.Var].symbol.isInstanceOf[TypedAst.CtorSymbol] =>
-              Left(List(TypeError(s"Missing type argument for ${prettyExpr(calleeExpr)}", expr.source)))
-            case _ =>
-              val (appliedExpr, appliedType) = insertImplicitArgs(calleeExpr, calleeType, expr.source)
-              whnf(appliedType) match
-                case TypedAst.Expr.Pi(dom, cod, false) =>
-                  check(arg, dom.tpe).map { argExpr =>
-                    TypedAst.Expr.App(appliedExpr, argExpr, cod)(expr.source) -> cod
-                  }
-                case TypedAst.Expr.UnknownType() =>
-                  val argResult = infer(arg)
-                  argResult.map { (argExpr, _) =>
-                    TypedAst.Expr.App(appliedExpr, argExpr, TypedAst.Expr.UnknownType()(expr.source))(expr.source) -> TypedAst.Expr.UnknownType()(expr.source)
-                  }
-                case other =>
-                  Left(List(TypeError(s"Expected a function, but expression has type ${prettyExpr(other)}", expr.source)))
-        }
+        ???
       case ast.Expr.CallImplicit(callee, arg) =>
-        infer(callee).flatMap { (calleeExpr, calleeType) =>
-          whnf(calleeType) match
-            case TypedAst.Expr.Pi(dom, cod, true) =>
-              check(arg, dom.tpe).map { argExpr =>
-                TypedAst.Expr.AppImplicit(calleeExpr, argExpr, cod)(expr.source) -> cod
-              }
-            case TypedAst.Expr.UnknownType() =>
-              infer(arg).map { (argExpr, _) =>
-                TypedAst.Expr.AppImplicit(calleeExpr, argExpr, TypedAst.Expr.UnknownType()(expr.source))(expr.source) -> TypedAst.Expr.UnknownType()(expr.source)
-              }
-            case other => Left(List(TypeError(s"Expected an implicit function, but expression ${prettyExpr(calleeExpr)} has type ${prettyExpr(other)}", expr.source)))
-        }
+        ???
       case ast.Expr.Lambda(param, body) =>
         val paramType = param.tpe.map(t => signatureExpr(t, ctx.globals, Map())).getOrElse(TypedAst.Expr.UnknownType()(expr.source))
         val LocalSymbol = TypedAst.LocalSymbol(param.name, paramType, ids.freshLocalId())
         val LocalSymbol2 = TypedAst.LocalSymbol(param.name, paramType, ids.freshLocalId())
         val bodyCtx = ctx.withLocal(LocalSymbol)
-        infer(body)(using bodyCtx, metas, ids).map { (bodyExpr, bodyType) =>
-          val fnType = TypedAst.Expr.Pi(LocalSymbol2, bodyType, isImplicit = false)(expr.source)
-          TypedAst.Expr.Lambda(LocalSymbol, bodyExpr, fnType)(expr.source) -> fnType
-        }
+        val (bodyExpr, bodyType, errs) = infer(body)(using bodyCtx, metas, ids)
+        val fnType = TypedAst.Expr.Pi(LocalSymbol2, bodyType, isImplicit = false)(expr.source)
+        (TypedAst.Expr.Lambda(LocalSymbol, bodyExpr, fnType)(expr.source), fnType, errs)
       case ast.Expr.LetIn(name, declaredType, value, body) =>
         val inferredValue = declaredType match
           case Some(tpe) =>
             val expected = signatureExpr(tpe, ctx.globals, Map())
-            check(value, expected).map(_ -> expected)
+            val (typedValue, errs) = check(value, expected)
+            (typedValue, expected, errs)
           case None => infer(value)
-        inferredValue.flatMap { (valueExpr, valueType) =>
-          val symbol = TypedAst.LocalSymbol(name, valueType, ids.freshLocalId())
-          val bodyCtx = ctx.withLocal(symbol, Some(valueExpr))
-          infer(body)(using bodyCtx, metas, ids).map { (bodyExpr, bodyType) =>
-            TypedAst.Expr.LetIn(symbol, isConstant = false, valueType, valueExpr, bodyExpr)(expr.source) -> bodyType
-          }
-        }
+        val (valueExpr, valueType, errs) = inferredValue
+        val symbol = TypedAst.LocalSymbol(name, valueType, ids.freshLocalId())
+        val bodyCtx = ctx.withLocal(symbol, Some(valueExpr))
+        val (bodyExpr, bodyType, errs2) =  infer(body)(using bodyCtx, metas, ids)
+        (TypedAst.Expr.LetIn(symbol, isConstant = false, valueType, valueExpr, bodyExpr)(expr.source), bodyType, errs ++ errs2)
+
       case ast.Expr.Pi(param, body) =>
         val dom = signatureExpr(param.tpe, ctx.globals, Map())
         val cod = signatureExpr(body, ctx.globals, Map())
         val sym = LocalSymbol(param.name, dom, ids.freshLocalId())
         val piExpr = TypedAst.Expr.Pi(sym, cod, isImplicit = false)(expr.source)
-        Right(piExpr -> TypedAst.Expr.Sort()(expr.source))
+        (piExpr, TypedAst.Expr.Sort()(expr.source), List())
       case ast.Expr.Match(scrutinee, cases) =>
-        infer(scrutinee).flatMap { (scrutineeExpr, scrutineeType) =>
-          val resultMeta = freshMeta(TypedAst.Expr.UnknownType()(expr.source), expr.source)
-          val typedCases = cases.map { case ast.MatchCase(pattern, body) =>
-            val (typedPattern, patternCtx, patternErrors) = checkPattern(pattern, scrutineeType, ctx, ids)
-            val caseCtx = ctx.copy(locals = ctx.locals ++ patternCtx)
-            val bodyResult = check(body, resultMeta)(using caseCtx, metas, ids)
-            (typedPattern, bodyResult, patternErrors)
-          }
-          val errors = typedCases.collect { case (_, Left(errs), _) => errs }.flatten ++ typedCases.flatMap(_._3)
-          if errors.nonEmpty then
-            Left(errors)
-          else
-            val typedCasesExpr = typedCases.collect { case (pat, Right(bodyExpr), _) =>
-              TypedAst.MatchCase(pat, bodyExpr)(bodyExpr.source)
-            }
-            Right(TypedAst.Expr.Match(scrutineeExpr, typedCasesExpr)(expr.source) -> resultMeta)
+        val (scrutineeExpr, scrutineeType, errs) = infer(scrutinee)
+        val resultMeta = freshMeta(TypedAst.Expr.UnknownType()(expr.source), expr.source)
+        val typedCases = cases.map { case ast.MatchCase(pattern, body) =>
+          val (typedPattern, patternCtx, patternErrors) = checkPattern(pattern, scrutineeType, ctx, ids)
+          val caseCtx = ctx.copy(locals = ctx.locals ++ patternCtx)
+          val (typedBody, bodyErrs) = check(body, resultMeta)(using caseCtx, metas, ids)
+          (typedPattern, typedBody, patternErrors ++ bodyErrs)
         }
+        val errors = typedCases.flatMap(_._3)
+        val typedCasesExpr = typedCases.map { case (pat, bodyExpr, _) =>
+          TypedAst.MatchCase(pat, bodyExpr)(bodyExpr.source)
+        }
+        (TypedAst.Expr.Match(scrutineeExpr, typedCasesExpr)(expr.source), resultMeta, errors)
       case ast.Expr.Hole() =>
         val meta = freshMeta(TypedAst.Expr.UnknownType()(expr.source), expr.source)
-        Right(meta -> TypedAst.Expr.UnknownType()(expr.source))
+        (meta, TypedAst.Expr.UnknownType()(expr.source), List())
+
 
   /** Checks an expression against an expected type. */
   private def check(expr: ast.Expr, expectedType: TypedAst.Expr)
-                   (implicit ctx: TypeContext, metas: MetaContext, ids: IdSupply): CheckResult[TypedAst.Expr] =
+                   (implicit ctx: TypeContext, metas: MetaContext, ids: IdSupply): (TypedAst.Expr, List[TypeError]) =
+    println(s"Checking type of $expr against $expectedType")
     val expectedNorm = whnf(expectedType)
     (expr, expectedNorm) match
       case (ast.Expr.Lambda(param, body), TypedAst.Expr.Pi(dom, cod, false)) =>
-        val LocalSymbol = TypedAst.LocalSymbol(param.name, dom.tpe, ids.freshLocalId()) // TODO can we reuse dom?
-        val bodyCtx = ctx.withLocal(LocalSymbol)
-        check(body, cod)(using bodyCtx, metas, ids).map { bodyExpr =>
-          TypedAst.Expr.Lambda(LocalSymbol, bodyExpr, expectedNorm)(expr.source)
-        }
-      case (ast.Expr.Match(scrutinee, cases), _) =>
-        infer(expr) match
-          case Right(x) =>
-            val inferredType = x._1
-            if isDefEq(inferredType, expectedNorm) then
-              Right(x._2)
-            else
-              Left(List(TypeError(s"Expected $expectedNorm, but found expression of type $inferredType", expr.source)))
-          case Left(err) =>
-            Left(err)
-      case _ =>
-        infer(expr).flatMap { (inferredExpr, inferredType) =>
-          if isDefEq(inferredType, expectedNorm) then
-            Right(inferredExpr)
-          else
-            Left(List(TypeError(s"Expected ${prettyExpr(expectedNorm)} but got ${prettyExpr(inferredType)}", expr.source)))
-        }
+        val p = TypedAst.LocalSymbol(param.name, dom.tpe, ids.freshLocalId())
+        val bodyCtx = ctx.withLocal(p)
+        val (typedBody, errs) = check(body, cod)(using bodyCtx, metas, ids)
+        (TypedAst.Expr.Lambda(p, typedBody, expectedNorm)(expr.source), errs)
 
-  /** Inserts implicit arguments as metas before explicit application. */
-  private def insertImplicitArgs(
-      callee: TypedAst.Expr,
-      calleeType: TypedAst.Expr,
-      source: ast.SourceRange
-    )(implicit ctx: Context, metas: MetaContext, ids: IdSupply): (TypedAst.Expr, TypedAst.Expr) =
-    var currentExpr = callee
-    var currentType = calleeType
-    var keepGoing = true
-    while keepGoing do
-      whnf(currentType) match
-        case TypedAst.Expr.Pi(dom, cod, true) =>
-          val meta = freshMeta(dom.tpe, source)
-          currentExpr = TypedAst.Expr.AppImplicit(currentExpr, meta, cod)(source)
-          currentType = cod
-        case _ => keepGoing = false
-    (currentExpr, currentType)
+      case _ =>
+        // TODO for some expressions, like match-cases, it might make sense to transfer expected type into the cases to get better error messages and better inference
+        // TODO consider adding expectedType as optional parameter to infer
+        val (inferredExpr, inferredType, errs) = infer(expr)
+        val errs2 =
+          if isDefEq(inferredType, expectedNorm) then
+            errs
+          else
+            TypeError(s"Expected ${prettyExpr(expectedNorm)} but got ${prettyExpr(inferredType)}", expr.source) :: errs
+        (inferredExpr, errs2)
+
+//  /** Inserts implicit arguments as metas before explicit application. */
+//  private def insertImplicitArgs(
+//      callee: TypedAst.Expr,
+//      calleeType: TypedAst.Expr,
+//      source: ast.SourceRange
+//    )(implicit ctx: Context, metas: MetaContext, ids: IdSupply): (TypedAst.Expr, TypedAst.Expr) =
+//    var currentExpr = callee
+//    var currentType = calleeType
+//    var keepGoing = true
+//    while keepGoing do
+//      whnf(currentType) match
+//        case TypedAst.Expr.Pi(dom, cod, true) =>
+//          val meta = freshMeta(dom.tpe, source)
+//          currentExpr = TypedAst.Expr.AppImplicit(currentExpr, meta, cod)(source)
+//          currentType = cod
+//        case _ => keepGoing = false
+//    (currentExpr, currentType)
 
   /** Creates a fresh meta-variable expression. */
   private def freshMeta(tpe: TypedAst.Expr, source: ast.SourceRange)(implicit ids: IdSupply): TypedAst.Expr =
@@ -701,8 +657,6 @@ object TypeChecker:
     val paramIds = collectParamIds(resultType)
     val subst = collectTypeParamSubst(resultType, expectedType, paramIds, Map())
     fieldTypes.map(fieldType => substituteTypeParams(fieldType, subst))
-
-  type CheckResult[T] = Either[List[TypeError], T]
 
   def formatError(path: String, sourceLines: Vector[String], error: TypeError): String =
     val lineNr = error.source.start.line
