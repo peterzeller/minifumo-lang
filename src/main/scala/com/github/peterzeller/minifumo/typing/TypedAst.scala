@@ -15,13 +15,12 @@ object TypedAst:
   sealed trait TermSymbol extends Symbol
 
   final case class LocalSymbol(name: String, tpe: Expr, id: Int) extends TermSymbol
-  final case class ParamSymbol(name: String, tpe: Expr, id: Int) extends TermSymbol
-  final case class BuiltinValueSymbol(name: String, tpe: Expr) extends TermSymbol
+  final case class BuiltinValueSymbol(name: String, tpe: Expr) extends TermSymbol // TODO do we need this?
   final case class ErrorSymbol(name: String, tpe: Expr) extends Symbol
-  final case class DatatypeSymbol(name: String, tpe: Expr, file: Path) extends Symbol
+  final case class DatatypeSymbol(name: String, tpe: Expr, file: Path) extends Symbol // TODO is this just a global symbol?
 
-  final case class FunctionSymbol(name: String, tpe: Expr) extends Symbol
-  final case class CtorSymbol(name: String, tpe: Expr) extends Symbol
+  final case class FunctionSymbol(name: String, tpe: Expr) extends Symbol // TODO is this just a global symbol?
+  final case class CtorSymbol(name: String, tpe: Expr) extends Symbol // TODO is this just a global symbol?
 
   final case class GlobalSymbolSymbol(name: String, file: Path, g: GlobalSymbol) extends Symbol:
     def tpe: Expr =
@@ -31,7 +30,7 @@ object TypedAst:
           def r(l: List[Expr]): Expr =
             l match
               case Nil => Expr.Sort()(SourceRange.empty)
-              case x::xs => Expr.Pi(x, r(xs), true)(SourceRange.empty)
+              case x::xs => Expr.Pi(LocalSymbol("_", x, 0), r(xs), true)(SourceRange.empty)
           r(implicitParams)
 
 
@@ -51,8 +50,8 @@ object TypedAst:
 
   case class FunSig(
     symbol: FunctionSymbol,
-    typeParams: List[ParamSymbol],
-    params: List[ParamSymbol],
+    typeParams: List[LocalSymbol],
+    params: List[LocalSymbol],
     returnType: Expr,
   )
 
@@ -66,7 +65,7 @@ object TypedAst:
     case Var(symbol: Symbol)(val source: SourceRange)
     case AppImplicit(callee: Expr, arg: Expr, tpe: Expr)(val source: SourceRange)
     case App(callee: Expr, arg: Expr, tpe: Expr)(val source: SourceRange)
-    case Pi(dom: Expr, cod: Expr, isImplicit: Boolean)(val source: SourceRange)
+    case Pi(dom: LocalSymbol, cod: Expr, isImplicit: Boolean)(val source: SourceRange)
     case Sort()(val source: SourceRange)
 
     case Lambda(param: LocalSymbol, body: Expr, tpe: Expr)(val source: SourceRange)

@@ -51,8 +51,8 @@ object TypeChecker:
 //    throw new RuntimeException(s"Checking of fun sig $sig is not yet implemented")
     var mEnv = ctx
     val errors = mutable.ListBuffer[TypeError]()
-    val typedImplicitParams = mutable.ListBuffer[TypedAst.ParamSymbol]()
-    val typedParams = mutable.ListBuffer[TypedAst.ParamSymbol]()
+    val typedImplicitParams = mutable.ListBuffer[TypedAst.LocalSymbol]()
+    val typedParams = mutable.ListBuffer[TypedAst.LocalSymbol]()
     // first check the implicit params
     for p <- sig.implicitParams do
       val paramType: Expr =
@@ -62,9 +62,9 @@ object TypeChecker:
             TypedAst.Expr.UnknownType()(p.tpe.source)
           case Right(t) => t
 
-      val paramSymbol = ParamSymbol(p.name, paramType, ids.freshLocalId())
-      mEnv = mEnv.withLocal(paramSymbol, Some(paramType))
-      typedImplicitParams.addOne(paramSymbol)
+      val localSymbol = LocalSymbol(p.name, paramType, ids.freshLocalId())
+      mEnv = mEnv.withLocal(localSymbol, Some(paramType))
+      typedImplicitParams.addOne(localSymbol)
     // next check the explicit params
     for p <- sig.params do
       val paramType: Expr =
@@ -74,9 +74,9 @@ object TypeChecker:
             TypedAst.Expr.UnknownType()(p.tpe.source)
           case Right(t) => t
 
-      val paramSymbol = ParamSymbol(p.name, paramType, ids.freshLocalId())
-      mEnv = mEnv.withLocal(paramSymbol, Some(paramType))
-      typedParams.addOne(paramSymbol)
+      val localSymbol = LocalSymbol(p.name, paramType, ids.freshLocalId())
+      mEnv = mEnv.withLocal(localSymbol, Some(paramType))
+      typedParams.addOne(localSymbol)
 
     val returnType =
       check(sig.returnType, Sort()(SourceRange.empty))(using mEnv) match
@@ -88,9 +88,9 @@ object TypeChecker:
     // construct function type as Pi type by going backwards
     var fnType: Expr = returnType
     for p <- typedParams.reverseIterator do
-      fnType = TypedAst.Expr.Pi(p.tpe, fnType, false)(p.tpe.source.merge(fnType.source))
+      fnType = TypedAst.Expr.Pi(p, fnType, false)(p.tpe.source.merge(fnType.source))
     for p <- typedImplicitParams.reverseIterator do
-      fnType = TypedAst.Expr.Pi(p.tpe, fnType, true)(p.tpe.source.merge(fnType.source))
+      fnType = TypedAst.Expr.Pi(p, fnType, true)(p.tpe.source.merge(fnType.source))
 
     val sym = FunctionSymbol(sig.name, fnType)
     (TypedAst.FunSig(sym, typedImplicitParams.toList, typedParams.toList, returnType), mEnv, errors.toList)
@@ -156,8 +156,8 @@ object TypeChecker:
   /** Describes a function signature after outline typing. */
   private final case class FunctionInfo(
       symbol: TypedAst.FunctionSymbol,
-      implicitParams: List[TypedAst.ParamSymbol],
-      params: List[TypedAst.ParamSymbol],
+      implicitParams: List[TypedAst.LocalSymbol],
+      params: List[TypedAst.LocalSymbol],
       returnType: TypedAst.Expr
     )
 
@@ -232,7 +232,8 @@ object TypeChecker:
       case ast.Expr.Pi(param, body) =>
         val dom = signatureExpr(param.tpe, globals, locals)
         val cod = signatureExpr(body, globals, locals)
-        TypedAst.Expr.Pi(dom, cod, isImplicit = false)(expr.source)
+        val domSym = LocalSymbol(param.name, dom, 0) // TODO create ID
+        TypedAst.Expr.Pi(domSym, cod, isImplicit = false)(expr.source)
       case ast.Expr.Hole() =>
         TypedAst.Expr.UnknownType()(expr.source)
       case _ =>
@@ -252,9 +253,9 @@ object TypeChecker:
         solveMeta(id, other)
       case (other, TypedAst.Expr.Meta(id, _)) =>
         solveMeta(id, other)
-      case (TypedAst.Expr.Var(s1), TypedAst.Expr.Var(s2)) if s1 == s2 => true
-      case (TypedAst.Expr.Var(p1: TypedAst.ParamSymbol), TypedAst.Expr.Var(p2: TypedAst.ParamSymbol))
-          if p1.name == p2.name => true
+      case (TypedAst.Expr.Var(s1), TypedAst.Expr.Var(s2)) if symbolsEqual(s1, s2) => true
+      case (TypedAst.Expr.Var(p1: TypedAst.LocalSymbol), TypedAst.Expr.Var(p2: TypedAst.LocalSymbol))
+          if p1.name == p2.name => true // TODO name equality is not enough
       case (TypedAst.Expr.Lit(v1), TypedAst.Expr.Lit(v2)) if v1 == v2 => true
       case (TypedAst.Expr.Sort(), TypedAst.Expr.Sort()) => true
       case (TypedAst.Expr.App(c1, a1, _), TypedAst.Expr.App(c2, a2, _)) =>
@@ -262,10 +263,23 @@ object TypeChecker:
       case (TypedAst.Expr.AppImplicit(c1, a1, _), TypedAst.Expr.AppImplicit(c2, a2, _)) =>
         isDefEq(c1, c2) && isDefEq(a1, a2)
       case (TypedAst.Expr.Lambda(p1, b1, _), TypedAst.Expr.Lambda(p2, b2, _)) =>
-        isDefEq(p1.tpe, p2.tpe) && isDefEq(b1, b2)
+        isDefEq(p1.tpe, p2.tpe) && isDefEq(b1, b2) // TODO this might not be correct, since we do not consider names; better use de-bruijn indices
       case (TypedAst.Expr.Pi(d1, c1, i1), TypedAst.Expr.Pi(d2, c2, i2)) if i1 == i2 =>
-        isDefEq(d1, d2) && isDefEq(c1, c2)
+        isDefEq(d1.tpe, d2.tpe) && isDefEq(c1, c2) // TODO this might not be correct, since we do not consider names; better use de-bruijn indices
       case _ => false
+
+  def symbolsEqual(a: Symbol, b: Symbol): Boolean =
+    if a == b then
+      true
+    else
+      (a,b) match
+        case (GlobalSymbolSymbol(an, af, _), GlobalNameSymbol(bn, bf)) =>
+          an == bn && af == bf
+        case (GlobalNameSymbol(an, af), GlobalSymbolSymbol(bn, bf, _)) =>
+          an == bn && af == bf
+        case _ =>
+          println(s"Symbols $a and $b do not match")
+          false
 
   /** Reduces a term to weak head normal form. */
   def whnf(term: TypedAst.Expr)(implicit ctx: Context, metas: MetaContext): TypedAst.Expr =
@@ -296,11 +310,14 @@ object TypeChecker:
       case TypedAst.Expr.LetIn(symbol, isConstant, declaredType, value, body) =>
         TypedAst.Expr.LetIn(symbol, isConstant, instantiate(declaredType), instantiate(value), instantiate(body))(term.source)
       case TypedAst.Expr.Pi(dom, cod, isImplicit) =>
-        TypedAst.Expr.Pi(instantiate(dom), instantiate(cod), isImplicit)(term.source)
+        TypedAst.Expr.Pi(instantiateLocalSymbol(dom), instantiate(cod), isImplicit)(term.source)
       case TypedAst.Expr.Match(scrutinee, cases) =>
         val newCases = cases.map(c => TypedAst.MatchCase(c.pattern, instantiate(c.body))(c.source))
         TypedAst.Expr.Match(instantiate(scrutinee), newCases)(term.source)
       case other => other
+
+  def instantiateLocalSymbol(s: LocalSymbol)(implicit metas: MetaContext): LocalSymbol =
+    LocalSymbol(s.name, instantiate(s.tpe), s.id)
 
   /** Infers the type of an expression, producing a typed expression alongside its type. */
   private def infer(expr: ast.Expr)
@@ -326,7 +343,7 @@ object TypeChecker:
               val (appliedExpr, appliedType) = insertImplicitArgs(calleeExpr, calleeType, expr.source)
               whnf(appliedType) match
                 case TypedAst.Expr.Pi(dom, cod, false) =>
-                  check(arg, dom).map { argExpr =>
+                  check(arg, dom.tpe).map { argExpr =>
                     TypedAst.Expr.App(appliedExpr, argExpr, cod)(expr.source) -> cod
                   }
                 case TypedAst.Expr.UnknownType() =>
@@ -341,7 +358,7 @@ object TypeChecker:
         infer(callee).flatMap { (calleeExpr, calleeType) =>
           whnf(calleeType) match
             case TypedAst.Expr.Pi(dom, cod, true) =>
-              check(arg, dom).map { argExpr =>
+              check(arg, dom.tpe).map { argExpr =>
                 TypedAst.Expr.AppImplicit(calleeExpr, argExpr, cod)(expr.source) -> cod
               }
             case TypedAst.Expr.UnknownType() =>
@@ -352,11 +369,12 @@ object TypeChecker:
         }
       case ast.Expr.Lambda(param, body) =>
         val paramType = param.tpe.map(t => signatureExpr(t, ctx.globals, Map())).getOrElse(TypedAst.Expr.UnknownType()(expr.source))
-        val paramSymbol = TypedAst.LocalSymbol(param.name, paramType, ids.freshLocalId())
-        val bodyCtx = ctx.withLocal(paramSymbol)
+        val LocalSymbol = TypedAst.LocalSymbol(param.name, paramType, ids.freshLocalId())
+        val LocalSymbol2 = TypedAst.LocalSymbol(param.name, paramType, ids.freshLocalId())
+        val bodyCtx = ctx.withLocal(LocalSymbol)
         infer(body)(using bodyCtx, metas, ids).map { (bodyExpr, bodyType) =>
-          val fnType = TypedAst.Expr.Pi(paramType, bodyType, isImplicit = false)(expr.source)
-          TypedAst.Expr.Lambda(paramSymbol, bodyExpr, fnType)(expr.source) -> fnType
+          val fnType = TypedAst.Expr.Pi(LocalSymbol2, bodyType, isImplicit = false)(expr.source)
+          TypedAst.Expr.Lambda(LocalSymbol, bodyExpr, fnType)(expr.source) -> fnType
         }
       case ast.Expr.LetIn(name, declaredType, value, body) =>
         val inferredValue = declaredType match
@@ -374,7 +392,8 @@ object TypeChecker:
       case ast.Expr.Pi(param, body) =>
         val dom = signatureExpr(param.tpe, ctx.globals, Map())
         val cod = signatureExpr(body, ctx.globals, Map())
-        val piExpr = TypedAst.Expr.Pi(dom, cod, isImplicit = false)(expr.source)
+        val sym = LocalSymbol(param.name, dom, ids.freshLocalId())
+        val piExpr = TypedAst.Expr.Pi(sym, cod, isImplicit = false)(expr.source)
         Right(piExpr -> TypedAst.Expr.Sort()(expr.source))
       case ast.Expr.Match(scrutinee, cases) =>
         infer(scrutinee).flatMap { (scrutineeExpr, scrutineeType) =>
@@ -404,10 +423,10 @@ object TypeChecker:
     val expectedNorm = whnf(expectedType)
     (expr, expectedNorm) match
       case (ast.Expr.Lambda(param, body), TypedAst.Expr.Pi(dom, cod, false)) =>
-        val paramSymbol = TypedAst.LocalSymbol(param.name, dom, ids.freshLocalId())
-        val bodyCtx = ctx.withLocal(paramSymbol)
+        val LocalSymbol = TypedAst.LocalSymbol(param.name, dom.tpe, ids.freshLocalId()) // TODO can we reuse dom?
+        val bodyCtx = ctx.withLocal(LocalSymbol)
         check(body, cod)(using bodyCtx, metas, ids).map { bodyExpr =>
-          TypedAst.Expr.Lambda(paramSymbol, bodyExpr, expectedNorm)(expr.source)
+          TypedAst.Expr.Lambda(LocalSymbol, bodyExpr, expectedNorm)(expr.source)
         }
       case (ast.Expr.Match(scrutinee, cases), _) =>
         infer(expr) match
@@ -439,7 +458,7 @@ object TypeChecker:
     while keepGoing do
       whnf(currentType) match
         case TypedAst.Expr.Pi(dom, cod, true) =>
-          val meta = freshMeta(dom, source)
+          val meta = freshMeta(dom.tpe, source)
           currentExpr = TypedAst.Expr.AppImplicit(currentExpr, meta, cod)(source)
           currentType = cod
         case _ => keepGoing = false
@@ -466,16 +485,10 @@ object TypeChecker:
       case TypedAst.Expr.AppImplicit(callee, arg, _) => occurs(metaId, callee) || occurs(metaId, arg)
       case TypedAst.Expr.Lambda(_, body, _) => occurs(metaId, body)
       case TypedAst.Expr.LetIn(_, _, _, value, body) => occurs(metaId, value) || occurs(metaId, body)
-      case TypedAst.Expr.Pi(dom, cod, _) => occurs(metaId, dom) || occurs(metaId, cod)
+      case TypedAst.Expr.Pi(dom, cod, _) => occurs(metaId, dom.tpe) || occurs(metaId, cod)
       case TypedAst.Expr.Match(scrutinee, cases) =>
         occurs(metaId, scrutinee) || cases.exists(c => occurs(metaId, c.body))
       case _ => false
-
-  /** Combines two check results while accumulating errors. */
-  private def combine[A, B](left: CheckResult[A], right: CheckResult[B]): CheckResult[Unit] =
-    (left, right) match
-      case (Right(_), Right(_)) => Right(())
-      case _ => Left(left.left.getOrElse(Nil) ++ right.left.getOrElse(Nil))
 
   /** Substitutes a local symbol with a value in a term. */
   private def substitute(term: TypedAst.Expr, symbol: TypedAst.LocalSymbol, value: TypedAst.Expr): TypedAst.Expr =
@@ -494,11 +507,14 @@ object TypeChecker:
       case TypedAst.Expr.LetIn(sym, isConstant, declaredType, valExpr, body) =>
         TypedAst.Expr.LetIn(sym, isConstant, declaredType, substitute(valExpr, symbol, value), substitute(body, symbol, value))(term.source)
       case TypedAst.Expr.Pi(dom, cod, isImplicit) =>
-        TypedAst.Expr.Pi(substitute(dom, symbol, value), substitute(cod, symbol, value), isImplicit)(term.source)
+        TypedAst.Expr.Pi(substituteInLocalSymbol(dom, symbol, value), substitute(cod, symbol, value), isImplicit)(term.source)
       case TypedAst.Expr.Match(scrutinee, cases) =>
         val newCases = cases.map(c => TypedAst.MatchCase(c.pattern, substitute(c.body, symbol, value))(c.source))
         TypedAst.Expr.Match(substitute(scrutinee, symbol, value), newCases)(term.source)
       case other => other
+
+  private def substituteInLocalSymbol(s: LocalSymbol, symbol: TypedAst.LocalSymbol, value: TypedAst.Expr): LocalSymbol =
+    LocalSymbol(s.name, substitute(s.tpe, symbol, value), s.id)
 
   /** Exposes substitution for tests. */
   private[typing] def substituteForTest(term: TypedAst.Expr, symbol: TypedAst.LocalSymbol, value: TypedAst.Expr): TypedAst.Expr =
@@ -542,8 +558,8 @@ object TypeChecker:
       case TypedAst.Expr.Lit(ast.Literal.BoolLit(_)) => "Bool"
       case TypedAst.Expr.Lit(ast.Literal.StringLit(_)) => "String"
       case TypedAst.Expr.Lit(ast.Literal.UnitLit()) => "unit"
-      case TypedAst.Expr.Pi(dom, cod, true) => s"[${prettyExpr(dom)}] -> ${prettyExpr(cod)}"
-      case TypedAst.Expr.Pi(dom, cod, false) => s"${prettyExpr(dom)} -> ${prettyExpr(cod)}"
+      case TypedAst.Expr.Pi(dom, cod, true) => s"(implicit ${dom.name}: ${prettyExpr(dom.tpe)}) -> ${prettyExpr(cod)}"
+      case TypedAst.Expr.Pi(dom, cod, false) => s"${dom.name}: ${prettyExpr(dom.tpe)} -> ${prettyExpr(cod)}"
       case TypedAst.Expr.App(callee, arg, _) => s"${prettyExpr(callee)}(${prettyExpr(arg)})"
       case TypedAst.Expr.AppImplicit(callee, arg, _) => s"${prettyExpr(callee)}[${prettyExpr(arg)}]"
       case TypedAst.Expr.Lambda(param, _, _) => s"(\\${param.name} => ...)"
@@ -615,7 +631,7 @@ object TypeChecker:
     def loop(tpe: TypedAst.Expr, fields: List[TypedAst.Expr]): (List[TypedAst.Expr], TypedAst.Expr) =
       tpe match
         case TypedAst.Expr.Pi(dom, cod, false) =>
-          loop(cod, fields :+ dom)
+          loop(cod, fields :+ dom.tpe)
         case TypedAst.Expr.Pi(_, cod, true) =>
           loop(cod, fields)
         case _ =>
@@ -625,10 +641,10 @@ object TypeChecker:
   // Collects parameter symbol ids that appear in a type expression.
   private def collectParamIds(expr: TypedAst.Expr): Set[Int] =
     expr match
-      case TypedAst.Expr.Var(param: TypedAst.ParamSymbol) => Set(param.id)
+      case TypedAst.Expr.Var(param: TypedAst.LocalSymbol) => Set(param.id)
       case TypedAst.Expr.App(callee, arg, tpe) => collectParamIds(callee) ++ collectParamIds(arg) ++ collectParamIds(tpe)
       case TypedAst.Expr.AppImplicit(callee, arg, tpe) => collectParamIds(callee) ++ collectParamIds(arg) ++ collectParamIds(tpe)
-      case TypedAst.Expr.Pi(dom, cod, _) => collectParamIds(dom) ++ collectParamIds(cod)
+      case TypedAst.Expr.Pi(dom, cod, _) => Set(dom.id) ++ collectParamIds(dom.tpe) ++ collectParamIds(cod)
       case TypedAst.Expr.Lambda(_, body, tpe) => collectParamIds(body) ++ collectParamIds(tpe)
       case TypedAst.Expr.LetIn(_, _, declaredType, value, body) => collectParamIds(declaredType) ++ collectParamIds(value) ++ collectParamIds(body)
       case TypedAst.Expr.Match(scrutinee, cases) => collectParamIds(scrutinee) ++ cases.flatMap(c => collectParamIds(c.body)).toSet
@@ -642,7 +658,7 @@ object TypeChecker:
       acc: Map[Int, TypedAst.Expr]
     ): Map[Int, TypedAst.Expr] =
     (template, expected) match
-      case (TypedAst.Expr.Var(param: TypedAst.ParamSymbol), other) if paramIds.contains(param.id) =>
+      case (TypedAst.Expr.Var(param: TypedAst.LocalSymbol), other) if paramIds.contains(param.id) =>
         acc.get(param.id) match
           case Some(existing) if existing == other => acc
           case Some(_) => acc
@@ -659,14 +675,14 @@ object TypeChecker:
   // Replaces constructor type parameters with inferred concrete types from the scrutinee.
   private def substituteTypeParams(expr: TypedAst.Expr, subst: Map[Int, TypedAst.Expr]): TypedAst.Expr =
     expr match
-      case TypedAst.Expr.Var(param: TypedAst.ParamSymbol) =>
+      case TypedAst.Expr.Var(param: TypedAst.LocalSymbol) =>
         subst.getOrElse(param.id, expr)
       case TypedAst.Expr.App(callee, arg, tpe) =>
         TypedAst.Expr.App(substituteTypeParams(callee, subst), substituteTypeParams(arg, subst), substituteTypeParams(tpe, subst))(expr.source)
       case TypedAst.Expr.AppImplicit(callee, arg, tpe) =>
         TypedAst.Expr.AppImplicit(substituteTypeParams(callee, subst), substituteTypeParams(arg, subst), substituteTypeParams(tpe, subst))(expr.source)
       case TypedAst.Expr.Pi(dom, cod, isImplicit) =>
-        TypedAst.Expr.Pi(substituteTypeParams(dom, subst), substituteTypeParams(cod, subst), isImplicit)(expr.source)
+        TypedAst.Expr.Pi(substituteTypeParamsInLocalSymbol(dom, subst), substituteTypeParams(cod, subst), isImplicit)(expr.source)
       case TypedAst.Expr.Lambda(param, body, tpe) =>
         TypedAst.Expr.Lambda(param, substituteTypeParams(body, subst), substituteTypeParams(tpe, subst))(expr.source)
       case TypedAst.Expr.LetIn(symbol, isConstant, declaredType, value, body) =>
@@ -675,6 +691,9 @@ object TypeChecker:
         val rewrittenCases = cases.map(c => TypedAst.MatchCase(c.pattern, substituteTypeParams(c.body, subst))(c.source))
         TypedAst.Expr.Match(substituteTypeParams(scrutinee, subst), rewrittenCases)(expr.source)
       case _ => expr
+
+  def substituteTypeParamsInLocalSymbol(s: LocalSymbol, subst: Map[Int, TypedAst.Expr]): LocalSymbol =
+    LocalSymbol(s.name, substituteTypeParams(s.tpe, subst), s.id)
 
   /** Extracts constructor field types from a constructor type. */
   private def extractCtorFieldTypes(ctorType: TypedAst.Expr, expectedType: TypedAst.Expr): List[TypedAst.Expr] =

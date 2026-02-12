@@ -32,7 +32,7 @@ object Interpreter:
     ???
 
   /** Describes a function body for evaluation. */
-  private final case class FunctionBody(params: List[TypedAst.ParamSymbol], body: TypedAst.Expr)
+  private final case class FunctionBody(params: List[TypedAst.LocalSymbol], body: TypedAst.Expr)
 
   /** Evaluates an expression with the given local and global environments. */
   private def evalExpr(

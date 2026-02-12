@@ -124,7 +124,8 @@ object GlobalSymbols:
       case ast.Expr.Pi(param, body) =>
         val (dom, errors1) = checkSignatureExpr(param.tpe, env)
         val (cod, errors2) = checkSignatureExpr(body, env)
-        (TypedAst.Expr.Pi(dom, cod, isImplicit = false)(expr.source), errors1 ++ errors2)
+        val s = LocalSymbol(param.name, dom, 0) // TODO proper index
+        (TypedAst.Expr.Pi(s, cod, isImplicit = false)(expr.source), errors1 ++ errors2)
       case ast.Expr.LetIn(name, tpe, value, body) =>
         (TypedAst.Expr.UnknownType()(expr.source), List(TypeError("Cannot use let expressions in function signatures", expr.source)))
       case ast.Expr.Match(scrutinee, cases) =>
@@ -155,33 +156,34 @@ object GlobalSymbols:
         var nextId = 0
         var localNames = env.localNames
         val errors = ListBuffer[TypeError]()
-        val implicitParamTypes = ListBuffer[Expr]()
-        val paramTypes = ListBuffer[Expr]()
+        val implicitParamTypes = ListBuffer[LocalSymbol]()
+        val paramTypes = ListBuffer[LocalSymbol]()
         for param <- sig.implicitParams do
           val (paramType, paramErrors) = checkSignatureExpr(param.tpe, env.copy(localNames = localNames))
           errors.addAll(paramErrors)
           val symbol = LocalSymbol(param.name, paramType, nextId)
           nextId += 1
           localNames = localNames + (param.name -> symbol)
-          implicitParamTypes.addOne(paramType)
+          implicitParamTypes.addOne(symbol)
         for param <- sig.params do
           val (paramType, paramErrors) = checkSignatureExpr(param.tpe, env.copy(localNames = localNames))
           errors.addAll(paramErrors)
           val symbol = LocalSymbol(param.name, paramType, nextId)
           nextId += 1
           localNames = localNames + (param.name -> symbol)
-          paramTypes.addOne(paramType)
+          paramTypes.addOne(symbol)
         val (returnType, returnErrors) = checkSignatureExpr(sig.returnType, env.copy(localNames = localNames))
         errors.addAll(returnErrors)
         val funType = (implicitParamTypes.toList, paramTypes.toList).match
           case (Nil, Nil) => returnType
           case _ =>
-            val implicitPis = implicitParamTypes.foldRight(returnType) { (dom, cod) =>
-              TypedAst.Expr.Pi(dom, cod, isImplicit = true)(sig.source)
-            }
-            paramTypes.foldRight(implicitPis) { (dom, cod) =>
+            val explicitPis = paramTypes.foldRight(returnType) { (dom, cod) =>
               TypedAst.Expr.Pi(dom, cod, isImplicit = false)(sig.source)
             }
+            val implicitPis = implicitParamTypes.foldRight(explicitPis) { (dom, cod) =>
+              TypedAst.Expr.Pi(dom, cod, isImplicit = true)(sig.source)
+            }
+            implicitPis
         val symbol = GlobalSymbol(file, sig.name, SymbolSignature.Def(funType))
         (List((sig.name, sig.source, symbol)), errors.toList)
       case _ =>

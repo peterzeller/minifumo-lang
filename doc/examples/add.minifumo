@@ -2,6 +2,6 @@ fun myAdd(x: Int, y: Int): Int
     x + y
 
 fun main(): Unit
-    println(myAdd(1, 2), showInt())
+    println[Int](myAdd(1, 2), showInt())
 
 // Output: 3
