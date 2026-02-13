@@ -305,6 +305,8 @@ object TypeChecker:
   private def infer(expr: ast.Expr)
                    (implicit ctx: TypeContext, metas: MetaContext, ids: IdSupply): (TypedAst.Expr, TypedAst.Expr, List[TypeError]) =
     expr match
+      case ast.Expr.Var("Type") =>
+        (TypedAst.Expr.Sort()(expr.source), TypedAst.Expr.Sort()(expr.source), List())
       case ast.Expr.Var(name) =>
         ctx.lookupSymbol(name) match
           case Some(symbol) =>

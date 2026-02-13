@@ -4,45 +4,45 @@ export data Bool = True | False
 
 export data Nat = Zero | Suc(n: Nat)
 
-export data Int = Int(positive: Bool, n: Nat)
+export data Int = MakeInt(positive: Bool, n: Nat)
 
 export data List[T: Type] = Nil | Cons(head: T, tail: List[T])
 
 export data Tree[K: Type, V: Type] = Leaf | Node(key: K, value: V, left: Tree[K, V], right: Tree[K, V])
 
-export data Char = Char(rune: Nat)
+export data Char = MakeChar(rune: Nat)
 
-export data String = String(value: List[Char])
+export data String = MakeString(value: List[Char])
 
-export data OpNeg[T: Type] = OpNeg(opNeg: T -> T)
+export data OpNeg[T: Type] = MakeOpNeg(opNeg: T -> T)
 
-export data OpPlus[T: Type] = OpPlus(opPlus: T -> T -> T)
+export data OpPlus[T: Type] = MakeOpPlus(opPlus: T -> T -> T)
 
-export data OpMinus[T: Type] = OpMinus(opMinus: T -> T -> T)
+export data OpMinus[T: Type] = MakeOpMinus(opMinus: T -> T -> T)
 
-export data OpTimes[T: Type] = OpTimes(opTimes: T -> T -> T)
+export data OpTimes[T: Type] = MakeOpTimes(opTimes: T -> T -> T)
 
-export data OpDiv[T: Type] = OpDiv(opDiv: T -> T -> T)
+export data OpDiv[T: Type] = MakeOpDiv(opDiv: T -> T -> T)
 
-export data OpMod[T: Type] = OpMod(opMod: T -> T -> T)
+export data OpMod[T: Type] = MakeOpMod(opMod: T -> T -> T)
 
-export data OpLt[T: Type] = OpLt(opLt: T -> T -> Bool)
+export data OpLt[T: Type] = MakeOpLt(opLt: T -> T -> Bool)
 
-export data OpLe[T: Type] = OpLe(opLe: T -> T -> Bool)
+export data OpLe[T: Type] = MakeOpLe(opLe: T -> T -> Bool)
 
-export data OpAnd[T: Type] = OpAnd(opAnd: T -> T -> T)
+export data OpAnd[T: Type] = MakeOpAnd(opAnd: T -> T -> T)
 
-export data OpOr[T: Type] = OpOr(opOr: T -> T -> T)
+export data OpOr[T: Type] = MakeOpOr(opOr: T -> T -> T)
 
-export data Eq[T: Type] = Eq(eq: T -> T -> Bool)
+export data Eq[T: Type] = MakeEq(eq: T -> T -> Bool)
 
-export data Show[T: Type] = Show(show: T -> String)
+export data Show[T: Type] = MakeShow(show: T -> String)
 
-export data Sequence[S: Type, T: Type] = Sequence(get: S -> Int -> T, set: S -> Int -> T -> S, contains: S -> T -> Bool)
+export data Sequence[S: Type, T: Type] = MakeSequence(get: S -> Int -> T, set: S -> Int -> T -> S, contains: S -> T -> Bool)
 
-export data Map[M: Type, K: Type, V: Type] = makeMap(put: M -> K -> V -> M, lookup: M -> K -> V)
+export data Map[M: Type, K: Type, V: Type] = MakeMap(put: M -> K -> V -> M, lookup: M -> K -> V)
 
-export data Set[S: Type, T: Type] = Set(contains: S -> T -> Bool, add: S -> T -> S)
+export data Set[S: Type, T: Type] = MakeSet(contains: S -> T -> Bool, add: S -> T -> S)
 
 // Returns the negation of the Bool value.
 fun opNot(value: Bool): Bool
@@ -223,9 +223,9 @@ fun natMod(a: Nat, b: Nat): Nat
 fun intNormalize(positive: Bool, n: Nat): Int
     match n
         case Zero
-            Int(True, Zero)
+            MakeInt(True, Zero)
         case Suc(_)
-            Int(positive, n)
+            MakeInt(positive, n)
 
 // Returns True when the Int represents a negative value.
 fun intIsNegative(value: Int): Bool
@@ -278,13 +278,13 @@ fun intNeg(value: Int): Int
         case Int(positive, n)
             match n
                 case Zero
-                    Int(True, Zero)
+                    MakeInt(True, Zero)
                 case Suc(_)
                     match positive
                         case True
-                            Int(False, n)
+                            MakeInt(False, n)
                         case False
-                            Int(True, n)
+                            MakeInt(True, n)
 
 // Adds two Int values.
 fun intAdd(a: Int, b: Int): Int
@@ -311,10 +311,10 @@ fun intMul(a: Int, b: Int): Int
             match b
                 case Int(positiveB, nB)
                     if natIsZero(nA)
-                        Int(True, Zero)
+                        MakeInt(True, Zero)
                     else
                         if natIsZero(nB)
-                            Int(True, Zero)
+                            MakeInt(True, Zero)
                         else
                             intNormalize(boolEq(positiveA, positiveB), natMul(nA, nB))
 
@@ -325,10 +325,10 @@ fun intDiv(a: Int, b: Int): Int
             match b
                 case Int(positiveB, nB)
                     if natIsZero(nB)
-                        undefined
+                        MakeInt(True, Zero) // we don't have exceptions yet, so use a dummy value
                     else
                         if natIsZero(nA)
-                            Int(True, Zero)
+                            MakeInt(True, Zero)
                         else
                             intNormalize(boolEq(positiveA, positiveB), natDiv(nA, nB))
 
@@ -339,7 +339,7 @@ fun intMod(a: Int, b: Int): Int
             match b
                 case Int(_, nB)
                     if natIsZero(nB)
-                        undefined
+                        MakeInt(True, Zero) // we don't have exceptions yet, so use a dummy value
                     else
                         intNormalize(positiveA, natMod(nA, nB))
 
@@ -394,6 +394,7 @@ fun listAppend[T: Type](left: List[T], right: List[T]): List[T]
         case Cons(head, tail)
             Cons[T](head, listAppend[T](tail, right))
 
+/*
 // Returns the element at the given Nat index.
 fun listGetNat[T: Type](values: List[T], index: Nat): T
     match values
@@ -406,6 +407,7 @@ fun listGetNat[T: Type](values: List[T], index: Nat): T
                 case Suc(rest)
                     listGetNat[T](tail, rest)
 
+
 // Updates the element at the given Nat index.
 fun listSetNat[T: Type](values: List[T], index: Nat, value: T): List[T]
     match values
@@ -417,6 +419,7 @@ fun listSetNat[T: Type](values: List[T], index: Nat, value: T): List[T]
                     Cons[T](value, tail)
                 case Suc(rest)
                     Cons[T](head, listSetNat[T](tail, rest, value))
+*/
 
 // Checks whether a list contains the given value.
 fun listContains[T: Type](values: List[T], value: T, eq: Eq[T]): Bool
@@ -484,10 +487,10 @@ fun charListLe(left: List[Char], right: List[Char]): Bool
 // Appends two String values.
 fun stringAppend(a: String, b: String): String
     match a
-        case String(left)
+        case MakeString(left)
             match b
-                case String(right)
-                    String(listAppend[Char](left, right))
+                case MakeString(right)
+                    MakeString(listAppend[Char](left, right))
 
 // Builds a single-character String.
 fun stringFromChar(value: Char): String
