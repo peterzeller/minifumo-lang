@@ -5,7 +5,7 @@ import com.github.peterzeller.minifumo.ast.SourceRange
 import com.github.peterzeller.minifumo.builtins.Standard
 import com.github.peterzeller.minifumo.common.MinifumoError
 import com.github.peterzeller.minifumo.typing.TypedAst.*
-import com.github.peterzeller.minifumo.typing.TypedAst.Expr.Sort
+import com.github.peterzeller.minifumo.typing.TypedAst.Expr.{Sort, UnknownType}
 
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
@@ -63,23 +63,14 @@ object TypeChecker:
       typedImplicitParams.addOne(localSymbol)
     // next check the explicit params
     for p <- sig.params do
-      val paramType: Expr =
-        check(p.tpe, Sort()(SourceRange.empty))(using mEnv) match
-          case Left(errs) =>
-            errors.addAll(errs)
-            TypedAst.Expr.UnknownType()(p.tpe.source)
-          case Right(t) => t
-
+      val (paramType, errs) = check(p.tpe, Sort()(SourceRange.empty))(using mEnv)
+      errors.addAll(errs)
       val localSymbol = LocalSymbol(p.name, paramType, ids.freshLocalId())
       mEnv = mEnv.withLocal(localSymbol, Some(paramType))
       typedParams.addOne(localSymbol)
 
-    val returnType =
-      check(sig.returnType, Sort()(SourceRange.empty))(using mEnv) match
-        case Left(errs) =>
-          errors.addAll(errs)
-          TypedAst.Expr.UnknownType()(sig.returnType.source)
-        case Right(t) => t
+    val (returnType, errs) = check(sig.returnType, Sort()(SourceRange.empty))(using mEnv)
+    errors.addAll(errs)
 
     // construct function type as Pi type by going backwards
     var fnType: Expr = returnType
@@ -330,7 +321,21 @@ object TypeChecker:
         val tpe = literalType(value, ctx)
         (typed, tpe, List())
       case ast.Expr.Call(callee, arg) =>
-        ???
+        val (typedCallee, calleeType, errs1) = infer(callee)
+        whnf(calleeType) match {
+          case TypedAst.Expr.Pi(dom, cod, isImplicit) =>
+            val (typedArg, errs2) = check(arg, dom.tpe)
+            // replace
+            val resultType = substitute(cod, dom, typedArg)
+            (TypedAst.Expr.App(typedCallee, typedArg, resultType)(expr.source), resultType, errs1 ++ errs2)
+          case other =>
+            val errs3 =
+              if other.isInstanceOf[UnknownType] then List()
+              else List(TypeError(s"Expected a function but found expression of type $other", callee.source))
+            val (typedArg, _, errs2) = infer(arg)
+            val resultType = Expr.UnknownType()(SourceRange.empty)
+            (TypedAst.Expr.App(typedCallee, typedArg, resultType)(expr.source), resultType, errs1 ++ errs2 ++ errs3)
+        }
       case ast.Expr.CallImplicit(callee, arg) =>
         ???
       case ast.Expr.Lambda(param, body) =>
@@ -373,7 +378,7 @@ object TypeChecker:
         val typedCasesExpr = typedCases.map { case (pat, bodyExpr, _) =>
           TypedAst.MatchCase(pat, bodyExpr)(bodyExpr.source)
         }
-        (TypedAst.Expr.Match(scrutineeExpr, typedCasesExpr)(expr.source), resultMeta, errors)
+        (TypedAst.Expr.Match(scrutineeExpr, typedCasesExpr)(expr.source), resultMeta, errs++errors)
       case ast.Expr.Hole() =>
         val meta = freshMeta(TypedAst.Expr.UnknownType()(expr.source), expr.source)
         (meta, TypedAst.Expr.UnknownType()(expr.source), List())
