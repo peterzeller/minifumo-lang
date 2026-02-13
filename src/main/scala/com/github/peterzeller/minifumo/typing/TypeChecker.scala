@@ -327,17 +327,37 @@ object TypeChecker:
             val (typedArg, errs2) = check(arg, dom.tpe)
             // replace
             val resultType = substitute(cod, dom, typedArg)
-            (TypedAst.Expr.App(typedCallee, typedArg, resultType)(expr.source), resultType, errs1 ++ errs2)
+            val errs3 =
+              if !isImplicit then List()
+              else List(TypeError(s"Expected an implicit function argument", callee.source))
+            (TypedAst.Expr.App(typedCallee, typedArg, resultType)(expr.source), resultType, errs1 ++ errs2 ++ errs3)
           case other =>
+            val (typedArg, _, errs2) = infer(arg)
+            val resultType = Expr.UnknownType()(SourceRange.empty)
             val errs3 =
               if other.isInstanceOf[UnknownType] then List()
               else List(TypeError(s"Expected a function but found expression of type $other", callee.source))
-            val (typedArg, _, errs2) = infer(arg)
-            val resultType = Expr.UnknownType()(SourceRange.empty)
             (TypedAst.Expr.App(typedCallee, typedArg, resultType)(expr.source), resultType, errs1 ++ errs2 ++ errs3)
         }
       case ast.Expr.CallImplicit(callee, arg) =>
-        ???
+        val (typedCallee, calleeType, errs1) = infer(callee)
+        whnf(calleeType) match {
+          case TypedAst.Expr.Pi(dom, cod, isImplicit) =>
+            val (typedArg, errs2) = check(arg, dom.tpe)
+            // replace
+            val resultType = substitute(cod, dom, typedArg)
+            val errs3 =
+              if isImplicit then List()
+              else List(TypeError(s"Expected an explicit function argument", callee.source))
+            (TypedAst.Expr.AppImplicit(typedCallee, typedArg, resultType)(expr.source), resultType, errs1 ++ errs2 ++ errs3)
+          case other =>
+            val (typedArg, _, errs2) = infer(arg)
+            val resultType = Expr.UnknownType()(SourceRange.empty)
+            val errs3 =
+              if other.isInstanceOf[UnknownType] then List()
+              else List(TypeError(s"Expected a function but found expression of type $other", callee.source))
+            (TypedAst.Expr.AppImplicit(typedCallee, typedArg, resultType)(expr.source), resultType, errs1 ++ errs2 ++ errs3)
+        }
       case ast.Expr.Lambda(param, body) =>
         val paramType = param.tpe.map(t => signatureExpr(t, ctx.globals, Map())).getOrElse(TypedAst.Expr.UnknownType()(expr.source))
         val LocalSymbol = TypedAst.LocalSymbol(param.name, paramType, ids.freshLocalId())

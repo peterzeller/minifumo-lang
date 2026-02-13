@@ -3,6 +3,7 @@ package com.github.peterzeller.minifumo.interpreter
 import com.github.peterzeller.minifumo.ast.Literal
 import com.github.peterzeller.minifumo.typing.TypedAst
 import com.github.peterzeller.minifumo.typing.TypedAst.*
+import com.github.peterzeller.minifumo.typing.TypedAst.TopLevel.FunDecl
 
 import scala.collection.mutable
 
@@ -26,10 +27,29 @@ object Interpreter:
 
   /** Evaluates a function from the program by name. */
   def evalProg(prog: TypedAst.Program, funcName: String): Value =
-    evalFunc(prog, funcName, List())
+    val f = prog.items.collectFirst { case f@FunDecl(s, _) if s.symbol.name == funcName => f }.get
+    val locals = Map[TermSymbol, Value]()
+    val globals = buildGlobalTable(prog)
+    evalExpr(f.body, locals, globals)
 
-  def evalFunc(prog: TypedAst.Program, funcName: String, args: List[Value]) =
-    ???
+  private def buildGlobalTable(program: Program): mutable.Map[Symbol, Value] =
+    val res = mutable.Map[Symbol, Value]()
+    for p <- program.items do
+      p match {
+        case TypedAst.TopLevel.DataDecl(name, typeParams, ctors) =>
+        case TypedAst.TopLevel.FunDecl(sig, body) =>
+          val params = sig.typeParams ++ sig.params
+          val fnBody: Value = buildFnBody(sig.symbol.name, params, body, Map(), res)
+          res.put(sig.symbol, fnBody)
+      }
+    res
+
+  def buildFnBody(name: String, params: List[LocalSymbol], body: Expr, locals: Map[TermSymbol, Value], globals: mutable.Map[Symbol, Value]): Value =
+    params match
+      case Nil =>
+        evalExpr(body, locals, globals)
+      case p :: ps =>
+        Value.FuncVal(name, v => buildFnBody(name + "'", ps, body, locals + (p -> v), globals))
 
   /** Describes a function body for evaluation. */
   private final case class FunctionBody(params: List[TypedAst.LocalSymbol], body: TypedAst.Expr)
@@ -40,18 +60,20 @@ object Interpreter:
       locals: Map[TypedAst.TermSymbol, Value],
       globals: mutable.Map[TypedAst.Symbol, Value]
     ): Value =
-    expr match
+    val res = expr match
       case TypedAst.Expr.Lit(value) => literalValue(value)
       case TypedAst.Expr.Var(symbol: TypedAst.TermSymbol) =>
-        locals.getOrElse(symbol, globals.getOrElse(symbol, Value.UndefinedVal))
+        locals.getOrElse(symbol, globals.getOrElse(symbol, throw RuntimeException(s"Could not find var $symbol")))
       case TypedAst.Expr.Var(symbol) =>
-        globals.getOrElse(symbol, Value.UndefinedVal)
+        globals.getOrElse(symbol, throw RuntimeException(s"Could not find global var ${symbol.name} in [${globals.keySet.map(_.name).mkString(", ")}]"))
       case TypedAst.Expr.App(callee, arg, _) =>
         val fn = evalExpr(callee, locals, globals)
         val argVal = evalExpr(arg, locals, globals)
         applyValue(fn, argVal)
-      case TypedAst.Expr.AppImplicit(callee, _, _) =>
-        evalExpr(callee, locals, globals)
+      case TypedAst.Expr.AppImplicit(f, arg, _) =>
+        val fn = evalExpr(f, locals, globals)
+        val argVal = evalExpr(arg, locals, globals)
+        applyValue(fn, argVal)
       case TypedAst.Expr.Lambda(param, body, _) =>
         Value.FuncVal(param.name, value => evalExpr(body, locals + (param -> value), globals))
       case TypedAst.Expr.LetIn(symbol, _, _, value, body) =>
@@ -64,6 +86,23 @@ object Interpreter:
       case TypedAst.Expr.Sort() => Value.UndefinedVal
       case TypedAst.Expr.Pi(_, _, _) => Value.UndefinedVal
       case TypedAst.Expr.UnknownType() => Value.UndefinedVal
+    println(s"Evaluating ${prettyPrint(expr)}\n-> $res")
+    res
+
+  private def prettyPrint(expr: Expr): String =
+    expr match {
+      case TypedAst.Expr.Lit(value) => value.toString
+      case TypedAst.Expr.Var(symbol) => symbol.name
+      case TypedAst.Expr.AppImplicit(callee, arg, tpe) => prettyPrint(callee) + "[" + prettyPrint(arg) + "]"
+      case TypedAst.Expr.App(callee, arg, tpe) => prettyPrint(callee) + "(" + prettyPrint(arg) + ")"
+      case TypedAst.Expr.Pi(dom, cod, isImplicit) => "PI " + dom.name + ". " +  prettyPrint(dom.tpe) + " -> " + prettyPrint(cod)
+      case TypedAst.Expr.Sort() => "Sort"
+      case TypedAst.Expr.Lambda(param, body, tpe) => "fun " + param.name + ". " +  prettyPrint(param.tpe) + " -> " + prettyPrint(body)
+      case TypedAst.Expr.LetIn(symbol, isConstant, declaredType, value, body) => "let " + symbol.name + ": " +  prettyPrint(symbol.tpe) + " = " + prettyPrint(value) + " in " + prettyPrint(body)
+      case TypedAst.Expr.Meta(index, tpe) => s"META_$index"
+      case TypedAst.Expr.UnknownType() => "???"
+      case TypedAst.Expr.Match(scrutinee, cases) => "match ..."
+    }
 
   /** Applies a function value to an argument value. */
   private def applyValue(fn: Value, arg: Value): Value =
