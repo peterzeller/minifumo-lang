@@ -50,16 +50,17 @@ object Main:
 
   // Runs a program file and returns either error messages or the evaluated value.
   def runFile(path: Path): Either[List[String], Interpreter.Value] =
-    val (program, syntaxErrors) = parseProgram(path)
+    val globalNames = new ProjectSymbolCache(findProjectRoot(path))
+    val (_, syntaxErrors) = globalNames.getAst(globalNames.fromPath(path))
     if syntaxErrors.nonEmpty then
       Left(renderSyntaxErrors(path, syntaxErrors))
     else
-      val globalNames = new ProjectSymbolCache(findProjectRoot(path))
-      val (typedProgram, typeErrors) = TypeChecker.checkProgram(path, program, globalNames, true)
+      // val (typedProgram, typeErrors) = TypeChecker.checkProgram(path, program, globalNames, true)
+      val (typedProgram, typeErrors) = globalNames.typedAst(globalNames.fromPath(path))
       if typeErrors.nonEmpty then
         Left(renderTypeErrors(path, typeErrors))
       else
-        Right(Interpreter.evalProg(typedProgram, "main"))
+        Right(Interpreter.evalProg(typedProgram, globalNames, "main"))
 
   // Checks a directory of examples, reusing cached parse/import info across files.
   def checkDirectory(path: Path): List[String] =

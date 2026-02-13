@@ -1,7 +1,7 @@
 package com.github.peterzeller.minifumo.interpreter
 
 import com.github.peterzeller.minifumo.ast.Literal
-import com.github.peterzeller.minifumo.typing.TypedAst
+import com.github.peterzeller.minifumo.typing.{ProjectSymbolCache, TypedAst}
 import com.github.peterzeller.minifumo.typing.TypedAst.*
 import com.github.peterzeller.minifumo.typing.TypedAst.TopLevel.FunDecl
 
@@ -15,6 +15,7 @@ object Interpreter:
         name: String,
         fn: Value => Value
       )
+    case LazyVal(name: String, fn: () => Value)
     case UndefinedVal
 
     override def toString: String =
@@ -26,22 +27,31 @@ object Interpreter:
         case Value.FuncVal(name, _) => s"<function $name>"
 
   /** Evaluates a function from the program by name. */
-  def evalProg(prog: TypedAst.Program, funcName: String): Value =
+  def evalProg(prog: TypedAst.Program, symbols: ProjectSymbolCache, funcName: String): Value =
     val f = prog.items.collectFirst { case f@FunDecl(s, _) if s.symbol.name == funcName => f }.get
     val locals = Map[TermSymbol, Value]()
-    val globals = buildGlobalTable(prog)
+    val globals = buildGlobalTable(prog, symbols)
     evalExpr(f.body, locals, globals)
 
-  private def buildGlobalTable(program: Program): mutable.Map[Symbol, Value] =
+  private def buildGlobalTable(program: Program, symbols: ProjectSymbolCache): mutable.Map[Symbol, Value] =
     val res = mutable.Map[Symbol, Value]()
-    for p <- program.items do
-      p match {
-        case TypedAst.TopLevel.DataDecl(name, typeParams, ctors) =>
-        case TypedAst.TopLevel.FunDecl(sig, body) =>
-          val params = sig.typeParams ++ sig.params
-          val fnBody: Value = buildFnBody(sig.symbol.name, params, body, Map(), res)
-          res.put(sig.symbol, fnBody)
-      }
+
+    println(s"all paths = ${symbols.allPaths}")
+    for path <- symbols.allPaths do
+      val (t, _) = symbols.typedAst(path)
+      println(s"Adding names from $path")
+      for p <- t.items do
+        p match
+          case TypedAst.TopLevel.DataDecl(name, typeParams, ctors) =>
+          case TypedAst.TopLevel.FunDecl(sig, body) =>
+            val params = sig.typeParams ++ sig.params
+            val fnBody: Value =
+              if params.isEmpty then
+                Value.LazyVal(sig.symbol.name, () => evalExpr(body, Map(), res))
+              else
+                buildFnBody(sig.symbol.name, params, body, Map(), res)
+
+            res.put(sig.symbol, fnBody)
     res
 
   def buildFnBody(name: String, params: List[LocalSymbol], body: Expr, locals: Map[TermSymbol, Value], globals: mutable.Map[Symbol, Value]): Value =

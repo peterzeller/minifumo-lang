@@ -3,7 +3,7 @@ package com.github.peterzeller.minifumo.typing
 import com.github.peterzeller.minifumo.ast
 import com.github.peterzeller.minifumo.ast.{AstTransform, SourceRange}
 import com.github.peterzeller.minifumo.parser.{SyntaxError, parseFile}
-import com.github.peterzeller.minifumo.typing.TypeChecker.TypeError
+import com.github.peterzeller.minifumo.typing.TypeChecker.{TypeError, checkProgram}
 import com.github.peterzeller.minifumo.typing.TypedAst.Expr.UnknownType
 import com.github.peterzeller.minifumo.typing.TypedAst.{ErrorSymbol, Expr, GlobalNameSymbol, GlobalSymbolSymbol, LocalSymbol}
 
@@ -233,13 +233,17 @@ class ProjectSymbolCache(projectRoot: Path) extends NameCache with SymbolCache:
   private var astCache: Map[String, (ast.ProgramFile, List[SyntaxError])] = Map()
   private var namesCache: Map[String, Map[String, GlobalName]] = Map()
   private var symbolCache: Map[String, Map[String, GlobalSymbol]] = Map()
+  private var typedAstCache: Map[String, (TypedAst.Program, List[TypeError])] = Map()
 
   def toPath(importPath: String): Path =
     projectRoot.resolve(importPath)
 
-  def makeRelative(path: Path): String = {
-    projectRoot.relativize(path).toString
-  }
+  def fromPath(p: Path): String =
+    projectRoot.relativize(p).normalize().toString
+
+  def makeRelative(path: Path): String =
+    fromPath(path)
+
 
   def getAst(path: String): (ast.ProgramFile, List[SyntaxError]) =
     astCache.get(path) match
@@ -270,4 +274,15 @@ class ProjectSymbolCache(projectRoot: Path) extends NameCache with SymbolCache:
       case None =>
         val (r,_) = GlobalSymbols.buildGlobalSymbols(toPath(path), getAst(path)._1, this, true)
         symbolCache += path -> r
+        r
+
+  def allPaths: Set[String] = astCache.keySet + "standard.minifumo"
+
+  def typedAst(path: String): (TypedAst.Program, List[TypeError]) =
+    typedAstCache.get(path) match
+      case Some(m) => m
+      case None =>
+        val (ast, _) = getAst(path)
+        val r = checkProgram(toPath(path), ast, this, path != "standard.minifumo")
+        typedAstCache += path -> r
         r

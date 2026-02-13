@@ -227,7 +227,6 @@ object TypeChecker:
   /** Checks if two types are definitionally equal, solving metas as needed. */
   def isDefEq(t1: TypedAst.Expr, t2: TypedAst.Expr)
              (implicit ctx: Context, metas: MetaContext): Boolean =
-    println(s"checking equality of $t1 and $t2")
     val norm1 = whnf(t1)
     val norm2 = whnf(t2)
     (norm1, norm2) match
@@ -262,7 +261,6 @@ object TypeChecker:
         case (GlobalNameSymbol(an, af), GlobalSymbolSymbol(bn, bf, _)) =>
           an == bn && af == bf
         case _ =>
-          println(s"Symbols $a and $b do not match")
           false
 
   /** Reduces a term to weak head normal form. */
@@ -306,12 +304,10 @@ object TypeChecker:
   /** Infers the type of an expression, producing a typed expression alongside its type. */
   private def infer(expr: ast.Expr)
                    (implicit ctx: TypeContext, metas: MetaContext, ids: IdSupply): (TypedAst.Expr, TypedAst.Expr, List[TypeError]) =
-    println(s"inferring type of $expr")
     expr match
       case ast.Expr.Var(name) =>
         ctx.lookupSymbol(name) match
           case Some(symbol) =>
-            println(s"Looking up symbol ${name} returns symbol ${symbol} ")
             (TypedAst.Expr.Var(symbol)(expr.source), symbol.tpe, List())
           case None =>
             val errs = List(TypeError(s"Unknown symbol ${name}", expr.source))
@@ -407,7 +403,6 @@ object TypeChecker:
   /** Checks an expression against an expected type. */
   private def check(expr: ast.Expr, expectedType: TypedAst.Expr)
                    (implicit ctx: TypeContext, metas: MetaContext, ids: IdSupply): (TypedAst.Expr, List[TypeError]) =
-    println(s"Checking type of $expr against $expectedType")
     val expectedNorm = whnf(expectedType)
     (expr, expectedNorm) match
       case (ast.Expr.Lambda(param, body), TypedAst.Expr.Pi(dom, cod, false)) =>
@@ -605,7 +600,7 @@ object TypeChecker:
             (TypedAst.Pattern.Ctor(symbol, Nil)(pattern.source), Map(), List(TypeError(s"Unknown constructor ${name}", pattern.source)))
 
   private def globalSymbolToCtorSymbol(s: GlobalSymbol): (CtorSymbol, List[TypeError]) =
-    ???
+    (CtorSymbol(s.name, Expr.UnknownType()(SourceRange.empty)), List()) // TODO unknown type is wrong
 
   // Collects explicit field types and result type from a constructor signature.
   private def decomposeCtorType(ctorType: TypedAst.Expr): (List[TypedAst.Expr], TypedAst.Expr) =
