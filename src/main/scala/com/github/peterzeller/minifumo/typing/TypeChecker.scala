@@ -313,7 +313,8 @@ object TypeChecker:
             (TypedAst.Expr.Var(symbol)(expr.source), symbol.tpe, List())
           case None =>
             val errs = List(TypeError(s"Unknown symbol ${name}", expr.source))
-            (TypedAst.Expr.Var(???)(expr.source), ???, errs)
+            val unknownType = Expr.UnknownType()(SourceRange.empty)
+            (TypedAst.Expr.Var(ErrorSymbol(name, unknownType))(expr.source), unknownType, errs)
       case ast.Expr.Lit(value) =>
         val typed = TypedAst.Expr.Lit(value)(expr.source)
         val tpe = literalType(value, ctx)
@@ -385,18 +386,23 @@ object TypeChecker:
         (piExpr, TypedAst.Expr.Sort()(expr.source), List())
       case ast.Expr.Match(scrutinee, cases) =>
         val (scrutineeExpr, scrutineeType, errs) = infer(scrutinee)
-        val resultMeta = freshMeta(TypedAst.Expr.UnknownType()(expr.source), expr.source)
         val typedCases = cases.map { case ast.MatchCase(pattern, body) =>
           val (typedPattern, patternCtx, patternErrors) = checkPattern(pattern, scrutineeType, ctx, ids)
           val caseCtx = ctx.copy(locals = ctx.locals ++ patternCtx)
-          val (typedBody, bodyErrs) = check(body, resultMeta)(using caseCtx, metas, ids)
-          (typedPattern, typedBody, patternErrors ++ bodyErrs)
+          val (typedBody, bodyType, bodyErrs) = infer(body)(using caseCtx, metas, ids)
+          (typedPattern, typedBody, bodyType, patternErrors ++ bodyErrs)
         }
-        val errors = typedCases.flatMap(_._3)
-        val typedCasesExpr = typedCases.map { case (pat, bodyExpr, _) =>
+        val errors = typedCases.flatMap(_._4)
+        val typedCasesExpr = typedCases.map { case (pat, bodyExpr, _, _) =>
           TypedAst.MatchCase(pat, bodyExpr)(bodyExpr.source)
         }
-        (TypedAst.Expr.Match(scrutineeExpr, typedCasesExpr)(expr.source), resultMeta, errs++errors)
+        val firstType = typedCases.head._3
+        val errs3 = ListBuffer[TypeError]()
+        for (_,b,t,_) <- typedCases.tail do
+          if !isDefEq(firstType, t) then
+            errs3.addOne(TypeError(s"Case should have type ${prettyExpr(firstType)}, but got ${prettyExpr(t)}", b.source))
+
+        (TypedAst.Expr.Match(scrutineeExpr, typedCasesExpr)(expr.source), firstType, errs++errors)
       case ast.Expr.Hole() =>
         val meta = freshMeta(TypedAst.Expr.UnknownType()(expr.source), expr.source)
         (meta, TypedAst.Expr.UnknownType()(expr.source), List())
@@ -412,7 +418,19 @@ object TypeChecker:
         val bodyCtx = ctx.withLocal(p)
         val (typedBody, errs) = check(body, cod)(using bodyCtx, metas, ids)
         (TypedAst.Expr.Lambda(p, typedBody, expectedNorm)(expr.source), errs)
-
+      case (ast.Expr.Match(scrutinee, cases), _) =>
+        val (scrutineeExpr, scrutineeType, errs) = infer(scrutinee)
+        val typedCases = cases.map { case ast.MatchCase(pattern, body) =>
+          val (typedPattern, patternCtx, patternErrors) = checkPattern(pattern, scrutineeType, ctx, ids)
+          val caseCtx = ctx.copy(locals = ctx.locals ++ patternCtx)
+          val (typedBody, bodyErrs) = check(body, expectedType)(using caseCtx, metas, ids)
+          (typedPattern, typedBody, patternErrors ++ bodyErrs)
+        }
+        val errors = typedCases.flatMap(_._3)
+        val typedCasesExpr = typedCases.map { case (pat, bodyExpr, _) =>
+          TypedAst.MatchCase(pat, bodyExpr)(bodyExpr.source)
+        }
+        (TypedAst.Expr.Match(scrutineeExpr, typedCasesExpr)(expr.source), errs++errors)
       case _ =>
         // TODO for some expressions, like match-cases, it might make sense to transfer expected type into the cases to get better error messages and better inference
         // TODO consider adding expectedType as optional parameter to infer
@@ -421,7 +439,7 @@ object TypeChecker:
           if isDefEq(inferredType, expectedNorm) then
             errs
           else
-            TypeError(s"Expected ${prettyExpr(expectedNorm)} but got ${prettyExpr(inferredType)}", expr.source) :: errs
+            TypeError(s"Expected ${prettyExpr(expectedNorm)} but got ${prettyExpr(inferredType)}\nIn expression ${prettyExpr(inferredExpr)}", expr.source) :: errs
         (inferredExpr, errs2)
 
 //  /** Inserts implicit arguments as metas before explicit application. */
@@ -543,7 +561,7 @@ object TypeChecker:
       case TypedAst.Expr.Lambda(param, _, _) => s"(\\${param.name} => ...)"
       case TypedAst.Expr.LetIn(symbol, _, _, _, _) => s"(let ${symbol.name} = ...)"
       case TypedAst.Expr.Match(_, _) => "match"
-      case TypedAst.Expr.Meta(_, tpe) => s"? : ${prettyExpr(tpe)}"
+      case TypedAst.Expr.Meta(index, tpe) => s"Meta_$index : ${prettyExpr(tpe)}"
 
   /** Determines the type of a literal value. */
   private def literalType(value: ast.Literal, ctx: TypeContext): TypedAst.Expr =

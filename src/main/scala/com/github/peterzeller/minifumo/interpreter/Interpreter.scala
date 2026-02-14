@@ -43,6 +43,7 @@ object Interpreter:
       for p <- t.items do
         p match
           case TypedAst.TopLevel.DataDecl(name, typeParams, ctors) =>
+            // TODO add names for data decl
           case TypedAst.TopLevel.FunDecl(sig, body) =>
             val params = sig.typeParams ++ sig.params
             val fnBody: Value =
@@ -75,7 +76,15 @@ object Interpreter:
       case TypedAst.Expr.Var(symbol: TypedAst.TermSymbol) =>
         locals.getOrElse(symbol, globals.getOrElse(symbol, throw RuntimeException(s"Could not find var $symbol")))
       case TypedAst.Expr.Var(symbol) =>
-        globals.getOrElse(symbol, throw RuntimeException(s"Could not find global var ${symbol.name} in [${globals.keySet.map(_.name).mkString(", ")}]"))
+        globals.getOrElse(symbol, {
+          // TODO should not be necessary to search by name, we need to unify symbols
+          val byName = globals.find(s => s._1.name == symbol.name)
+          byName match {
+            case Some(value) => value._2
+            case None =>
+              throw RuntimeException(s"Could not find global var ${symbol.name} in [${globals.keySet.map(_.name).toList.sorted.mkString(", ")}]")
+          }
+        })
       case TypedAst.Expr.App(callee, arg, _) =>
         val fn = evalExpr(callee, locals, globals)
         val argVal = evalExpr(arg, locals, globals)
