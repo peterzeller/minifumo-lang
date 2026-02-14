@@ -32,7 +32,7 @@ object TypeChecker:
       val globals = GlobalEnv(names = symbolMap)
       val typedItems = program.items.map {
         case decl: ast.TopLevel.DataDecl =>
-          buildDataDecl(decl, globals, idSupply)
+          buildDataDecl(path, decl, globals, idSupply)
         case decl: ast.TopLevel.FunDecl =>
           val context1 = TypeContext(globals, Map())
           val (typedSig, context2, errs) = checkFunSig(decl.sig)(using context1, metaStore, idSupply)
@@ -150,18 +150,19 @@ object TypeChecker:
 
   /** Builds a typed data declaration. */
   private def buildDataDecl(
+    file: Path,
       decl: ast.TopLevel.DataDecl,
       globals: GlobalEnv,
       idSupply: IdSupply
     ): TypedAst.TopLevel =
-    val typeParams = decl.implicitParams.map(_.name)
     val localTypeParams = decl.implicitParams.map { param =>
       val paramType = signatureExpr(param.tpe, globals, Map())
       param.name -> TypedAst.LocalSymbol(param.name, paramType, idSupply.freshLocalId())
-    }.toMap
+    }
+    val typeParams = localTypeParams.map(_._2)
     val ctorDecls = decl.ctors.map { ctor =>
       val fields = ctor.fields.map { field =>
-        val fieldType = signatureExpr(field.tpe, globals, localTypeParams)
+        val fieldType = signatureExpr(field.tpe, globals, localTypeParams.toMap)
         TypedAst.CtorField(field.name, fieldType)(field.source)
       }
       val symbol: CtorSymbol =
@@ -174,8 +175,13 @@ object TypeChecker:
         }
       TypedAst.CtorDecl(symbol, fields)(ctor.source)
     }
-    TypedAst.TopLevel.DataDecl(decl.name, typeParams, ctorDecls)(decl.source)
+    TypedAst.TopLevel.DataDecl(DatatypeSymbol(decl.name, buildDatatypeType(typeParams), file), typeParams, ctorDecls)(decl.source)
 
+  private def buildDatatypeType(typeParams: List[LocalSymbol]): TypedAst.Expr =
+    typeParams match
+      case Nil => TypedAst.Expr.Sort()(SourceRange.empty)
+      case x::xs => TypedAst.Expr.Pi(x, buildDatatypeType(xs), true)(SourceRange.empty)
+  
   /** Type-checks a function body against its return type. */
   private def checkFunctionBody(
       body: ast.Expr,

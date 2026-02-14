@@ -16,6 +16,7 @@ object Interpreter:
         fn: Value => Value
       )
     case LazyVal(name: String, fn: () => Value)
+    case SortValue()
     case UndefinedVal
 
     override def toString: String =
@@ -25,6 +26,8 @@ object Interpreter:
         case Value.UnitVal => "unit"
         case Value.UndefinedVal => "undefined"
         case Value.FuncVal(name, _) => s"<function $name>"
+        case Value.LazyVal(name, _) => s"<lazy $name>"
+        case Value.SortValue() => "Type"
 
   /** Evaluates a function from the program by name. */
   def evalProg(prog: TypedAst.Program, symbols: ProjectSymbolCache, funcName: String): Value =
@@ -42,8 +45,10 @@ object Interpreter:
       println(s"Adding names from $path")
       for p <- t.items do
         p match
-          case TypedAst.TopLevel.DataDecl(name, typeParams, ctors) =>
+          case TypedAst.TopLevel.DataDecl(sym, typeParams, ctors) =>
             // TODO add names for data decl
+            res.put(sym, buildDatatypeValue(sym, typeParams))
+
           case TypedAst.TopLevel.FunDecl(sig, body) =>
             val params = sig.typeParams ++ sig.params
             val fnBody: Value =
@@ -54,6 +59,13 @@ object Interpreter:
 
             res.put(sig.symbol, fnBody)
     res
+
+  def buildDatatypeValue(sym: DatatypeSymbol, typeParams: List[LocalSymbol]): Value =
+    typeParams match
+      case x :: xs => Value.FuncVal(s"${sym.name}_${typeParams.length}", _ => buildDatatypeValue(sym, xs))
+      case Nil => Value.SortValue()
+
+
 
   def buildFnBody(name: String, params: List[LocalSymbol], body: Expr, locals: Map[TermSymbol, Value], globals: mutable.Map[Symbol, Value]): Value =
     params match

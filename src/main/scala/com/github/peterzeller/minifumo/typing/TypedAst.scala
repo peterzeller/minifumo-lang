@@ -42,7 +42,7 @@ object TypedAst:
   case class Program(items: List[TopLevel])(val source: SourceRange)
 
   enum TopLevel:
-    case DataDecl(name: String, typeParams: List[String], ctors: List[CtorDecl])(val source: SourceRange)
+    case DataDecl(symbol: DatatypeSymbol, typeParams: List[LocalSymbol], ctors: List[CtorDecl])(val source: SourceRange)
     case FunDecl(
         sig: FunSig,
         body: Expr
