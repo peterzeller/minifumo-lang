@@ -18,7 +18,7 @@ class MySuite extends munit.FunSuite {
   // Builds an Int value for testing.
   private def intValue(value: Int): Interpreter.Value =
     val sign = if value >= 0 then Interpreter.Value.AdtVal("True", Nil) else Interpreter.Value.AdtVal("False", Nil)
-    Interpreter.Value.AdtVal("Int", List(sign, natValue(math.abs(value))))
+    Interpreter.Value.AdtVal("MakeInt", List(sign, natValue(math.abs(value))))
 
   private val dummyPath: Path = Path.of("dummy.minifumo")
   private val dummyCache = new ProjectSymbolCache(Path.of("."))
@@ -57,7 +57,7 @@ class MySuite extends munit.FunSuite {
       |data Maybe = None | Some(value: Int)
       |
       |fun main(): Int
-      |    match Some(42)
+      |    match Some[Int](42)
       |        case None
       |            0
       |        case Some(value)

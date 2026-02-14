@@ -58,29 +58,34 @@ object Interpreter:
 
     for path <- symbols.allPaths do
       val (t, _) = symbols.typedAst(path)
-      for p <- t.items do
-        p match
-          case TypedAst.TopLevel.DataDecl(sym, typeParams, ctors) =>
-            // TODO add names for data decl
-            res.put(sym, buildDatatypeValue(sym, typeParams))
-            for ctor <- ctors do {
-              res.put(ctor.symbol, buildConstructorValue(ctor.symbol.name, typeParams, ctor.fields, List()))
-            }
-
-          case TypedAst.TopLevel.FunDecl(sig, body) =>
-            BuiltInFunctions.overrides.get(sig.symbol.name) match
-              case Some(f) =>
-                res.put(sig.symbol, f)
-              case None =>
-                val params = sig.typeParams ++ sig.params
-                val fnBody: Value =
-                  if params.isEmpty then
-                    Value.LazyVal(sig.symbol.name, () => evalExpr(body, Map(), res))
-                  else
-                    buildFnBody(sig.symbol.name, params, body, Map(), res)
-
-                res.put(sig.symbol, fnBody)
+      buildGlobalTableForProg(res, t)
+    buildGlobalTableForProg(res, program)
     res
+
+  private def buildGlobalTableForProg(res: mutable.Map[Symbol, Value], t: Program): Unit = {
+    for p <- t.items do
+      p match
+        case TypedAst.TopLevel.DataDecl(sym, typeParams, ctors) =>
+          // TODO add names for data decl
+          res.put(sym, buildDatatypeValue(sym, typeParams))
+          for ctor <- ctors do {
+            res.put(ctor.symbol, buildConstructorValue(ctor.symbol.name, typeParams, ctor.fields, List()))
+          }
+
+        case TypedAst.TopLevel.FunDecl(sig, body) =>
+          BuiltInFunctions.overrides.get(sig.symbol.name) match
+            case Some(f) =>
+              res.put(sig.symbol, f)
+            case None =>
+              val params = sig.typeParams ++ sig.params
+              val fnBody: Value =
+                if params.isEmpty then
+                  Value.LazyVal(sig.symbol.name, () => evalExpr(body, Map(), res))
+                else
+                  buildFnBody(sig.symbol.name, params, body, Map(), res)
+
+              res.put(sig.symbol, fnBody)
+  }
 
   private def buildDatatypeValue(sym: DatatypeSymbol, typeParams: List[LocalSymbol]): Value =
     typeParams match
