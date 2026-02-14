@@ -10,6 +10,7 @@ import com.github.peterzeller.minifumo.typing.TypedAst.{ErrorSymbol, Expr, Globa
 import java.nio.file.Path
 import scala.collection.mutable.ListBuffer
 import com.github.peterzeller.minifumo.builtins.Standard
+import com.github.peterzeller.minifumo.common.MinifumoError
 import com.github.peterzeller.minifumo.parser.parseInput
 import com.github.peterzeller.minifumo.typing.SymbolSignature.Def
 
@@ -309,3 +310,8 @@ class ProjectSymbolCache(projectRoot: Path) extends NameCache with SymbolCache:
         val r = checkProgram(toPath(path), ast, this, path != "standard.minifumo")
         typedAstCache += path -> r
         r
+
+  def allErrors: List[MinifumoError] =
+    val syntaxErrors = astCache.flatMap(_._2._2)
+    val typeErrors = astCache.keysIterator.flatMap(p => typedAst(p)._2)
+    (syntaxErrors ++ typeErrors).toList

@@ -74,24 +74,22 @@ object Interpreter:
             res.put(sig.symbol, fnBody)
     res
 
-  def buildDatatypeValue(sym: DatatypeSymbol, typeParams: List[LocalSymbol]): Value =
+  private def buildDatatypeValue(sym: DatatypeSymbol, typeParams: List[LocalSymbol]): Value =
     typeParams match
       case x :: xs => Value.FuncVal(s"${sym.name}_${typeParams.length}", _ => buildDatatypeValue(sym, xs))
       case Nil => Value.SortValue()
 
-  def buildConstructorValue(name: String, typeParams: List[LocalSymbol], fields: List[CtorField], values: List[Value]): Value = {
-    typeParams match {
+  private def buildConstructorValue(name: String, typeParams: List[LocalSymbol], fields: List[CtorField], values: List[Value]): Value = 
+    typeParams match 
       case x::xs =>
         Value.FuncVal(s"${name}_${fields.length+typeParams.length}", v => buildConstructorValue(name, xs, fields, values))
       case Nil =>
-        fields match {
+        fields match 
           case x::xs =>
             Value.FuncVal(s"${name}_${fields.length}", v => buildConstructorValue(name, typeParams, xs, values :+ v))
           case Nil =>
             Value.AdtVal(name, values)
-        }
-    }
-  }
+        
 
   def buildFnBody(name: String, params: List[LocalSymbol], body: Expr, locals: Map[TermSymbol, Value], globals: mutable.Map[Symbol, Value]): Value =
     params match

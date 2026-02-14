@@ -136,21 +136,7 @@ class ExamplesSuite extends FunSuite:
       errors.toList
     }.toList
 
-  // Formats a list of errors for reporting.
-  def formatErrors(path: Path, errors: List[ActualError]): String =
-    val lines = Files.readAllLines(path).asScala.toList
-    errors.map { error =>
-      val lineIndex = error.line - 1
-      if lineIndex >= 0 && lineIndex < lines.length then
-        val sourceLine = lines(lineIndex)
-        val startColumn = math.max(1, error.source.start.column)
-        val endColumn = math.max(startColumn, error.source.end.column)
-        val underlineWidth = math.max(1, endColumn - startColumn + 1)
-        val underline = (" " * (startColumn - 1)) + ("^" * underlineWidth)
-        s"line ${error.line}: ${error.message}\n    ${sourceLine}\n    ${underline}"
-      else
-        s"line ${error.line}: ${error.message}"
-    }.mkString("\n")
+  
 
   // Extracts expected output comments from the example source.
   def extractExpectedOutput(content: String): Option[String] =

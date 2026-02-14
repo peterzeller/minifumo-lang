@@ -1,6 +1,7 @@
 package com.github.peterzeller.minifumo
 
 import com.github.peterzeller.minifumo.ast.{AstTransform, ProgramFile, SourcePos, SourceRange}
+import com.github.peterzeller.minifumo.common.MinifumoError
 import com.github.peterzeller.minifumo.interpreter.Interpreter
 import com.github.peterzeller.minifumo.parser.{SyntaxError, parseInput}
 import com.github.peterzeller.minifumo.typing.{ProjectSymbolCache, TypeChecker, findProjectRoot}
@@ -56,9 +57,12 @@ object Main:
       Left(renderSyntaxErrors(path, syntaxErrors))
     else
       // val (typedProgram, typeErrors) = TypeChecker.checkProgram(path, program, globalNames, true)
-      val (typedProgram, typeErrors) = globalNames.typedAst(globalNames.fromPath(path))
-      if typeErrors.nonEmpty then
-        Left(renderTypeErrors(path, typeErrors))
+      val (typedProgram, _) = globalNames.typedAst(globalNames.fromPath(path))
+      val allErrors = globalNames.allErrors
+
+      if allErrors.nonEmpty then
+        throw new RuntimeException(s"errros: $allErrors")
+        // Left(renderTypeErrors(path, typeErrors))
       else
         Right(Interpreter.evalProg(typedProgram, globalNames, "main"))
 
@@ -98,23 +102,6 @@ object Main:
   // Represents an empty program when parsing fails.
   private val emptyProgramFile = ProgramFile(List(), List())(SourceRange(SourcePos(0, 0), SourcePos(0, 0)))
 
-  // Parses a program file into an AST and syntax errors.
-  private def parseProgram(path: Path): (ProgramFile, List[SyntaxError]) =
-    if !Files.exists(path) then
-      (emptyProgramFile, List(SyntaxError(SourcePos(0, 0), s"File not found: ${path.toString}")))
-    else
-      val content = Try {
-        Using.resource(scala.io.Source.fromFile(path.toFile))(_.mkString)
-      }
-      content match
-        case scala.util.Failure(exception) =>
-          (emptyProgramFile, List(SyntaxError(SourcePos(0, 0), s"Failed reading file ${path.toString}: ${exception.getMessage}")) )
-        case scala.util.Success(input) =>
-          val (cst, syntaxErrors) = parseInput(input)
-          val ast = AstTransform.program(cst)
-          (ast, syntaxErrors)
-
-
   // Loads and caches syntax parsing results for a file path.
   private def loadProgram(path: Path, info: ProjectSymbolCache): (ProgramFile, List[SyntaxError]) =
     info.getAst(info.makeRelative(path))
@@ -134,8 +121,19 @@ object Main:
       s"${path.toString}:${err.pos.line}:${err.pos.column}: ${err.message}"
     }
 
-  // Formats type errors with the given file path.
-  private def renderTypeErrors(path: Path, errors: List[TypeError]): List[String] =
-    errors.map { err =>
-      s"${path.toString}:${renderSourceRange(err.source)}: ${err.message}"
+
+  // Formats a list of errors for reporting.
+  def renderTypeErrors(path: Path, errors: List[MinifumoError]): List[String] =
+    val lines = Files.readAllLines(path).asScala.toList
+    errors.map { error =>
+      val lineIndex = error.source.start.line - 1
+      if lineIndex >= 0 && lineIndex < lines.length then
+        val sourceLine = lines(lineIndex)
+        val startColumn = math.max(1, error.source.start.column)
+        val endColumn = math.max(startColumn, error.source.end.column)
+        val underlineWidth = math.max(1, endColumn - startColumn + 1)
+        val underline = (" " * (startColumn - 1)) + ("^" * underlineWidth)
+        s"line ${error.source.start.line}: ${error.message}\n    ${sourceLine}\n    ${underline}"
+      else
+        s"line ${error.source.start.line}: ${error.message}"
     }

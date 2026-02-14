@@ -1,6 +1,7 @@
 package com.github.peterzeller.minifumo.typing
 
-import com.github.peterzeller.minifumo.ast
+import com.github.peterzeller.minifumo
+import com.github.peterzeller.minifumo.{ast, typing}
 import com.github.peterzeller.minifumo.ast.SourceRange
 import com.github.peterzeller.minifumo.builtins.Standard
 import com.github.peterzeller.minifumo.common.MinifumoError
@@ -12,8 +13,11 @@ import scala.collection.mutable.ListBuffer
 import java.nio.file.Path
 
 object TypeChecker:
+  private val throwOnError = true
+
   final case class TypeError(message: String, source: ast.SourceRange) extends MinifumoError:
-    throw new RuntimeException(s"Constructed type error $message at line ${source.start.line}")
+    if throwOnError then
+      throw new RuntimeException(s"Constructed type error $message at line ${source.start.line}")
 
 
   /** Type-checks a program */
@@ -168,7 +172,7 @@ object TypeChecker:
       val symbol: CtorSymbol =
         globals.names.get(ctor.name) match {
           case Some(symbol) =>
-            val (s, _) = globalSymbolToCtorSymbol(symbol)
+            val (s, _) = globalSymbolToCtorSymbol(symbol, ctor.source)
             s
           case None =>
             TypedAst.CtorSymbol(ctor.name, TypedAst.Expr.UnknownType()(ctor.source))
@@ -181,7 +185,7 @@ object TypeChecker:
     typeParams match
       case Nil => TypedAst.Expr.Sort()(SourceRange.empty)
       case x::xs => TypedAst.Expr.Pi(x, buildDatatypeType(xs), true)(SourceRange.empty)
-  
+
   /** Type-checks a function body against its return type. */
   private def checkFunctionBody(
       body: ast.Expr,
@@ -600,7 +604,7 @@ object TypeChecker:
         ctx.globals.names.get(name) match
           case Some(symbol) =>
             // if the symbol exists and is a constructor, match against the constructor
-            val (ctorSymbol, ctorErrors) = globalSymbolToCtorSymbol(symbol)
+            val (ctorSymbol, ctorErrors) = globalSymbolToCtorSymbol(symbol, pattern.source)
             val typed = TypedAst.Pattern.Ctor(ctorSymbol, Nil)(pattern.source)
             (typed, Map(), ctorErrors)
           case None =>
@@ -611,7 +615,7 @@ object TypeChecker:
       case ast.Pattern.Ctor(name, args) =>
         ctx.globals.names.get(name) match
           case Some(symbol) =>
-            val (ctorSymbol, ctorErrors) = globalSymbolToCtorSymbol(symbol)
+            val (ctorSymbol, ctorErrors) = globalSymbolToCtorSymbol(symbol, pattern.source)
             val fieldTypes = extractCtorFieldTypes(ctorSymbol.tpe, expectedType)
             val paddedFieldTypes = fieldTypes.padTo(args.length, TypedAst.Expr.UnknownType()(pattern.source))
             val argResults = args.zip(paddedFieldTypes).map { (arg, fieldType) =>
@@ -625,8 +629,13 @@ object TypeChecker:
             val symbol = TypedAst.CtorSymbol(name, TypedAst.Expr.UnknownType()(pattern.source))
             (TypedAst.Pattern.Ctor(symbol, Nil)(pattern.source), Map(), List(TypeError(s"Unknown constructor ${name}", pattern.source)))
 
-  private def globalSymbolToCtorSymbol(s: GlobalSymbol): (CtorSymbol, List[TypeError]) =
-    (CtorSymbol(s.name, Expr.UnknownType()(SourceRange.empty)), List()) // TODO unknown type is wrong
+  private def globalSymbolToCtorSymbol(s: GlobalSymbol, source: SourceRange): (CtorSymbol, List[TypeError]) =
+    s.symbolSignature match
+      case minifumo.typing.SymbolSignature.Def(tpe) =>
+        (CtorSymbol(s.name, tpe), List())
+      case minifumo.typing.SymbolSignature.Datatype(implicitParams) =>
+        val e = TypeError(s"expected a constructor symbol, but found data type ${s.name}", source)
+        (CtorSymbol(s.name, Expr.UnknownType()(SourceRange.empty)), List(e))
 
   // Collects explicit field types and result type from a constructor signature.
   private def decomposeCtorType(ctorType: TypedAst.Expr): (List[TypedAst.Expr], TypedAst.Expr) =
