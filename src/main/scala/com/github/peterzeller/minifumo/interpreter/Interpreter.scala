@@ -29,6 +29,17 @@ object Interpreter:
         case Value.LazyVal(name, _) => s"<lazy $name>"
         case Value.SortValue() => "Type"
 
+    // force evaluation of lazy expressions
+    def forceLazyExprs: Value =
+      this match
+        case Value.LazyVal(name, fn) =>
+          val r = fn().forceLazyExprs
+          println(s"forced lazy val $name to $r")
+          r
+        case x => x
+
+
+
   /** Evaluates a function from the program by name. */
   def evalProg(prog: TypedAst.Program, symbols: ProjectSymbolCache, funcName: String): Value =
     val f = prog.items.collectFirst { case f@FunDecl(s, _) if s.symbol.name == funcName => f }.get
@@ -48,6 +59,9 @@ object Interpreter:
           case TypedAst.TopLevel.DataDecl(sym, typeParams, ctors) =>
             // TODO add names for data decl
             res.put(sym, buildDatatypeValue(sym, typeParams))
+            for ctor <- ctors do {
+              res.put(ctor.symbol, buildConstructorValue(ctor.symbol.name, typeParams, ctor.fields, List()))
+            }
 
           case TypedAst.TopLevel.FunDecl(sig, body) =>
             val params = sig.typeParams ++ sig.params
@@ -65,7 +79,19 @@ object Interpreter:
       case x :: xs => Value.FuncVal(s"${sym.name}_${typeParams.length}", _ => buildDatatypeValue(sym, xs))
       case Nil => Value.SortValue()
 
-
+  def buildConstructorValue(name: String, typeParams: List[LocalSymbol], fields: List[CtorField], values: List[Value]): Value = {
+    typeParams match {
+      case x::xs =>
+        Value.FuncVal(s"${name}_${fields.length+typeParams.length}", v => buildConstructorValue(name, xs, fields, values))
+      case Nil =>
+        fields match {
+          case x::xs =>
+            Value.FuncVal(s"${name}_${fields.length}", v => buildConstructorValue(name, typeParams, xs, values :+ v))
+          case Nil =>
+            Value.AdtVal(name, values)
+        }
+    }
+  }
 
   def buildFnBody(name: String, params: List[LocalSymbol], body: Expr, locals: Map[TermSymbol, Value], globals: mutable.Map[Symbol, Value]): Value =
     params match
@@ -96,7 +122,7 @@ object Interpreter:
             case None =>
               throw RuntimeException(s"Could not find global var ${symbol.name} in [${globals.keySet.map(_.name).toList.sorted.mkString(", ")}]")
           }
-        })
+        }).forceLazyExprs
       case TypedAst.Expr.App(callee, arg, _) =>
         val fn = evalExpr(callee, locals, globals)
         val argVal = evalExpr(arg, locals, globals)
@@ -150,13 +176,15 @@ object Interpreter:
       globals: mutable.Map[TypedAst.Symbol, Value]
     ): Value =
     cases match
-      case Nil => Value.UndefinedVal
+      case Nil => throw new RuntimeException(s"Value ${scrutinee} did not match any pattern.")
       case head :: tail =>
         matchPattern(head.pattern, scrutinee) match
           case Some(bindings) =>
+            println(s"Value ${scrutinee} matched pattern ${head.pattern}")
             val merged = locals ++ bindings
             evalExpr(head.body, merged, globals)
           case None =>
+            println(s"Value ${scrutinee} did not match pattern ${head.pattern}")
             evalMatch(scrutinee, tail, locals, globals)
 
   /** Matches a pattern against a value, returning bindings on success. */
