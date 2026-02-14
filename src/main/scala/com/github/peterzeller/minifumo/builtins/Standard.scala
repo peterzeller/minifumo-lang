@@ -2,7 +2,6 @@ package com.github.peterzeller.minifumo.builtins
 
 import com.github.peterzeller.minifumo.ast.{AstTransform, ProgramFile}
 import com.github.peterzeller.minifumo.parser.parseInput
-import com.github.peterzeller.minifumo.typing.{TypeChecker, TypedAst}
 
 import java.nio.file.{Files, Paths}
 
@@ -11,7 +10,7 @@ object Standard:
     Paths.get("src/main/scala/com/github/peterzeller/minifumo/builtins/standard.minifumo")
 
   // Loads the standard library source file from disk.
-  private def loadStandardSource(): String =
+  def loadStandardSource(): String =
     if !Files.exists(standardLibraryPath) then
       throw new IllegalStateException(s"Standard library not found: ${standardLibraryPath.toString}")
     new String(Files.readAllBytes(standardLibraryPath))
@@ -28,19 +27,3 @@ object Standard:
   lazy val standardProgram: ProgramFile =
     parseStandardProgram()
 
-  // Provides the export environment for the standard library.
-  lazy val standardExports: TypeChecker.ExportEnv =
-    val (exports, errors) =
-      TypeChecker.extractExports(standardProgram, TypeChecker.emptyExportEnv, includeNonExported = true)
-    if errors.nonEmpty then
-      val message = errors.map(_.message).mkString("\n")
-      throw new IllegalStateException(s"Failed to extract standard library exports:\n$message")
-    exports
-
-  // Provides the typed standard library program for runtime evaluation.
-  lazy val typedProgram: TypedAst.Program =
-    val (typed, errors) = TypeChecker.checkProgramWithoutStandard(standardProgram, TypeChecker.emptyExportEnv)
-    if errors.nonEmpty then
-      val message = errors.map(e => s"standard.minifumo:${e.source.start.line}:${e.source.start.column}: ${e.message}").mkString("\n")
-      throw new IllegalStateException(s"Failed to type-check standard library:\n$message")
-    typed

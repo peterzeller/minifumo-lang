@@ -12,10 +12,9 @@ class GlobalSymbolsSuite extends munit.FunSuite:
     val (cst, _) = parseInput(input)
     AstTransform.program(cst)
 
-  // Builds a name cache from a fixed map for import resolution tests.
-  private def fixedNameCache(names: Map[String, Map[String, GlobalName]]): NameCache =
-    new NameCache:
-      override def globalNames(path: String): Map[String, GlobalName] = names.getOrElse(path, Map())
+  case class DummyNameCache(names: Map[String, Map[String, GlobalName]]) extends NameCache with SymbolCache:
+    override def globalNames(path: String): Map[String, GlobalName] = names.getOrElse(path, Map())
+    override def globalSymbols(path: String): Map[String, GlobalSymbol] = ???
 
   test("buildGlobalNames respects export flags") {
     val program = parseProgram("""
@@ -48,7 +47,7 @@ class GlobalSymbolsSuite extends munit.FunSuite:
       |fun bad(x: Missing): Int
       |  1
     """.stripMargin)
-    val cache = fixedNameCache(Map())
+    val cache = DummyNameCache(Map())
     val (_, errors) = GlobalSymbols.buildGlobalSymbols(Paths.get("main.minifumo"), program, cache, onlyExported = false)
     assert(errors.exists(_.message.contains("Could not find Missing")))
   }
@@ -58,7 +57,7 @@ class GlobalSymbolsSuite extends munit.FunSuite:
       imports = List(ast.ImportStatement("foo", Some("lib"), None)(ast.SourceRange.empty)),
       items = List()
     )(ast.SourceRange.empty)
-    val cache = fixedNameCache(
+    val cache = DummyNameCache(
       Map("lib" -> Map("foo" -> GlobalName(Paths.get("lib"), "foo")))
     )
     val (imports, errors) = GlobalSymbols.resolveImports(program, cache)

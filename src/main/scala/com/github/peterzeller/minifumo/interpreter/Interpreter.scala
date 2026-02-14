@@ -1,13 +1,19 @@
 package com.github.peterzeller.minifumo.interpreter
 
 import com.github.peterzeller.minifumo.ast.Literal
-import com.github.peterzeller.minifumo.typing.TypedAst
+import com.github.peterzeller.minifumo.typing.{ProjectSymbolCache, TypedAst}
 import com.github.peterzeller.minifumo.typing.TypedAst.*
+import com.github.peterzeller.minifumo.typing.TypedAst.TopLevel.FunDecl
 
 import scala.collection.mutable
-import scala.util.control.NoStackTrace
 
 object Interpreter:
+  private val debug = false
+
+  def debugPrint(str: String): Unit =
+    if debug then
+      println(str)
+
   enum Value:
     case AdtVal(name: String, args: List[Value])
     case UnitVal
@@ -15,6 +21,8 @@ object Interpreter:
         name: String,
         fn: Value => Value
       )
+    case LazyVal(name: String, fn: () => Value)
+    case SortValue()
     case UndefinedVal
 
     override def toString: String =
@@ -24,62 +32,87 @@ object Interpreter:
         case Value.UnitVal => "unit"
         case Value.UndefinedVal => "undefined"
         case Value.FuncVal(name, _) => s"<function $name>"
+        case Value.LazyVal(name, _) => s"<lazy $name>"
+        case Value.SortValue() => "Type"
+
+    // force evaluation of lazy expressions
+    def forceLazyExprs: Value =
+      this match
+        case Value.LazyVal(name, fn) =>
+          val r = fn().forceLazyExprs
+          debugPrint(s"forced lazy val $name to $r")
+          r
+        case x => x
+
+
 
   /** Evaluates a function from the program by name. */
-  def evalProg(prog: TypedAst.Program, funcName: String): Value =
-    val (functionBodies, ctorArities) = indexProgram(prog)
-    val globals = mutable.Map[TypedAst.Symbol, Value]()
-    ctorArities.foreach { case (symbol, arity) =>
-      globals.update(symbol, buildCtorValue(symbol.name, arity))
-    }
-    functionBodies.foreach { case (symbol, info) =>
-      globals.update(symbol, buildFunctionValue(info.params, info.body, globals))
-    }
-    val entry = functionBodies.keys.find(_.name == funcName)
-    entry match
-      case Some(symbol) =>
-        globals.getOrElse(symbol, Value.UndefinedVal)
-      case None =>
-        throw new RuntimeException(s"Unknown function $funcName") with NoStackTrace
+  def evalProg(prog: TypedAst.Program, symbols: ProjectSymbolCache, funcName: String): Value =
+    val f = prog.items.collectFirst { case f@FunDecl(s, _) if s.symbol.name == funcName => f }.get
+    val locals = Map[TermSymbol, Value]()
+    val globals = buildGlobalTable(prog, symbols)
+    evalExpr(f.body, locals, globals)
+
+  private def buildGlobalTable(program: Program, symbols: ProjectSymbolCache): mutable.Map[Symbol, Value] =
+    val res = mutable.Map[Symbol, Value]()
+
+    for path <- symbols.allPaths do
+      val (t, _) = symbols.typedAst(path)
+      buildGlobalTableForProg(res, t)
+    buildGlobalTableForProg(res, program)
+    res
+
+  private def buildGlobalTableForProg(res: mutable.Map[Symbol, Value], t: Program): Unit = {
+    for p <- t.items do
+      p match
+        case TypedAst.TopLevel.DataDecl(sym, typeParams, ctors) =>
+          // TODO add names for data decl
+          res.put(sym, buildDatatypeValue(sym, typeParams))
+          for ctor <- ctors do {
+            res.put(ctor.symbol, buildConstructorValue(ctor.symbol.name, typeParams, ctor.fields, List()))
+          }
+
+        case TypedAst.TopLevel.FunDecl(sig, body) =>
+          BuiltInFunctions.overrides.get(sig.symbol.name) match
+            case Some(f) =>
+              res.put(sig.symbol, f)
+            case None =>
+              val params = sig.typeParams ++ sig.params
+              val fnBody: Value =
+                if params.isEmpty then
+                  Value.LazyVal(sig.symbol.name, () => evalExpr(body, Map(), res))
+                else
+                  buildFnBody(sig.symbol.name, params, body, Map(), res)
+
+              res.put(sig.symbol, fnBody)
+  }
+
+  private def buildDatatypeValue(sym: DatatypeSymbol, typeParams: List[LocalSymbol]): Value =
+    typeParams match
+      case _ :: xs => Value.FuncVal(s"${sym.name}_${typeParams.length}", _ => buildDatatypeValue(sym, xs))
+      case Nil => Value.SortValue()
+
+  private def buildConstructorValue(name: String, typeParams: List[LocalSymbol], fields: List[CtorField], values: List[Value]): Value =
+    typeParams match
+      case _::xs =>
+        Value.FuncVal(s"${name}_${fields.length+typeParams.length}", _ => buildConstructorValue(name, xs, fields, values))
+      case Nil =>
+        fields match
+          case _::xs =>
+            Value.FuncVal(s"${name}_${fields.length}", v => buildConstructorValue(name, typeParams, xs, values :+ v))
+          case Nil =>
+            Value.AdtVal(name, values)
+
+
+  def buildFnBody(name: String, params: List[LocalSymbol], body: Expr, locals: Map[TermSymbol, Value], globals: mutable.Map[Symbol, Value]): Value =
+    params match
+      case Nil =>
+        evalExpr(body, locals, globals)
+      case p :: ps =>
+        Value.FuncVal(name, v => buildFnBody(name + "'", ps, body, locals + (p -> v), globals))
 
   /** Describes a function body for evaluation. */
-  private final case class FunctionBody(params: List[TypedAst.ParamSymbol], body: TypedAst.Expr)
-
-  /** Indexes functions and constructor arities in a typed program. */
-  private def indexProgram(prog: TypedAst.Program): (Map[TypedAst.FunctionSymbol, FunctionBody], Map[TypedAst.CtorSymbol, Int]) =
-    val functions = mutable.Map[TypedAst.FunctionSymbol, FunctionBody]()
-    val ctors = mutable.Map[TypedAst.CtorSymbol, Int]()
-    prog.items.foreach {
-      case TypedAst.TopLevel.FunDecl(symbol, _, params, body) =>
-        functions.update(symbol, FunctionBody(params, body))
-      case TypedAst.TopLevel.DataDecl(_, _, ctorDecls) =>
-        ctorDecls.foreach { ctor =>
-          ctors.update(ctor.symbol, ctor.fields.size)
-        }
-    }
-    (functions.toMap, ctors.toMap)
-
-  /** Builds a curried constructor value with the given arity. */
-  private def buildCtorValue(name: String, arity: Int): Value =
-    def loop(args: List[Value]): Value =
-      if args.length >= arity then
-        Value.AdtVal(name, args.reverse)
-      else
-        Value.FuncVal(name, value => loop(value :: args))
-    loop(Nil)
-
-  /** Builds a curried function value from its parameters and body. */
-  private def buildFunctionValue(
-      params: List[TypedAst.ParamSymbol],
-      body: TypedAst.Expr,
-      globals: mutable.Map[TypedAst.Symbol, Value]
-    ): Value =
-    def loop(remaining: List[TypedAst.ParamSymbol], localEnv: Map[TypedAst.TermSymbol, Value]): Value =
-      remaining match
-        case Nil => evalExpr(body, localEnv, globals)
-        case param :: tail =>
-          Value.FuncVal(param.name, value => loop(tail, localEnv + (param -> value)))
-    loop(params, Map())
+  private final case class FunctionBody(params: List[TypedAst.LocalSymbol], body: TypedAst.Expr)
 
   /** Evaluates an expression with the given local and global environments. */
   private def evalExpr(
@@ -87,18 +120,28 @@ object Interpreter:
       locals: Map[TypedAst.TermSymbol, Value],
       globals: mutable.Map[TypedAst.Symbol, Value]
     ): Value =
-    expr match
+    val res = expr match
       case TypedAst.Expr.Lit(value) => literalValue(value)
       case TypedAst.Expr.Var(symbol: TypedAst.TermSymbol) =>
-        locals.getOrElse(symbol, globals.getOrElse(symbol, Value.UndefinedVal))
+        locals.getOrElse(symbol, globals.getOrElse(symbol, throw RuntimeException(s"Could not find var $symbol")))
       case TypedAst.Expr.Var(symbol) =>
-        globals.getOrElse(symbol, Value.UndefinedVal)
+        globals.getOrElse(symbol, {
+          // TODO should not be necessary to search by name, we need to unify symbols
+          val byName = globals.find(s => s._1.name == symbol.name)
+          byName match {
+            case Some(value) => value._2
+            case None =>
+              throw RuntimeException(s"Could not find global var ${symbol.name} in [${globals.keySet.map(_.name).toList.sorted.mkString(", ")}]")
+          }
+        }).forceLazyExprs
       case TypedAst.Expr.App(callee, arg, _) =>
         val fn = evalExpr(callee, locals, globals)
         val argVal = evalExpr(arg, locals, globals)
         applyValue(fn, argVal)
-      case TypedAst.Expr.AppImplicit(callee, _, _) =>
-        evalExpr(callee, locals, globals)
+      case TypedAst.Expr.AppImplicit(f, arg, _) =>
+        val fn = evalExpr(f, locals, globals)
+        val argVal = evalExpr(arg, locals, globals)
+        applyValue(fn, argVal)
       case TypedAst.Expr.Lambda(param, body, _) =>
         Value.FuncVal(param.name, value => evalExpr(body, locals + (param -> value), globals))
       case TypedAst.Expr.LetIn(symbol, _, _, value, body) =>
@@ -111,6 +154,31 @@ object Interpreter:
       case TypedAst.Expr.Sort() => Value.UndefinedVal
       case TypedAst.Expr.Pi(_, _, _) => Value.UndefinedVal
       case TypedAst.Expr.UnknownType() => Value.UndefinedVal
+    debugPrint(s"Evaluating ${prettyPrint(expr)}\n-> $res")
+    res
+
+  private def prettyPrintPattern(p: Pattern): String =
+    p match {
+      case TypedAst.Pattern.Wildcard() => "_"
+      case TypedAst.Pattern.Lit(value) => value.toString
+      case TypedAst.Pattern.Binder(symbol) => symbol.name
+      case TypedAst.Pattern.Ctor(symbol, args) => s"${symbol.name}(${args.map(prettyPrintPattern).mkString(", ")})"
+    }
+
+  private def prettyPrint(expr: Expr): String =
+    expr match {
+      case TypedAst.Expr.Lit(value) => value.toString
+      case TypedAst.Expr.Var(symbol) => symbol.name
+      case TypedAst.Expr.AppImplicit(callee, arg, tpe) => prettyPrint(callee) + "[" + prettyPrint(arg) + "]"
+      case TypedAst.Expr.App(callee, arg, tpe) => prettyPrint(callee) + "(" + prettyPrint(arg) + ")"
+      case TypedAst.Expr.Pi(dom, cod, isImplicit) => "PI " + dom.name + ". " +  prettyPrint(dom.tpe) + " -> " + prettyPrint(cod)
+      case TypedAst.Expr.Sort() => "Sort"
+      case TypedAst.Expr.Lambda(param, body, tpe) => "fun " + param.name + ". " +  prettyPrint(param.tpe) + " -> " + prettyPrint(body)
+      case TypedAst.Expr.LetIn(symbol, isConstant, declaredType, value, body) => "let " + symbol.name + ": " +  prettyPrint(symbol.tpe) + " = " + prettyPrint(value) + " in " + prettyPrint(body)
+      case TypedAst.Expr.Meta(index, tpe) => s"META_$index"
+      case TypedAst.Expr.UnknownType() => "???"
+      case TypedAst.Expr.Match(scrutinee, cases) => "match ..."
+    }
 
   /** Applies a function value to an argument value. */
   private def applyValue(fn: Value, arg: Value): Value =
@@ -127,13 +195,15 @@ object Interpreter:
       globals: mutable.Map[TypedAst.Symbol, Value]
     ): Value =
     cases match
-      case Nil => Value.UndefinedVal
+      case Nil => throw new RuntimeException(s"Value ${scrutinee} did not match any pattern.")
       case head :: tail =>
         matchPattern(head.pattern, scrutinee) match
           case Some(bindings) =>
+            debugPrint(s"Value ${scrutinee} matched pattern ${head.pattern}")
             val merged = locals ++ bindings
             evalExpr(head.body, merged, globals)
           case None =>
+            debugPrint(s"Value ${scrutinee} did not match pattern ${prettyPrintPattern(head.pattern)}")
             evalMatch(scrutinee, tail, locals, globals)
 
   /** Matches a pattern against a value, returning bindings on success. */
@@ -161,12 +231,12 @@ object Interpreter:
       case Literal.IntLit(value) =>
         val number = value.toInt
         val positive = if number >= 0 then Value.AdtVal("True", Nil) else Value.AdtVal("False", Nil)
-        Value.AdtVal("Int", List(positive, natValue(math.abs(number))))
+        Value.AdtVal("MakeInt", List(positive, natValue(math.abs(number))))
       case Literal.BoolLit(value) =>
         if value then Value.AdtVal("True", Nil) else Value.AdtVal("False", Nil)
       case Literal.StringLit(value) =>
         val chars = value.toList.map(ch => Value.AdtVal("Char", List(natValue(ch.toInt))))
-        Value.AdtVal("String", List(listValue(chars)))
+        Value.AdtVal("MakeString", List(listValue(chars)))
       case Literal.UnitLit() => Value.UnitVal
 
   /** Builds a Nat ADT value from an integer. */
