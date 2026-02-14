@@ -4,7 +4,7 @@ fun fib(n: Int): Int
     else
         fib(n - 1) + fib(n - 2)
 
-fun main(): unit
-    println(fib(10), showInt())
+fun main(): Unit
+    println[Int](fib(10), showInt())
 
 // Output: 55

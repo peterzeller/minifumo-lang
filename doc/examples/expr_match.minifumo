@@ -7,7 +7,7 @@ fun matchValue(value: Option[Int]): Int
         case Some(x)
             x
 
-fun main(): unit
-    println(matchValue(Some(1)), showInt())
+fun main(): Unit
+    println[Int](matchValue(Some[Int](1)), showInt())
 
 // Output: 1

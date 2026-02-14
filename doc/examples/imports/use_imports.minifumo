@@ -10,10 +10,10 @@ fun myShowIntFn(value: Int): String
 fun myShowInt(): MyShow[Int]
     MyShow(myShowIntFn)
 
-fun main(): Int
+fun main(): Unit
     let p: Pair[Int, Int] = Pair(1, 2)
-    println(add_one(1), showInt())
-    add_one(1)
+    println[Int](add_one(1), showInt())
+    MakeUnit
 
 // Output:
 // 2

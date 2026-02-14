@@ -1,16 +1,22 @@
-# Ignore legacy syntax/examples until they are updated.
-expr_*.minifumo
-functional_*.minifumo
-imperative_*.minifumo
-typeclasses*.minifumo
-type_error_*.minifumo
-imports/**/*.minifumo
-imports/*.minifumo
-fib.minifumo
-generic_id.minifumo
-let_bindings.minifumo
-list_append.minifumo
-multiline.minifumo
+# Temporarily ignored examples still using outdated syntax/runtime assumptions.
+expr_and.minifumo
+expr_compare.minifumo
+expr_eq_neq.minifumo
+expr_for.minifumo
+expr_literal.minifumo
+expr_match.minifumo
+expr_neg.minifumo
+expr_or.minifumo
 hello.minifumo
 hello_world.minifumo
-main_add.minifumo
+imperative_for_print.minifumo
+imports/exported_defs.minifumo
+imports/import_errors.minifumo
+imports/private_defs.minifumo
+imports/use_imports.minifumo
+list_append.minifumo
+multiline.minifumo
+type_error_return.minifumo
+type_error_unknown_symbol.minifumo
+typeclasses_ord.minifumo
+typeclasses_sized.minifumo

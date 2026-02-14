@@ -1,4 +1,4 @@
-fun main(): unit
-    println("Hello World", showString())
+fun main(): Unit
+    printlnString("Hello World")
 
 // Output: Hello World

@@ -1,13 +1,13 @@
-data List = Nil | Cons(head: Int, tail: List)
+data MyList = MyNil | MyCons(head: Int, tail: MyList)
 
-fun length(list: List): Int
+fun length(list: MyList): Int
     match list
-        case Nil
+        case MyNil
             0
-        case Cons(_, t)
+        case MyCons(_, t)
             1 + length(t)
 
-fun main(): unit
-    println(length(Cons(1, Cons(2, Nil))), showInt())
+fun main(): Unit
+    println[Int](length(MyCons(1, MyCons(2, MyNil))), showInt())
 
 // Output: 2

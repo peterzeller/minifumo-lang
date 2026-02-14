@@ -1,33 +1,33 @@
-data List =
-   Nil
- | Cons(head: Int, tail: List)
+data MyList =
+   MyNil
+ | MyCons(head: Int, tail: MyList)
 
-fun myAppend(a: List, b: List): List
+fun myAppend(a: MyList, b: MyList): MyList
     match a
-        case Nil
+        case MyNil
           b
-        case Cons(h, t)
-          Cons(h, myAppend(t, b))
+        case MyCons(h, t)
+          MyCons(h, myAppend(t, b))
 
 // Converts a list to a String using the provided Show dictionary.
-fun myShowListFn(s: Show[Int]): List -> String
-    (value: List) => match value
-        case Nil
-            "Nil"
-        case Cons(head, tail)
+fun myShowListFn(s: Show[Int]): MyList -> String
+    (value: MyList) => match value
+        case MyNil
+            "MyNil"
+        case MyCons(head, tail)
             stringAppend(
-                "Cons(",
-                stringAppend(show(head, s), stringAppend(", ", stringAppend(show(tail, myShowList(s)), ")")))
+                "MyCons(",
+                stringAppend(show[Int](head, s), stringAppend(", ", stringAppend(show[MyList](tail, myShowList(s)), ")")))
             )
 
 // Builds a Show dictionary for the local list type.
-fun myShowList(s: Show[Int]): Show[List]
+fun myShowList(s: Show[Int]): Show[MyList]
     Show(myShowListFn(s))
 
-fun main(): unit
-    let lst1 = Cons(1, Cons(2, Nil))
-    let lst2 = Cons(3, Cons(4, Nil))
+fun main(): Unit
+    let lst1 = MyCons(1, MyCons(2, MyNil))
+    let lst2 = MyCons(3, MyCons(4, MyNil))
     let lst3 = myAppend(lst1, lst2)
-    println(lst3, myShowList(showInt()))
+    println[MyList](lst3, myShowList(showInt()))
 
-// Output: Cons(1, Cons(2, Cons(3, Cons(4, Nil))))
+// Output: MyCons(1, MyCons(2, MyCons(3, MyCons(4, MyNil))))

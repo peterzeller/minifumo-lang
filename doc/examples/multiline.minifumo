@@ -1,6 +1,6 @@
-fun main(): unit
-    println("Line 1", showString())
-    println("Line 2", showString())
+fun main(): Unit
+    printlnString("Line 1")
+    printlnString("Line 2")
 
 // Output:
 // Line 1

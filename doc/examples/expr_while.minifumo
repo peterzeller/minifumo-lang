@@ -1,4 +1,4 @@
-fun main(): unit
-    if false then println("never", showString()) else unit
+fun main(): Unit
+    if false then printlnString("never") else MakeUnit
 
 // Output:

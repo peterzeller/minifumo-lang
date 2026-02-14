@@ -1,7 +1,7 @@
 fun identity(x: Int): Int
     x
 
-fun main(): unit
-    println(identity(1), showInt())
+fun main(): Unit
+    println[Int](identity(1), showInt())
 
 // Output: 1

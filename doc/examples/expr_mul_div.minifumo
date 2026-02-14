@@ -1,4 +1,4 @@
-fun main(): unit
-    println(6 / 2, showInt())
+fun main(): Unit
+    println[Int](6 / 2, showInt())
 
 // Output: 3

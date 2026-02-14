@@ -1,15 +1,15 @@
 data List[A: Type] = Nil | Cons(head: A, tail: List[A])
 
-fun logAll(numbers: List[Int]): unit
+fun logAll(numbers: List[Int]): Unit
     match numbers
         case Nil
-            unit
+            MakeUnit
         case Cons(head, tail)
-            println(head, showInt())
+            println[Int](head, showInt())
             logAll(tail)
 
-fun main(): unit
-    logAll(Cons(1, Cons(2, Cons(3, Nil))))
+fun main(): Unit
+    logAll(Cons[Int](1, Cons[Int](2, Cons[Int](3, Nil[Int]))))
 
 // Output:
 // 1
