@@ -8,6 +8,12 @@ import com.github.peterzeller.minifumo.typing.TypedAst.TopLevel.FunDecl
 import scala.collection.mutable
 
 object Interpreter:
+  private val debug = false
+
+  def debugPrint(str: String): Unit =
+    if debug then
+      println(str)
+
   enum Value:
     case AdtVal(name: String, args: List[Value])
     case UnitVal
@@ -34,7 +40,7 @@ object Interpreter:
       this match
         case Value.LazyVal(name, fn) =>
           val r = fn().forceLazyExprs
-          println(s"forced lazy val $name to $r")
+          debugPrint(s"forced lazy val $name to $r")
           r
         case x => x
 
@@ -50,10 +56,8 @@ object Interpreter:
   private def buildGlobalTable(program: Program, symbols: ProjectSymbolCache): mutable.Map[Symbol, Value] =
     val res = mutable.Map[Symbol, Value]()
 
-    println(s"all paths = ${symbols.allPaths}")
     for path <- symbols.allPaths do
       val (t, _) = symbols.typedAst(path)
-      println(s"Adding names from $path")
       for p <- t.items do
         p match
           case TypedAst.TopLevel.DataDecl(sym, typeParams, ctors) =>
@@ -64,14 +68,18 @@ object Interpreter:
             }
 
           case TypedAst.TopLevel.FunDecl(sig, body) =>
-            val params = sig.typeParams ++ sig.params
-            val fnBody: Value =
-              if params.isEmpty then
-                Value.LazyVal(sig.symbol.name, () => evalExpr(body, Map(), res))
-              else
-                buildFnBody(sig.symbol.name, params, body, Map(), res)
+            BuiltInFunctions.overrides.get(sig.symbol.name) match
+              case Some(f) =>
+                res.put(sig.symbol, f)
+              case None =>
+                val params = sig.typeParams ++ sig.params
+                val fnBody: Value =
+                  if params.isEmpty then
+                    Value.LazyVal(sig.symbol.name, () => evalExpr(body, Map(), res))
+                  else
+                    buildFnBody(sig.symbol.name, params, body, Map(), res)
 
-            res.put(sig.symbol, fnBody)
+                res.put(sig.symbol, fnBody)
     res
 
   private def buildDatatypeValue(sym: DatatypeSymbol, typeParams: List[LocalSymbol]): Value =
@@ -79,17 +87,17 @@ object Interpreter:
       case x :: xs => Value.FuncVal(s"${sym.name}_${typeParams.length}", _ => buildDatatypeValue(sym, xs))
       case Nil => Value.SortValue()
 
-  private def buildConstructorValue(name: String, typeParams: List[LocalSymbol], fields: List[CtorField], values: List[Value]): Value = 
-    typeParams match 
+  private def buildConstructorValue(name: String, typeParams: List[LocalSymbol], fields: List[CtorField], values: List[Value]): Value =
+    typeParams match
       case x::xs =>
         Value.FuncVal(s"${name}_${fields.length+typeParams.length}", v => buildConstructorValue(name, xs, fields, values))
       case Nil =>
-        fields match 
+        fields match
           case x::xs =>
             Value.FuncVal(s"${name}_${fields.length}", v => buildConstructorValue(name, typeParams, xs, values :+ v))
           case Nil =>
             Value.AdtVal(name, values)
-        
+
 
   def buildFnBody(name: String, params: List[LocalSymbol], body: Expr, locals: Map[TermSymbol, Value], globals: mutable.Map[Symbol, Value]): Value =
     params match
@@ -141,8 +149,16 @@ object Interpreter:
       case TypedAst.Expr.Sort() => Value.UndefinedVal
       case TypedAst.Expr.Pi(_, _, _) => Value.UndefinedVal
       case TypedAst.Expr.UnknownType() => Value.UndefinedVal
-    println(s"Evaluating ${prettyPrint(expr)}\n-> $res")
+    debugPrint(s"Evaluating ${prettyPrint(expr)}\n-> $res")
     res
+
+  private def prettyPrintPattern(p: Pattern): String =
+    p match {
+      case TypedAst.Pattern.Wildcard() => "_"
+      case TypedAst.Pattern.Lit(value) => value.toString
+      case TypedAst.Pattern.Binder(symbol) => symbol.name
+      case TypedAst.Pattern.Ctor(symbol, args) => s"${symbol.name}(${args.map(prettyPrintPattern).mkString(", ")})"
+    }
 
   private def prettyPrint(expr: Expr): String =
     expr match {
@@ -178,11 +194,11 @@ object Interpreter:
       case head :: tail =>
         matchPattern(head.pattern, scrutinee) match
           case Some(bindings) =>
-            println(s"Value ${scrutinee} matched pattern ${head.pattern}")
+            debugPrint(s"Value ${scrutinee} matched pattern ${head.pattern}")
             val merged = locals ++ bindings
             evalExpr(head.body, merged, globals)
           case None =>
-            println(s"Value ${scrutinee} did not match pattern ${head.pattern}")
+            debugPrint(s"Value ${scrutinee} did not match pattern ${prettyPrintPattern(head.pattern)}")
             evalMatch(scrutinee, tail, locals, globals)
 
   /** Matches a pattern against a value, returning bindings on success. */
@@ -210,12 +226,12 @@ object Interpreter:
       case Literal.IntLit(value) =>
         val number = value.toInt
         val positive = if number >= 0 then Value.AdtVal("True", Nil) else Value.AdtVal("False", Nil)
-        Value.AdtVal("Int", List(positive, natValue(math.abs(number))))
+        Value.AdtVal("MakeInt", List(positive, natValue(math.abs(number))))
       case Literal.BoolLit(value) =>
         if value then Value.AdtVal("True", Nil) else Value.AdtVal("False", Nil)
       case Literal.StringLit(value) =>
         val chars = value.toList.map(ch => Value.AdtVal("Char", List(natValue(ch.toInt))))
-        Value.AdtVal("String", List(listValue(chars)))
+        Value.AdtVal("MakeString", List(listValue(chars)))
       case Literal.UnitLit() => Value.UnitVal
 
   /** Builds a Nat ADT value from an integer. */

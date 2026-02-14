@@ -57,73 +57,73 @@ fun opNot(value: Bool): Bool
 // Returns True when both Bool values are equal.
 fun boolEq(a: Bool, b: Bool): Bool
     match eqBool()
-        case Eq(eqFn)
+        case MakeEq(eqFn)
             eqFn(a, b)
 
 // Returns True when both Int values are equal.
 fun eq(a: Int, b: Int): Bool
     match eqInt()
-        case Eq(eqFn)
+        case MakeEq(eqFn)
             eqFn(a, b)
 
 // Negates an Int value.
 fun opNeg(value: Int): Int
     match opNegInt()
-        case OpNeg(opNegFn)
+        case MakeOpNeg(opNegFn)
             opNegFn(value)
 
 // Adds two Int values together.
 fun opPlus(a: Int, b: Int): Int
     match opPlusInt()
-        case OpPlus(opPlusFn)
+        case MakeOpPlus(opPlusFn)
             opPlusFn(a, b)
 
 // Subtracts the second Int from the first.
 fun opMinus(a: Int, b: Int): Int
     match opMinusInt()
-        case OpMinus(opMinusFn)
+        case MakeOpMinus(opMinusFn)
             opMinusFn(a, b)
 
 // Multiplies two Int values.
 fun opTimes(a: Int, b: Int): Int
     match opTimesInt()
-        case OpTimes(opTimesFn)
+        case MakeOpTimes(opTimesFn)
             opTimesFn(a, b)
 
 // Divides the first Int by the second.
 fun opDiv(a: Int, b: Int): Int
     match opDivInt()
-        case OpDiv(opDivFn)
+        case MakeOpDiv(opDivFn)
             opDivFn(a, b)
 
 // Computes the remainder of the first Int divided by the second.
 fun opMod(a: Int, b: Int): Int
     match opModInt()
-        case OpMod(opModFn)
+        case MakeOpMod(opModFn)
             opModFn(a, b)
 
 // Returns True if the first Int is less than the second.
 fun opLt(a: Int, b: Int): Bool
     match opLtInt()
-        case OpLt(opLtFn)
+        case MakeOpLt(opLtFn)
             opLtFn(a, b)
 
 // Returns True if the first Int is less than or equal to the second.
 fun opLe(a: Int, b: Int): Bool
     match opLeInt()
-        case OpLe(opLeFn)
+        case MakeOpLe(opLeFn)
             opLeFn(a, b)
 
 // Computes the logical and of two Bool values.
 fun opAnd(a: Bool, b: Bool): Bool
     match opAndBool()
-        case OpAnd(opAndFn)
+        case MakeOpAnd(opAndFn)
             opAndFn(a, b)
 
 // Computes the logical or of two Bool values.
 fun opOr(a: Bool, b: Bool): Bool
     match opOrBool()
-        case OpOr(opOrFn)
+        case MakeOpOr(opOrFn)
             opOrFn(a, b)
 
 // Returns True when the Nat is Zero.
@@ -232,7 +232,7 @@ fun intNormalize(positive: Bool, n: Nat): Int
 // Returns True when the Int represents a negative value.
 fun intIsNegative(value: Int): Bool
     match value
-        case Int(positive, n)
+        case MakeInt(positive, n)
             match positive
                 case True
                     False
@@ -246,7 +246,7 @@ fun intIsNegative(value: Int): Bool
 // Extracts the Nat component from a non-negative Int.
 fun intToNat(value: Int): Nat
     match value
-        case Int(positive, n)
+        case MakeInt(positive, n)
             match positive
                 case True
                     n
@@ -260,9 +260,9 @@ fun natFromInt(value: Int): Nat
 // Returns True when the two Int values are equal.
 fun intEq(a: Int, b: Int): Bool
     match a
-        case Int(positiveA, nA)
+        case MakeInt(positiveA, nA)
             match b
-                case Int(positiveB, nB)
+                case MakeInt(positiveB, nB)
                     if natIsZero(nA)
                         if natIsZero(nB)
                             True
@@ -277,7 +277,7 @@ fun intEq(a: Int, b: Int): Bool
 // Negates an Int value.
 fun intNeg(value: Int): Int
     match value
-        case Int(positive, n)
+        case MakeInt(positive, n)
             match n
                 case Zero
                     MakeInt(True, Zero)
@@ -291,9 +291,9 @@ fun intNeg(value: Int): Int
 // Adds two Int values.
 fun intAdd(a: Int, b: Int): Int
     match a
-        case Int(positiveA, nA)
+        case MakeInt(positiveA, nA)
             match b
-                case Int(positiveB, nB)
+                case MakeInt(positiveB, nB)
                     if boolEq(positiveA, positiveB)
                         intNormalize(positiveA, natAdd(nA, nB))
                     else
@@ -309,9 +309,9 @@ fun intSub(a: Int, b: Int): Int
 // Multiplies two Int values.
 fun intMul(a: Int, b: Int): Int
     match a
-        case Int(positiveA, nA)
+        case MakeInt(positiveA, nA)
             match b
-                case Int(positiveB, nB)
+                case MakeInt(positiveB, nB)
                     if natIsZero(nA)
                         MakeInt(True, Zero)
                     else
@@ -323,9 +323,9 @@ fun intMul(a: Int, b: Int): Int
 // Divides one Int by another.
 fun intDiv(a: Int, b: Int): Int
     match a
-        case Int(positiveA, nA)
+        case MakeInt(positiveA, nA)
             match b
-                case Int(positiveB, nB)
+                case MakeInt(positiveB, nB)
                     if natIsZero(nB)
                         MakeInt(True, Zero) // we don't have exceptions yet, so use a dummy value
                     else
@@ -337,9 +337,9 @@ fun intDiv(a: Int, b: Int): Int
 // Computes the remainder of dividing one Int by another.
 fun intMod(a: Int, b: Int): Int
     match a
-        case Int(positiveA, nA)
+        case MakeInt(positiveA, nA)
             match b
-                case Int(_, nB)
+                case MakeInt(_, nB)
                     if natIsZero(nB)
                         MakeInt(True, Zero) // we don't have exceptions yet, so use a dummy value
                     else
@@ -348,9 +348,9 @@ fun intMod(a: Int, b: Int): Int
 // Returns True when the first Int is less than the second.
 fun intLt(a: Int, b: Int): Bool
     match a
-        case Int(positiveA, nA)
+        case MakeInt(positiveA, nA)
             match b
-                case Int(positiveB, nB)
+                case MakeInt(positiveB, nB)
                     match positiveA
                         case True
                             match positiveB
@@ -375,17 +375,17 @@ fun intLe(a: Int, b: Int): Bool
 // Returns True when two Char values are equal.
 fun charEq(a: Char, b: Char): Bool
     match a
-        case Char(left)
+        case MakeChar(left)
             match b
-                case Char(right)
+                case MakeChar(right)
                     natEq(left, right)
 
 // Returns True when the first Char is less than the second.
 fun charLt(a: Char, b: Char): Bool
     match a
-        case Char(left)
+        case MakeChar(left)
             match b
-                case Char(right)
+                case MakeChar(right)
                     natLt(left, right)
 
 // Appends two lists together.
@@ -424,7 +424,7 @@ fun listSetNat[T: Type](values: List[T], index: Nat, value: T): List[T]
 // Checks whether a list contains the given value.
 fun listContains[T: Type](values: List[T], value: T, eq: Eq[T]): Bool
     match eq
-        case Eq(eqFn)
+        case MakeEq(eqFn)
             match values
                 case Nil
                     False
@@ -437,7 +437,7 @@ fun listContains[T: Type](values: List[T], value: T, eq: Eq[T]): Bool
 // Returns True when two lists are equal.
 fun listEq[T: Type](left: List[T], right: List[T], eq: Eq[T]): Bool
     match eq
-        case Eq(eqFn)
+        case MakeEq(eqFn)
             match left
                 case Nil
                     match right
@@ -512,7 +512,7 @@ fun natToString(value: Nat): String
 // Converts an Int into a base-10 String.
 fun intToString(value: Int): String
     match value
-        case Int(positive, n)
+        case MakeInt(positive, n)
             if natIsZero(n)
                 "0"
             else
@@ -525,23 +525,23 @@ fun intToString(value: Int): String
 // Returns True when the first String is less than the second.
 fun stringLt(a: String, b: String): Bool
     match a
-        case String(left)
+        case MakeString(left)
             match b
-                case String(right)
+                case MakeString(right)
                     charListLt(left, right)
 
 // Returns True when the first String is less than or equal to the second.
 fun stringLe(a: String, b: String): Bool
     match a
-        case String(left)
+        case MakeString(left)
             match b
-                case String(right)
+                case MakeString(right)
                     charListLe(left, right)
 
 // Converts a list into a String using Cons/Nil notation.
 fun listToString[T: Type](values: List[T], s: Show[T]): String
     match s
-        case Show(showFn)
+        case MakeShow(showFn)
             match values
                 case Nil
                     "Nil"
@@ -554,7 +554,7 @@ fun listToString[T: Type](values: List[T], s: Show[T]): String
 // Defines a stub println that returns Unit.
 fun println[T: Type](value: T, s: Show[T]): Unit
     match s
-        case Show(showFn)
+        case MakeShow(showFn)
             printlnString(showFn(value))
 
 fun printlnString(value: String): Unit
@@ -607,9 +607,9 @@ fun eqChar(): Eq[Char]
 // Compares two String values.
 fun eqStringFn(a: String, b: String): Bool
     match a
-        case String(left)
+        case MakeString(left)
             match b
-                case String(right)
+                case MakeString(right)
                     listEq[Char](left, right, eqChar())
 
 // Builds the String equality dictionary.
@@ -655,7 +655,7 @@ fun showString(): Show[String]
 // Converts a value to a String using the supplied Show instance.
 fun show[T: Type](value: T, s: Show[T]): String
     match s
-        case Show(showFn)
+        case MakeShow(showFn)
             showFn(value)
 
 // Negates an Int value.
@@ -824,9 +824,9 @@ fun listSet[T: Type](eq: Eq[T]): Set[List[T], T]
 // Inserts a key/value pair into the tree.
 fun treePut[K: Type, V: Type](tree: Tree[K, V], key: K, value: V, lt: OpLt[K], eq: Eq[K]): Tree[K, V]
     match lt
-        case OpLt(ltFn)
+        case MakeOpLt(ltFn)
             match eq
-                case Eq(eqFn)
+                case MakeEq(eqFn)
                     match tree
                         case Leaf
                             Node[K, V](key, value, Leaf[K, V], Leaf[K, V])
@@ -842,9 +842,9 @@ fun treePut[K: Type, V: Type](tree: Tree[K, V], key: K, value: V, lt: OpLt[K], e
 // Looks up a key in the tree.
 fun treeLookup[K: Type, V: Type](tree: Tree[K, V], key: K, lt: OpLt[K], eq: Eq[K]): Option[V]
     match lt
-        case OpLt(ltFn)
+        case MakeOpLt(ltFn)
             match eq
-                case Eq(eqFn)
+                case MakeEq(eqFn)
                     match tree
                         case Leaf
                             None[V]

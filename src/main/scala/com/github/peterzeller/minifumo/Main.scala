@@ -1,6 +1,7 @@
 package com.github.peterzeller.minifumo
 
 import com.github.peterzeller.minifumo.ast.{AstTransform, ProgramFile, SourcePos, SourceRange}
+import com.github.peterzeller.minifumo.builtins.Standard
 import com.github.peterzeller.minifumo.common.MinifumoError
 import com.github.peterzeller.minifumo.interpreter.Interpreter
 import com.github.peterzeller.minifumo.parser.{SyntaxError, parseInput}
@@ -124,7 +125,11 @@ object Main:
 
   // Formats a list of errors for reporting.
   def renderTypeErrors(path: Path, errors: List[MinifumoError]): List[String] =
-    val lines = Files.readAllLines(path).asScala.toList
+    val lines: List[String] =
+      if path.endsWith("standard.minifumo") then
+        Standard.loadStandardSource().lines().toList.asScala.toList
+      else
+        Files.readAllLines(path).asScala.toList
     errors.map { error =>
       val lineIndex = error.source.start.line - 1
       if lineIndex >= 0 && lineIndex < lines.length then

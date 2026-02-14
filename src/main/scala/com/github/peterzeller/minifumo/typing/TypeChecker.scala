@@ -1,7 +1,7 @@
 package com.github.peterzeller.minifumo.typing
 
 import com.github.peterzeller.minifumo
-import com.github.peterzeller.minifumo.{ast, typing}
+import com.github.peterzeller.minifumo.{Main, ast, typing}
 import com.github.peterzeller.minifumo.ast.SourceRange
 import com.github.peterzeller.minifumo.builtins.Standard
 import com.github.peterzeller.minifumo.common.MinifumoError
@@ -13,7 +13,7 @@ import scala.collection.mutable.ListBuffer
 import java.nio.file.Path
 
 object TypeChecker:
-  private val throwOnError = true
+  private val throwOnError = false
 
   final case class TypeError(message: String, source: ast.SourceRange) extends MinifumoError:
     if throwOnError then
@@ -44,6 +44,10 @@ object TypeChecker:
 
           val typedBody = checkFunctionBody(decl.body, typedSig.returnType, context2, metaStore, idSupply, errors)
           TypedAst.TopLevel.FunDecl(typedSig, typedBody)(decl.source)
+      }
+      if errors.nonEmpty then {
+        println(Main.renderTypeErrors(path, errors.toList).mkString("\n\n"))
+        throw new RuntimeException(s"errors checking $path")
       }
       (TypedAst.Program(typedItems)(program.source), errors.toList)
     catch
