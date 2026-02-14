@@ -1,7 +1,7 @@
 package com.github.peterzeller.minifumo.typing
 
 import com.github.peterzeller.minifumo
-import com.github.peterzeller.minifumo.{Main, ast, typing}
+import com.github.peterzeller.minifumo.{ast, typing}
 import com.github.peterzeller.minifumo.ast.SourceRange
 import com.github.peterzeller.minifumo.builtins.Standard
 import com.github.peterzeller.minifumo.common.MinifumoError
@@ -46,10 +46,7 @@ object TypeChecker:
           TypedAst.TopLevel.FunDecl(typedSig, typedBody)(decl.source)
       }
       // Returns accumulated type errors to the caller instead of throwing.
-      if errors.nonEmpty then
-        (TypedAst.Program(typedItems)(program.source), errors.toList)
-      else
-        (TypedAst.Program(typedItems)(program.source), errors.toList)
+      (TypedAst.Program(typedItems)(program.source), errors.toList)
     catch
       case e: Exception =>
         throw new RuntimeException(s"error checking $path", e)
