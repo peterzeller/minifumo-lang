@@ -2,7 +2,7 @@ package com.github.peterzeller.minifumo
 
 import com.github.peterzeller.minifumo.ast.{AstTransform, ProgramFile, SourcePos, SourceRange}
 import com.github.peterzeller.minifumo.builtins.Standard
-import com.github.peterzeller.minifumo.common.MinifumoError
+import com.github.peterzeller.minifumo.common.{MinifumoError, MinifumoErrorWithPath}
 import com.github.peterzeller.minifumo.interpreter.Interpreter
 import com.github.peterzeller.minifumo.parser.{SyntaxError, parseInput}
 import com.github.peterzeller.minifumo.typing.{ProjectSymbolCache, TypeChecker, findProjectRoot}
@@ -51,11 +51,11 @@ object Main:
     )
 
   // Runs a program file and returns either error messages or the evaluated value.
-  def runFile(path: Path): Either[List[String], Interpreter.Value] =
+  def runFile(path: Path): Either[List[MinifumoErrorWithPath], Interpreter.Value] =
     val globalNames = new ProjectSymbolCache(findProjectRoot(path))
     val (_, syntaxErrors) = globalNames.getAst(globalNames.fromPath(path))
     if syntaxErrors.nonEmpty then
-      Left(renderSyntaxErrors(path, syntaxErrors))
+      Left(syntaxErrors.map(MinifumoErrorWithPath(path, _)))
     else
       // val (typedProgram, typeErrors) = TypeChecker.checkProgram(path, program, globalNames, true)
       val (typedProgram, _) = globalNames.typedAst(globalNames.fromPath(path))
@@ -68,9 +68,9 @@ object Main:
         Right(Interpreter.evalProg(typedProgram, globalNames, "main"))
 
   // Checks a directory of examples, reusing cached parse/import info across files.
-  def checkDirectory(path: Path): List[String] =
+  def checkDirectory(path: Path): List[MinifumoErrorWithPath] =
     if !Files.exists(path) then
-      List(s"Directory not found: ${path.toString}")
+      List(MinifumoErrorWithPath(path, SyntaxError(SourcePos(0,0), "Directory not found")))
     else
       val globalNames = new ProjectSymbolCache(findProjectRoot(path))
       Try {
@@ -81,24 +81,24 @@ object Main:
             .sortBy(_.toString)
             .flatMap(checkFile(_, globalNames))
         }
-      }.getOrElse(List(s"Failed reading directory: ${path.toString}"))
+      }.getOrElse(List(MinifumoErrorWithPath(path, SyntaxError(SourcePos(0,0), "Could not read path"))))
 
   // Checks a single file for syntax and type errors, including imports.
-  def checkFile(path: Path): List[String] =
+  def checkFile(path: Path): List[MinifumoErrorWithPath] =
     val globalNames = new ProjectSymbolCache(findProjectRoot(path))
     checkFile(path, globalNames)
 
   // Checks a file using shared caches to avoid reparsing across a project.
-  private def checkFile(path: Path, info: ProjectSymbolCache): List[String] =
+  private def checkFile(path: Path, info: ProjectSymbolCache): List[MinifumoErrorWithPath] =
     val (program, syntaxErrors) = loadProgram(path, info)
     if syntaxErrors.nonEmpty then
-      renderSyntaxErrors(path, syntaxErrors)
+      syntaxErrors.map(MinifumoErrorWithPath(path, _))
     else
       val (_, errors) = TypeChecker.checkProgram(path, program, info, true)
       if errors.isEmpty then
         Nil
       else
-        errors.map(err => s"${path.toString}:${renderSourceRange(err.source)}: ${err.message}")
+        errors.map(MinifumoErrorWithPath(path, _))
 
   // Represents an empty program when parsing fails.
   private val emptyProgramFile = ProgramFile(List(), List())(SourceRange(SourcePos(0, 0), SourcePos(0, 0)))
@@ -116,22 +116,28 @@ object Main:
     else
       s"${start.line}:${start.column}-${end.line}:${end.column}"
 
-  // Formats syntax errors with the given file path.
-  private def renderSyntaxErrors(path: Path, errors: List[SyntaxError]): List[String] =
-    errors.map { err =>
-      s"${path.toString}:${err.pos.line}:${err.pos.column}: ${err.message}"
-    }
-
 
   // Formats a list of errors for reporting.
   def renderTypeErrors(path: Path, errors: List[MinifumoError]): List[String] =
-    val lines: List[String] =
-      if path.endsWith("standard.minifumo") then
-        Standard.loadStandardSource().lines().toList.asScala.toList
-      else
-        Files.readAllLines(path).asScala.toList
-    errors.map { error =>
+    renderTypeErrors(errors.map(MinifumoErrorWithPath(path, _)))
+
+  def renderTypeErrors(errors: List[MinifumoErrorWithPath]): List[String] =
+    var linesCache = Map[Path, Vector[String]]()
+    def getLines(path: Path): Vector[String] =
+      linesCache.get(path) match
+        case None =>
+          val r = readLines(path)
+          linesCache += path -> r
+          r
+        case Some(r) =>
+          r
+
+
+
+    errors.map { errorWithPath =>
+      val error = errorWithPath.err
       val lineIndex = error.source.start.line - 1
+      val lines = getLines(errorWithPath.p)
       if lineIndex >= 0 && lineIndex < lines.length then
         val sourceLine = lines(lineIndex)
         val startColumn = math.max(1, error.source.start.column)
@@ -142,3 +148,13 @@ object Main:
       else
         s"line ${error.source.start.line}: ${error.message}"
     }
+
+def readLines(path: Path): Vector[String] =
+  try
+    if path.endsWith("standard.minifumo") then
+      Standard.loadStandardSource().lines().toList.asScala.toVector
+    else
+      Files.readAllLines(path).asScala.toVector
+  catch
+    case e: Exception =>
+      Vector()

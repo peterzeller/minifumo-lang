@@ -11,7 +11,7 @@ object BuiltInFunctions:
 
   private def printlnString: FuncVal =
     FuncVal("printlnString", s => {
-        println(s"${convertString(s)}")
+        System.out.println(s"${convertString(s)}")
         AdtVal("MakeUnit", List())
     })
 

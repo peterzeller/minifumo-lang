@@ -34,7 +34,7 @@ class MySuite extends munit.FunSuite {
     val ast = AstTransform.program(c)
     val (typed, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true)
     assertEquals(errors, List())
-    val result = Interpreter.evalProg(typed, "main")
+    val result = Interpreter.evalProg(typed, dummyCache, "main")
     assertEquals(result, intValue(3))
   }
 
@@ -48,7 +48,7 @@ class MySuite extends munit.FunSuite {
     val ast = AstTransform.program(c)
     val (typed, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true)
     assertEquals(errors, List())
-    val result = Interpreter.evalProg(typed, "main")
+    val result = Interpreter.evalProg(typed, dummyCache, "main")
     assertEquals(result, intValue(2))
   }
 
@@ -66,7 +66,7 @@ class MySuite extends munit.FunSuite {
     val ast = AstTransform.program(c)
     val (typed, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true)
     assertEquals(errors, List())
-    val result = Interpreter.evalProg(typed, "main")
+    val result = Interpreter.evalProg(typed, dummyCache, "main")
     assertEquals(result, intValue(42))
   }
 

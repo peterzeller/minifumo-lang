@@ -105,7 +105,7 @@ class TypeCheckerSuite extends munit.FunSuite:
       override def assign(metaId: Int, term: TypedAst.Expr): Unit = assignments.update(metaId, term)
       override def getAssignment(metaId: Int): Option[TypedAst.Expr] = assignments.get(metaId)
     val result = TypeChecker.isDefEq(meta, literal)
-    assert(result.isRight)
+    assert(result)
     assertEquals(assignments.get(0), Some(literal))
   }
 

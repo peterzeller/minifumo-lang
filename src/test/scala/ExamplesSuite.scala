@@ -1,6 +1,7 @@
 package com.github.peterzeller.minifumo
 
 import com.github.peterzeller.minifumo.ast.{AstTransform, SourceRange, TopLevel}
+import com.github.peterzeller.minifumo.common.MinifumoErrorWithPath
 import com.github.peterzeller.minifumo.parser.parseInput
 import munit.FunSuite
 
@@ -87,19 +88,19 @@ class ExamplesSuite extends FunSuite:
     else if actualErrors.isEmpty then
       fail(s"Expected errors in ${path.getFileName} but type checker reported none.")
     else if expectedErrors.isEmpty then
-      fail(s"Unexpected errors in ${path.getFileName}:\n${formatErrors(path, actualErrors)}")
+      fail(s"Unexpected errors in ${path.getFileName}:\n${Main.renderTypeErrors(actualErrors)}")
     else
       val remainingExpected = ListBuffer.from(expectedErrors)
       actualErrors.foreach { actual =>
         val matchIndex = remainingExpected.indexWhere { expected =>
-          expected.line == actual.line && actual.message.contains(expected.message)
+          expected.line == actual.err.source.start.line && actual.err.message.contains(expected.message)
         }
         if matchIndex >= 0 then
           remainingExpected.remove(matchIndex)
         else
           fail(
-            s"Missing expected error comment in ${path.getFileName} for line ${actual.line}:\n" +
-              s"  actual: ${actual.message}"
+            s"Missing expected error comment in ${path.getFileName} for line ${actual.err.source.start.line}:\n" +
+              s"  actual: ${actual.err.message}"
           )
       }
       if remainingExpected.nonEmpty then
@@ -107,14 +108,8 @@ class ExamplesSuite extends FunSuite:
         fail(s"Expected error comments without matching errors in ${path.getFileName}:\n$extras")
 
   // Collects errors using the CLI entry point to include import resolution.
-  def collectErrors(path: Path): List[ActualError] =
-    val errors = Main.checkFile(path)
-    errors.map { message =>
-      parseErrorMessage(message).getOrElse {
-        val pos = com.github.peterzeller.minifumo.ast.SourcePos(0, 0)
-        ActualError(0, message, SourceRange(pos, pos))
-      }
-    }
+  def collectErrors(path: Path): List[MinifumoErrorWithPath] =
+    Main.checkFile(path)
 
   // Extracts expected errors from source comments.
   def extractExpectedErrors(content: String): List[ExpectedError] =
@@ -136,7 +131,7 @@ class ExamplesSuite extends FunSuite:
       errors.toList
     }.toList
 
-  
+
 
   // Extracts expected output comments from the example source.
   def extractExpectedOutput(content: String): Option[String] =
@@ -169,17 +164,6 @@ class ExamplesSuite extends FunSuite:
       case fun: TopLevel.FunDecl => fun.sig.name == "main"
       case _ => false
 
-  // Parses error output from Main.checkFile into structured errors.
-  private def parseErrorMessage(message: String): Option[ActualError] =
-    val pattern = "^.+:(\\d+):(\\d+)(?:-(\\d+):(\\d+))?: (.+)$".r
-    message match
-      case pattern(line, column, endLine, endColumn, text) =>
-        val start = com.github.peterzeller.minifumo.ast.SourcePos(line.toInt, column.toInt)
-        val end =
-          if endLine == null || endColumn == null then start
-          else com.github.peterzeller.minifumo.ast.SourcePos(endLine.toInt, endColumn.toInt)
-        Some(ActualError(line.toInt, text, SourceRange(start, end)))
-      case _ => None
 
   // Lists all example files in the examples directory.
   private def listExampleFiles(): List[Path] =
