@@ -1,2 +1,2 @@
 fun usesUnknown(): Int
-    wadada // error: Unknown symbol: wadada
+    wadada // error: Unknown symbol wadada

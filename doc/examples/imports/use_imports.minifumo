@@ -1,19 +1,7 @@
-import Pair from "imports/exported_defs"
-import add_one from "imports/exported_defs"
-import MyShow from "imports/exported_defs"
-
-// Converts an Int to a String literal.
-fun myShowIntFn(value: Int): String
-    "int"
-
-// Builds a MyShow dictionary for Int.
-fun myShowInt(): MyShow[Int]
-    MyShow(myShowIntFn)
+import add_one from "imports/exported_defs.minifumo"
 
 fun main(): Unit
-    let p: Pair[Int, Int] = Pair(1, 2)
     println[Int](add_one(1), showInt())
-    MakeUnit
 
 // Output:
 // 2

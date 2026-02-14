@@ -1,13 +1,13 @@
-data Option[A: Type] = None | Some(value: A)
+data MyOption[A: Type] = MyNone | MySome(value: A)
 
-fun matchValue(value: Option[Int]): Int
+fun matchValue(value: MyOption[Int]): Int
     match value
-        case None
+        case MyNone
             0
-        case Some(x)
+        case MySome(x)
             x
 
 fun main(): Unit
-    println[Int](matchValue(Some[Int](1)), showInt())
+    println[Int](matchValue(MySome[Int](1)), showInt())
 
 // Output: 1

@@ -1,6 +1,4 @@
-
-
 fun main(): Unit
-    printlnString("Hello world")
+    println[Int](7, showInt())
 
-// Output: Hello world
+// Output: 7

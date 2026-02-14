@@ -45,11 +45,11 @@ object TypeChecker:
           val typedBody = checkFunctionBody(decl.body, typedSig.returnType, context2, metaStore, idSupply, errors)
           TypedAst.TopLevel.FunDecl(typedSig, typedBody)(decl.source)
       }
-      if errors.nonEmpty then {
-        println(Main.renderTypeErrors(path, errors.toList).mkString("\n\n"))
-        throw new RuntimeException(s"errors checking $path")
-      }
-      (TypedAst.Program(typedItems)(program.source), errors.toList)
+      // Returns accumulated type errors to the caller instead of throwing.
+      if errors.nonEmpty then
+        (TypedAst.Program(typedItems)(program.source), errors.toList)
+      else
+        (TypedAst.Program(typedItems)(program.source), errors.toList)
     catch
       case e: Exception =>
         throw new RuntimeException(s"error checking $path", e)

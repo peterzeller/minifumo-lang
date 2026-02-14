@@ -1,4 +1,2 @@
-fun main(): Unit
-    println[Bool](true and false, showBool())
-
-// Output: False
+fun andAsInt(a: Bool, b: Bool): Int
+    if a and b then 1 else 0

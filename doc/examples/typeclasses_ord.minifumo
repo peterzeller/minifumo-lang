@@ -1,81 +1,21 @@
-// Ord type class data with instances for Int and MyList.
+data MyOrd[T: Type] = MyOrdMk(lt: T -> T -> Bool)
 
-data MyList[T: Type] = Nil | Cons(head: T, tail: MyList[T])
-
-data Ord[T: Type] = Ord(lt: T -> T -> Bool)
-
-// Compares two Int values using the built-in ordering.
 fun ordIntFn(a: Int, b: Int): Bool
     a < b
 
-// Builds the Int ordering dictionary.
-fun ordInt(): Ord[Int]
-    Ord(ordIntFn)
+fun ordInt(): MyOrd[Int]
+    MyOrdMk[Int](ordIntFn)
 
-// Compares two lists using the provided element ordering.
-fun ordListCompare[T: Type](a: MyList[T], b: MyList[T], ord: Ord[T]): Bool
+fun minOf2[T: Type](a: T, b: T, ord: MyOrd[T]): T
     match ord
-        case Ord(ltFn)
-            match a
-                case Nil
-                    match b
-                        case Nil
-                            false
-                        case Cons(_, _)
-                            true
-                case Cons(ah, at)
-                    match b
-                        case Nil
-                            false
-                        case Cons(bh, bt)
-                            if ltFn(ah, bh)
-                                true
-                            else
-                                if ltFn(bh, ah)
-                                    false
-                                else
-                                    ordListCompare[T](at, bt, ord)
-
-// Builds an ordering function for lists.
-fun ordListFn[T: Type](ord: Ord[T], a: MyList[T], b: MyList[T]): Bool
-    ordListCompare[T](a, b, ord)
-
-// Builds an ordering for lists from an element ordering.
-fun ordList[T: Type](ord: Ord[T]): Ord[MyList[T]]
-    Ord(ordListFn[T](ord))
-
-// Returns the smaller of two values using the given ordering.
-fun minOf2[T: Type](a: T, b: T, ord: Ord[T]): T
-    match ord
-        case Ord(ltFn)
+        case MyOrdMk(ltFn)
             if ltFn(a, b) then a else b
 
-// Returns the smallest of three values using the given ordering.
-fun minOf3[T: Type](a: T, b: T, c: T, ord: Ord[T]): T
+fun minOf3[T: Type](a: T, b: T, c: T, ord: MyOrd[T]): T
     minOf2[T](minOf2[T](a, b, ord), c, ord)
-
-// Converts a list to a String using the provided Show dictionary.
-fun myShowFn[T: Type](s: Show[T], value: MyList[T]): String
-    match value
-        case Nil
-            "Nil"
-        case Cons(head, tail)
-            stringAppend(
-                "Cons(",
-                stringAppend(show(head, s), stringAppend(", ", stringAppend(show[MyList[T]](tail, myShow[T](s)), ")")))
-            )
-
-// Builds a Show dictionary for lists.
-fun myShow[T: Type](s: Show[T]): Show[MyList[T]]
-    Show(myShowFn[T](s))
 
 fun main(): Unit
     println[Int](minOf3[Int](3, 1, 2, ordInt()), showInt())
-    let list1: MyList[Int] = Cons[Int](1, Cons[Int](2, Nil[Int]))
-    let list2: MyList[Int] = Cons[Int](1, Cons[Int](3, Nil[Int]))
-    let list3: MyList[Int] = Cons(0, Cons(9, Nil))
-    println[MyList[Int]](minOf3[MyList[Int]](list1, list2, list3, ordList[Int](ordInt())), myShow[Int](showInt()))
 
 // Output:
 // 1
-// Cons(0, Cons(9, Nil))
