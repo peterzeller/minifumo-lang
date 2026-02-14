@@ -89,16 +89,16 @@ object Interpreter:
 
   private def buildDatatypeValue(sym: DatatypeSymbol, typeParams: List[LocalSymbol]): Value =
     typeParams match
-      case x :: xs => Value.FuncVal(s"${sym.name}_${typeParams.length}", _ => buildDatatypeValue(sym, xs))
+      case _ :: xs => Value.FuncVal(s"${sym.name}_${typeParams.length}", _ => buildDatatypeValue(sym, xs))
       case Nil => Value.SortValue()
 
   private def buildConstructorValue(name: String, typeParams: List[LocalSymbol], fields: List[CtorField], values: List[Value]): Value =
     typeParams match
-      case x::xs =>
-        Value.FuncVal(s"${name}_${fields.length+typeParams.length}", v => buildConstructorValue(name, xs, fields, values))
+      case _::xs =>
+        Value.FuncVal(s"${name}_${fields.length+typeParams.length}", _ => buildConstructorValue(name, xs, fields, values))
       case Nil =>
         fields match
-          case x::xs =>
+          case _::xs =>
             Value.FuncVal(s"${name}_${fields.length}", v => buildConstructorValue(name, typeParams, xs, values :+ v))
           case Nil =>
             Value.AdtVal(name, values)

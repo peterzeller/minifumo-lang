@@ -527,7 +527,7 @@ object TypeChecker:
     LocalSymbol(s.name, substitute(s.tpe, symbol, value), s.id)
 
   /** Exposes substitution for tests. */
-  private[typing] def substituteForTest(term: TypedAst.Expr, symbol: TypedAst.LocalSymbol, value: TypedAst.Expr): TypedAst.Expr =
+  def substituteForTest(term: TypedAst.Expr, symbol: TypedAst.LocalSymbol, value: TypedAst.Expr): TypedAst.Expr =
     substitute(term, symbol, value)
 
 //  /** Infers an expression in a test context built from a program and exports. */

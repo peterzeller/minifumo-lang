@@ -1,19 +1,9 @@
-package com.github.peterzeller.minifumo.typing
-
 import com.github.peterzeller.minifumo.ast
-import com.github.peterzeller.minifumo.ast.AstTransform
-import com.github.peterzeller.minifumo.parser.parseInput
+import com.github.peterzeller.minifumo.typing.{TypeChecker, TypedAst}
+
 import scala.collection.mutable
 
 class TypeCheckerSuite extends munit.FunSuite:
-  // Parses a program from a string for typing tests.
-  private def parseProgram(input: String): ast.ProgramFile =
-    val (cst, _) = parseInput(input)
-    AstTransform.program(cst)
-
-  // Extracts the body expression from the first function declaration.
-  private def firstFunBody(program: ast.ProgramFile): ast.Expr =
-    program.items.collectFirst { case ast.TopLevel.FunDecl(_, body, _) => body }.get
 
   // Builds an empty typing context for normalization tests.
   private def emptyContext: TypeChecker.Context =

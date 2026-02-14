@@ -1,12 +1,11 @@
 package com.github.peterzeller.minifumo
 
-import com.github.peterzeller.minifumo.ast.{AstTransform, ProgramFile, SourcePos, SourceRange}
+import com.github.peterzeller.minifumo.ast.{ProgramFile, SourcePos, SourceRange}
 import com.github.peterzeller.minifumo.builtins.Standard
 import com.github.peterzeller.minifumo.common.{MinifumoError, MinifumoErrorWithPath}
 import com.github.peterzeller.minifumo.interpreter.Interpreter
-import com.github.peterzeller.minifumo.parser.{SyntaxError, parseInput}
+import com.github.peterzeller.minifumo.parser.SyntaxError
 import com.github.peterzeller.minifumo.typing.{ProjectSymbolCache, TypeChecker, findProjectRoot}
-import com.github.peterzeller.minifumo.typing.TypeChecker.TypeError
 
 import java.nio.file.{Files, Path, Paths}
 import scala.jdk.CollectionConverters.*
@@ -101,20 +100,14 @@ object Main:
         errors.map(MinifumoErrorWithPath(path, _))
 
   // Represents an empty program when parsing fails.
-  private val emptyProgramFile = ProgramFile(List(), List())(SourceRange(SourcePos(0, 0), SourcePos(0, 0)))
+  ProgramFile(List(), List())(SourceRange(SourcePos(0, 0), SourcePos(0, 0)))
 
   // Loads and caches syntax parsing results for a file path.
   private def loadProgram(path: Path, info: ProjectSymbolCache): (ProgramFile, List[SyntaxError]) =
     info.getAst(info.makeRelative(path))
 
   // Renders a source range for error reporting.
-  private def renderSourceRange(range: SourceRange): String =
-    val start = range.start
-    val end = range.end
-    if start == end then
-      s"${start.line}:${start.column}"
-    else
-      s"${start.line}:${start.column}-${end.line}:${end.column}"
+  
 
 
   // Formats a list of errors for reporting.
@@ -156,5 +149,5 @@ def readLines(path: Path): Vector[String] =
     else
       Files.readAllLines(path).asScala.toVector
   catch
-    case e: Exception =>
+    case _: Exception =>
       Vector()
