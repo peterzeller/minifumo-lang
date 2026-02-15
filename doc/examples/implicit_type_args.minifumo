@@ -1,0 +1,6 @@
+fun addOne(l: List[Int]): List[Int]
+    match l
+        case Nil
+            Nil
+        case Cons(x, xs)
+            Cons(x + 1, addOne(xs))

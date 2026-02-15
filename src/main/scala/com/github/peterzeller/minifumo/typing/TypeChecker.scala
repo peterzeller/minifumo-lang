@@ -43,7 +43,9 @@ object TypeChecker:
           errors.addAll(errs)
 
           val typedBody = checkFunctionBody(decl.body, typedSig.returnType, context2, metaStore, idSupply, errors)
-          TypedAst.TopLevel.FunDecl(typedSig, typedBody)(decl.source)
+          val (elaboratedBody, unresolvedMetaErrors) = finalizeTopLevelExpr(typedBody, decl.source)(using metaStore)
+          errors.addAll(unresolvedMetaErrors)
+          TypedAst.TopLevel.FunDecl(typedSig, elaboratedBody)(decl.source)
       }
       // Returns accumulated type errors to the caller instead of throwing.
       (TypedAst.Program(typedItems)(program.source), errors.toList)
@@ -199,6 +201,13 @@ object TypeChecker:
     errors.addAll(errs)
     typedBody
 
+  /** Resolves metas at the end of a declaration and reports unresolved placeholders. */
+  private def finalizeTopLevelExpr(expr: TypedAst.Expr, source: SourceRange)
+                               (implicit metas: MetaContext): (TypedAst.Expr, List[TypeError]) =
+    val unresolved = collectUnresolvedMetas(expr)
+    val errs = unresolved.toList.sorted.map(metaId => TypeError(s"Could not infer implicit argument ?$metaId", source))
+    (instantiate(expr), errs)
+
   /** Translates a signature expression to a typed expression. */
   private def signatureExpr(expr: ast.Expr, globals: GlobalEnv, locals: Map[String, TypedAst.TermSymbol]): TypedAst.Expr =
     expr match
@@ -331,7 +340,7 @@ object TypeChecker:
         val tpe = literalType(value, ctx)
         (typed, tpe, List())
       case ast.Expr.Call(callee, arg) =>
-        val (typedCallee, calleeType, errs1) = infer(callee)
+        val (typedCallee, calleeType, errs1) = inferAndElaborate(callee)
         whnf(calleeType) match {
           case TypedAst.Expr.Pi(dom, cod, isImplicit) =>
             val (typedArg, errs2) = check(arg, dom.tpe)
@@ -382,7 +391,7 @@ object TypeChecker:
             val expected = signatureExpr(tpe, ctx.globals, Map())
             val (typedValue, errs) = check(value, expected)
             (typedValue, expected, errs)
-          case None => infer(value)
+          case None => inferAndElaborate(value)
         val (valueExpr, valueType, errs) = inferredValue
         val symbol = TypedAst.LocalSymbol(name, valueType, ids.freshLocalId())
         val bodyCtx = ctx.withLocal(symbol, Some(valueExpr))
@@ -445,31 +454,48 @@ object TypeChecker:
       case _ =>
         // TODO for some expressions, like match-cases, it might make sense to transfer expected type into the cases to get better error messages and better inference
         // TODO consider adding expectedType as optional parameter to infer
-        val (inferredExpr, inferredType, errs) = infer(expr)
-        val errs2 =
-          if isDefEq(inferredType, expectedNorm) then
-            errs
-          else
-            TypeError(s"Expected ${prettyExpr(expectedNorm)} but got ${prettyExpr(inferredType)}\nIn expression ${prettyExpr(inferredExpr)}", expr.source) :: errs
-        (inferredExpr, errs2)
+        checkAndElaborate(expr, expectedType)
 
-//  /** Inserts implicit arguments as metas before explicit application. */
-//  private def insertImplicitArgs(
-//      callee: TypedAst.Expr,
-//      calleeType: TypedAst.Expr,
-//      source: ast.SourceRange
-//    )(implicit ctx: Context, metas: MetaContext, ids: IdSupply): (TypedAst.Expr, TypedAst.Expr) =
-//    var currentExpr = callee
-//    var currentType = calleeType
-//    var keepGoing = true
-//    while keepGoing do
-//      whnf(currentType) match
-//        case TypedAst.Expr.Pi(dom, cod, true) =>
-//          val meta = freshMeta(dom.tpe, source)
-//          currentExpr = TypedAst.Expr.AppImplicit(currentExpr, meta, cod)(source)
-//          currentType = cod
-//        case _ => keepGoing = false
-//    (currentExpr, currentType)
+  /** Infers and elaborates an expression by inserting missing implicit arguments. */
+  private def inferAndElaborate(expr: ast.Expr)
+                               (implicit ctx: TypeContext, metas: MetaContext, ids: IdSupply): (TypedAst.Expr, TypedAst.Expr, List[TypeError]) =
+    val (typedExpr, inferredType, errs) = infer(expr)
+    val (elaboratedExpr, elaboratedType) = insertImplicitArgs(typedExpr, inferredType, expr.source)
+    (elaboratedExpr, elaboratedType, errs)
+
+  /** Checks and elaborates an expression against an expected type. */
+  private def checkAndElaborate(expr: ast.Expr, expectedType: TypedAst.Expr)
+                               (implicit ctx: TypeContext, metas: MetaContext, ids: IdSupply): (TypedAst.Expr, List[TypeError]) =
+    val expectedNorm = whnf(expectedType)
+    val (inferredExpr, inferredType, errs) = inferAndElaborate(expr)
+    val errs2 =
+      if isDefEq(inferredType, expectedNorm) then errs
+      else TypeError(s"Expected ${prettyExpr(expectedNorm)} but got ${prettyExpr(inferredType)}\nIn expression ${prettyExpr(inferredExpr)}", expr.source) :: errs
+    (inferredExpr, errs2)
+
+  /** Inserts synthetic implicit arguments and placeholder metas before explicit arguments. */
+  private def insertImplicitArgs(
+      callee: TypedAst.Expr,
+      calleeType: TypedAst.Expr,
+      source: ast.SourceRange
+    )(implicit ctx: Context, metas: MetaContext, ids: IdSupply): (TypedAst.Expr, TypedAst.Expr) =
+    var currentExpr = callee
+    var currentType = calleeType
+    var keepGoing = true
+    while keepGoing do
+      whnf(currentType) match
+        case TypedAst.Expr.Pi(dom, cod, true) =>
+          val meta = searchImplicitArgument(dom.tpe, source).getOrElse(freshMeta(dom.tpe, source))
+          currentExpr = TypedAst.Expr.AppImplicit(currentExpr, meta, substitute(cod, dom, meta))(source)
+          currentType = substitute(cod, dom, meta)
+        case _ =>
+          keepGoing = false
+    (currentExpr, currentType)
+
+  /** Placeholder hook for future typeclass-style implicit search. */
+  private def searchImplicitArgument(expectedType: TypedAst.Expr, source: SourceRange)
+                                    (implicit ctx: Context): Option[TypedAst.Expr] =
+    None
 
   /** Creates a fresh meta-variable expression. */
   private def freshMeta(tpe: TypedAst.Expr, source: ast.SourceRange)(implicit ids: IdSupply): TypedAst.Expr =
@@ -496,6 +522,25 @@ object TypeChecker:
       case TypedAst.Expr.Match(scrutinee, cases) =>
         occurs(metaId, scrutinee) || cases.exists(c => occurs(metaId, c.body))
       case _ => false
+
+  /** Collects unresolved metavariable ids from a typed expression. */
+  private def collectUnresolvedMetas(term: TypedAst.Expr)(implicit metas: MetaContext): Set[Int] =
+    instantiate(term) match
+      case TypedAst.Expr.Meta(id, _) if metas.getAssignment(id).isEmpty => Set(id)
+      case TypedAst.Expr.Meta(_, _) => Set.empty
+      case TypedAst.Expr.App(callee, arg, tpe) =>
+        collectUnresolvedMetas(callee) ++ collectUnresolvedMetas(arg) ++ collectUnresolvedMetas(tpe)
+      case TypedAst.Expr.AppImplicit(callee, arg, tpe) =>
+        collectUnresolvedMetas(callee) ++ collectUnresolvedMetas(arg) ++ collectUnresolvedMetas(tpe)
+      case TypedAst.Expr.Lambda(param, body, tpe) =>
+        collectUnresolvedMetas(param.tpe) ++ collectUnresolvedMetas(body) ++ collectUnresolvedMetas(tpe)
+      case TypedAst.Expr.LetIn(symbol, _, declaredType, value, body) =>
+        collectUnresolvedMetas(symbol.tpe) ++ collectUnresolvedMetas(declaredType) ++ collectUnresolvedMetas(value) ++ collectUnresolvedMetas(body)
+      case TypedAst.Expr.Pi(dom, cod, _) =>
+        collectUnresolvedMetas(dom.tpe) ++ collectUnresolvedMetas(cod)
+      case TypedAst.Expr.Match(scrutinee, cases) =>
+        collectUnresolvedMetas(scrutinee) ++ cases.flatMap(c => collectUnresolvedMetas(c.body)).toSet
+      case _ => Set.empty
 
   /** Substitutes a local symbol with a value in a term. */
   private def substitute(term: TypedAst.Expr, symbol: TypedAst.LocalSymbol, value: TypedAst.Expr): TypedAst.Expr =
