@@ -43,7 +43,7 @@ object TypeChecker:
           errors.addAll(errs)
 
           val typedBody = checkFunctionBody(decl.body, typedSig.returnType, context2, metaStore, idSupply, errors)
-          val (elaboratedBody, unresolvedMetaErrors) = finalizeTopLevelExpr(typedBody, decl.source)(using metaStore)
+          val (elaboratedBody, unresolvedMetaErrors) = finalizeTopLevelExpr(typedBody)(using metaStore)
           errors.addAll(unresolvedMetaErrors)
           TypedAst.TopLevel.FunDecl(typedSig, elaboratedBody)(decl.source)
       }
@@ -202,10 +202,10 @@ object TypeChecker:
     typedBody
 
   /** Resolves metas at the end of a declaration and reports unresolved placeholders. */
-  private def finalizeTopLevelExpr(expr: TypedAst.Expr, source: SourceRange)
+  private def finalizeTopLevelExpr(expr: TypedAst.Expr)
                                (implicit metas: MetaContext): (TypedAst.Expr, List[TypeError]) =
     val unresolved = collectUnresolvedMetas(expr)
-    val errs = unresolved.toList.sorted.map(metaId => TypeError(s"Could not infer implicit argument ?$metaId", source))
+    val errs = unresolved.toList.map(meta => TypeError(s"Could not infer implicit argument ${prettyExpr(meta)}", meta.source))
     (instantiate(expr), errs)
 
   /** Translates a signature expression to a typed expression. */
@@ -424,7 +424,7 @@ object TypeChecker:
 
         (TypedAst.Expr.Match(scrutineeExpr, typedCasesExpr)(expr.source), firstType, errs++errors)
       case ast.Expr.Hole() =>
-        val meta = freshMeta(TypedAst.Expr.UnknownType()(expr.source), expr.source)
+        val meta = freshMeta("hole", TypedAst.Expr.UnknownType()(expr.source), expr.source)
         (meta, TypedAst.Expr.UnknownType()(expr.source), List())
 
 
@@ -485,7 +485,7 @@ object TypeChecker:
     while keepGoing do
       whnf(currentType) match
         case TypedAst.Expr.Pi(dom, cod, true) =>
-          val meta = searchImplicitArgument(dom.tpe, source).getOrElse(freshMeta(dom.tpe, source))
+          val meta = searchImplicitArgument(dom.tpe, source).getOrElse(freshMeta(dom.name, dom.tpe, source))
           currentExpr = TypedAst.Expr.AppImplicit(currentExpr, meta, substitute(cod, dom, meta))(source)
           currentType = substitute(cod, dom, meta)
         case _ =>
@@ -498,8 +498,8 @@ object TypeChecker:
     None
 
   /** Creates a fresh meta-variable expression. */
-  private def freshMeta(tpe: TypedAst.Expr, source: ast.SourceRange)(implicit ids: IdSupply): TypedAst.Expr =
-    TypedAst.Expr.Meta(ids.freshMetaId(), tpe)(source)
+  private def freshMeta(name: String, tpe: TypedAst.Expr, source: ast.SourceRange)(implicit ids: IdSupply): TypedAst.Expr =
+    TypedAst.Expr.Meta(ids.freshMetaId(), tpe)(name, source)
 
   /** Checks whether a meta-variable can be solved with a term. */
   private def solveMeta(metaId: Int, term: TypedAst.Expr)
@@ -524,9 +524,9 @@ object TypeChecker:
       case _ => false
 
   /** Collects unresolved metavariable ids from a typed expression. */
-  private def collectUnresolvedMetas(term: TypedAst.Expr)(implicit metas: MetaContext): Set[Int] =
+  private def collectUnresolvedMetas(term: TypedAst.Expr)(implicit metas: MetaContext): Set[TypedAst.Expr.Meta] =
     instantiate(term) match
-      case TypedAst.Expr.Meta(id, _) if metas.getAssignment(id).isEmpty => Set(id)
+      case m@TypedAst.Expr.Meta(id, _) if metas.getAssignment(id).isEmpty => Set(m)
       case TypedAst.Expr.Meta(_, _) => Set.empty
       case TypedAst.Expr.App(callee, arg, tpe) =>
         collectUnresolvedMetas(callee) ++ collectUnresolvedMetas(arg) ++ collectUnresolvedMetas(tpe)
@@ -617,7 +617,7 @@ object TypeChecker:
       case TypedAst.Expr.Lambda(param, _, _) => s"(\\${param.name} => ...)"
       case TypedAst.Expr.LetIn(symbol, _, _, _, _) => s"(let ${symbol.name} = ...)"
       case TypedAst.Expr.Match(_, _) => "match"
-      case TypedAst.Expr.Meta(index, tpe) => s"Meta_$index : ${prettyExpr(tpe)}"
+      case m@TypedAst.Expr.Meta(index, tpe) => s"?${m.name}_$index : ${prettyExpr(tpe)}"
 
   /** Determines the type of a literal value. */
   private def literalType(value: ast.Literal, ctx: TypeContext): TypedAst.Expr =
