@@ -17,15 +17,15 @@ class GlobalSymbolsSuite extends munit.FunSuite:
 
   test("buildGlobalNames respects export flags") {
     val program = parseProgram("""
-      |export data Foo = Foo
-      |data Hidden = Hidden
+      |export data Foo = MakeFoo
+      |data Hidden = MakeHidden
       |export fun visible(): Int
       |  1
       |fun hidden(): Int
       |  2
     """.stripMargin)
     val names = GlobalSymbols.buildGlobalNames(Paths.get("main.minifumo"), program, onlyExported = true)
-    assertEquals(names.keySet, Set("Foo", "visible"))
+    assertEquals(names.keySet, Set("Foo", "MakeFoo", "visible"))
   }
 
   test("checkSignatureExpr resolves known names and rejects lambdas") {
@@ -62,4 +62,34 @@ class GlobalSymbolsSuite extends munit.FunSuite:
     val (imports, errors) = GlobalSymbols.resolveImports(program, cache)
     assert(errors.isEmpty)
     assertEquals(imports.keySet, Set("foo"))
+  }
+
+  test("parser supports explicit constructor result types") {
+    val (program, parseErrors) = parseInput("""
+      |data List[T: Type] =
+      |   Nil: List[T]
+      | | Cons(head: T, tail: List[T]): List[T]
+    """.stripMargin)
+    assertEquals(parseErrors, List())
+    val dataDecl = program.items.collectFirst { case d: ast.TopLevel.DataDecl => d }.getOrElse(fail("Expected a data declaration"))
+    assert(dataDecl.ctors.forall(_.returnType.nonEmpty))
+  }
+
+  test("supports sized list signatures with explicit constructor result types") {
+    val (program, parseErrors) = parseInput("""
+      |export data SizedList[T: Type, N: Nat] =
+      |   SizedNil: SizedList[T, 0]
+      | | SizedCons(head: T, tail: SizedList[T, N]): SizedList[T, Suc(N)]
+      |
+      |export fun appendSizedList[T: Type, N: Nat, M: Nat](xs: SizedList[T, N], ys: SizedList[T, M]): SizedList[T, natAdd(N, M)]
+      |  xs
+    """.stripMargin)
+    assertEquals(parseErrors, List())
+    val cache = DummyNameCache(Map())
+    val (symbols, errors) = GlobalSymbols.buildGlobalSymbols(Paths.get("main.minifumo"), program, cache, onlyExported = false)
+    assertEquals(errors, List())
+    assert(symbols.contains("SizedList"))
+    assert(symbols.contains("SizedNil"))
+    assert(symbols.contains("SizedCons"))
+    assert(symbols.contains("appendSizedList"))
   }

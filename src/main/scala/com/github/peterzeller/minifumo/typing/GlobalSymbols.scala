@@ -39,9 +39,10 @@ object GlobalSymbols:
 
   private def topLevelToGlobalNames(file: Path, onlyExported: Boolean)(t: ast.TopLevel): Iterable[(String, GlobalName)] =
     t match
-      case ast.TopLevel.DataDecl(name, _, _, exported) if exported || !onlyExported =>
-        // TODO add also the constructors, eliminator, accessors
-        List(name -> GlobalName(file, name))
+      case ast.TopLevel.DataDecl(name, _, ctors, exported) if exported || !onlyExported =>
+        val dataTypeName = List(name -> GlobalName(file, name))
+        val constructorNames = ctors.map(ctor => ctor.name -> GlobalName(file, ctor.name))
+        dataTypeName ++ constructorNames
       case ast.TopLevel.FunDecl(sig, _, exported) if exported || !onlyExported =>
         List(sig.name -> GlobalName(file, sig.name))
       case _ =>
@@ -164,7 +165,8 @@ object GlobalSymbols:
         // add symbols for the constructors
         for ctor <- ctors do
           // create a dummy fun decl for the constructor
-          val sig = FunSig(ctor.name, implicitParams, ctor.fields.map(f => FunParam(f.name, f.tpe)(f.source)), dt)(ctor.source)
+          val ctorReturnType = ctor.returnType.getOrElse(dt)
+          val sig = FunSig(ctor.name, implicitParams, ctor.fields.map(f => FunParam(f.name, f.tpe)(f.source)), ctorReturnType)(ctor.source)
           val f: ast.TopLevel.FunDecl = ast.TopLevel.FunDecl(sig, ast.Expr.Hole()(ctor.source), true)(ctor.source)
 
           val (syms, errs) = symbolsForFunDef(f, file, env)
