@@ -1,6 +1,6 @@
 fun main(): Unit
     let x = 1
     let y = x + 1
-    println[Int](y, showInt())
+    println(y, showInt())
 
 // Output: 2

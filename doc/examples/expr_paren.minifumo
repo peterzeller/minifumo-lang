@@ -1,4 +1,4 @@
 fun main(): Unit
-    println[Int]((1), showInt())
+    println((1), showInt())
 
 // Output: 1

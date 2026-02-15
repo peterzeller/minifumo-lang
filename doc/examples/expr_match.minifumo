@@ -8,6 +8,6 @@ fun matchValue(value: MyOption[Int]): Int
             x
 
 fun main(): Unit
-    println[Int](matchValue(MySome[Int](1)), showInt())
+    println(matchValue(MySome(1)), showInt())
 
 // Output: 1

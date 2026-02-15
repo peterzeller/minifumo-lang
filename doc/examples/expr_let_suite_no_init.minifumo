@@ -1,5 +1,5 @@
 fun main(): Unit
     let x: Int = 1
-    println[Int](x, showInt())
+    println(x, showInt())
 
 // Output: 1

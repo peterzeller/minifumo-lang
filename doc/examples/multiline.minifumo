@@ -1,6 +1,6 @@
 fun main(): Unit
-    println[Int](1, showInt())
-    println[Int](2, showInt())
+    println(1, showInt())
+    println(2, showInt())
 
 // Output:
 // 1

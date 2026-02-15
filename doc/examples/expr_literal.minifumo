@@ -8,9 +8,9 @@ fun constString(): String
     "hi"
 
 fun main(): Unit
-    println[Int](constInt(), showInt())
-    println[Bool](constBool(), showBool())
-    println[String](constString(), showString())
+    println(constInt(), showInt())
+    println(constBool(), showBool())
+    println(constString(), showString())
 
 // Output:
 // 42

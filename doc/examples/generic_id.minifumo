@@ -2,7 +2,7 @@ fun id[T: Type](x: T): T
     x
 
 fun main(): Unit
-    let value: Int = id[Int](42)
-    println[Int](value, showInt())
+    let value: Int = id(42)
+    println(value, showInt())
 
 // Output: 42
