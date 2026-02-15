@@ -7,10 +7,10 @@ fun constBool(): Bool
 fun constString(): String
     "hi"
 
-fun main(): unit
-    println(constInt(), showInt())
-    println(constBool(), showBool())
-    println(constString(), showString())
+fun main(): Unit
+    println[Int](constInt(), showInt())
+    println[Bool](constBool(), showBool())
+    println[String](constString(), showString())
 
 // Output:
 // 42

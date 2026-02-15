@@ -1,7 +1,7 @@
-fun main(): unit
+fun main(): Unit
     if true
-        println(1, showInt())
+        println[Int](1, showInt())
     else
-        println(2, showInt())
+        println[Int](2, showInt())
 
 // Output: 1

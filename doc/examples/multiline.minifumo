@@ -1,7 +1,7 @@
-fun main(): unit
-    println("Line 1", showString())
-    println("Line 2", showString())
+fun main(): Unit
+    println[Int](1, showInt())
+    println[Int](2, showInt())
 
 // Output:
-// Line 1
-// Line 2
+// 1
+// 2

@@ -1,15 +1,15 @@
-data List[A: Type] = Nil | Cons(head: A, tail: List[A])
+data MyList[A: Type] = MyNil | MyCons(head: A, tail: MyList[A])
 
-fun printIncrement(values: List[Int]): unit
+fun printIncrement(values: MyList[Int]): Unit
     match values
-        case Nil
-            unit
-        case Cons(head, tail)
-            println(head + 1, showInt())
+        case MyNil
+            MakeUnit
+        case MyCons(head, tail)
+            println[Int](head + 1, showInt())
             printIncrement(tail)
 
-fun main(): unit
-    let numbers: List[Int] = Cons(1, Cons(2, Cons(3, Nil)))
+fun main(): Unit
+    let numbers: MyList[Int] = MyCons[Int](1, MyCons[Int](2, MyCons[Int](3, MyNil[Int])))
     printIncrement(numbers)
 
 // Output:

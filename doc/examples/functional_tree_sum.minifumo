@@ -1,13 +1,13 @@
-data Tree = Leaf(value: Int) | Node(left: Tree, right: Tree)
+data MyTree = MyLeaf(value: Int) | MyNode(left: MyTree, right: MyTree)
 
-fun sum(tree: Tree): Int
+fun sum(tree: MyTree): Int
     match tree
-        case Leaf(v)
+        case MyLeaf(v)
             v
-        case Node(l, r)
+        case MyNode(l, r)
             sum(l) + sum(r)
 
-fun main(): unit
-    let tree = Node(Leaf(1), Node(Leaf(2), Leaf(3))) in println(sum(tree), showInt())
+fun main(): Unit
+    let tree = MyNode(MyLeaf(1), MyNode(MyLeaf(2), MyLeaf(3))) in println[Int](sum(tree), showInt())
 
 // Output: 6

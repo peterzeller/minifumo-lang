@@ -1,7 +1,7 @@
-fun main(): unit
+fun main(): Unit
     let dist1 = 0
     let dist2 = 4
     let dist3 = dist2 + 3
-    println(dist3, showInt())
+    println[Int](dist3, showInt())
 
 // Output: 7

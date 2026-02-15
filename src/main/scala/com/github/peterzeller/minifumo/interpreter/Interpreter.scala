@@ -235,7 +235,7 @@ object Interpreter:
       case Literal.BoolLit(value) =>
         if value then Value.AdtVal("True", Nil) else Value.AdtVal("False", Nil)
       case Literal.StringLit(value) =>
-        val chars = value.toList.map(ch => Value.AdtVal("Char", List(natValue(ch.toInt))))
+        val chars = value.toList.map(ch => Value.AdtVal("MakeChar", List(natValue(ch.toInt))))
         Value.AdtVal("MakeString", List(listValue(chars)))
       case Literal.UnitLit() => Value.UnitVal
 

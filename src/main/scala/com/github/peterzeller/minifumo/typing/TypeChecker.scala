@@ -1,7 +1,7 @@
 package com.github.peterzeller.minifumo.typing
 
 import com.github.peterzeller.minifumo
-import com.github.peterzeller.minifumo.{Main, ast, typing}
+import com.github.peterzeller.minifumo.{ast, typing}
 import com.github.peterzeller.minifumo.ast.SourceRange
 import com.github.peterzeller.minifumo.builtins.Standard
 import com.github.peterzeller.minifumo.common.MinifumoError
@@ -45,10 +45,7 @@ object TypeChecker:
           val typedBody = checkFunctionBody(decl.body, typedSig.returnType, context2, metaStore, idSupply, errors)
           TypedAst.TopLevel.FunDecl(typedSig, typedBody)(decl.source)
       }
-      if errors.nonEmpty then {
-        println(Main.renderTypeErrors(path, errors.toList).mkString("\n\n"))
-        throw new RuntimeException(s"errors checking $path")
-      }
+      // Returns accumulated type errors to the caller instead of throwing.
       (TypedAst.Program(typedItems)(program.source), errors.toList)
     catch
       case e: Exception =>

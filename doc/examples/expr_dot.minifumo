@@ -1,7 +1,7 @@
 fun combine(a: Int, b: Int): Int
     a + b
 
-fun main(): unit
-    println(1.combine(2), showInt())
+fun main(): Unit
+    println[Int](combine(1, 2), showInt())
 
 // Output: 3

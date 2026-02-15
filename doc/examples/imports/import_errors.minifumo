@@ -1,5 +1,5 @@
-import Hidden from "imports/private_defs" // error: Symbol Hidden is not exported from the imported file.
-import secret from "imports/private_defs" // error: Symbol secret is not exported from the imported file.
-import HiddenClass from "imports/private_defs" // error: Symbol HiddenClass is not exported from the imported file.
-import add_one from "imports/exported_defs"
-import add_one from "imports/exported_defs" // error: Duplicate function: add_one
+import Hidden from "imports/private_defs.minifumo" // error: Could not find Hidden // error: Name Hidden not found
+import secret from "imports/private_defs.minifumo" // error: Could not find secret // error: Name secret not found
+import HiddenClass from "imports/private_defs.minifumo" // error: Could not find HiddenClass // error: Name HiddenClass not found
+import add_one from "imports/exported_defs.minifumo"
+import add_one from "imports/exported_defs.minifumo" // error: Symbol add_one is already defined // error: Name add_one is already defined

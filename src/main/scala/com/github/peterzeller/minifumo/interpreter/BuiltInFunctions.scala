@@ -31,6 +31,7 @@ object BuiltInFunctions:
       case _ =>
         throw new RuntimeException(s"not a list: $v")
 
+  // Converts a runtime character value to a Scala Char.
   private def convertChar(v: Value): Char =
     v match
       case Value.AdtVal("MakeChar", List(n)) =>
