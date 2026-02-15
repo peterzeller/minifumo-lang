@@ -8,6 +8,9 @@ import scala.jdk.CollectionConverters.*
 import java.util.Arrays
 
 object AstTransform:
+  def program(program: ProgramFile): ProgramFile =
+    program
+
   def program(ctx: MinifumoParser.ProgramContext): ProgramFile =
     ProgramFile(
       ctx.importStatement().asScala.toList.map(importStatement),

@@ -1,6 +1,6 @@
 package com.github.peterzeller.minifumo.builtins
 
-import com.github.peterzeller.minifumo.ast.{AstTransform, ProgramFile}
+import com.github.peterzeller.minifumo.ast.ProgramFile
 import com.github.peterzeller.minifumo.parser.parseInput
 
 import java.nio.file.{Files, Paths}
@@ -17,11 +17,11 @@ object Standard:
 
   // Parses the standard library source into an AST program.
   private def parseStandardProgram(): ProgramFile =
-    val (cst, errors) = parseInput(loadStandardSource())
+    val (ast, errors) = parseInput(loadStandardSource())
     if errors.nonEmpty then
       val message = errors.map(err => s"${err.pos.line}:${err.pos.column}: ${err.message}").mkString("\n")
       throw new IllegalStateException(s"Failed to parse standard library:\n$message")
-    AstTransform.program(cst)
+    ast
 
   // Provides the parsed standard library program.
   lazy val standardProgram: ProgramFile =

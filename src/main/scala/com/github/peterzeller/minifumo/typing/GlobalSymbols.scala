@@ -1,7 +1,7 @@
 package com.github.peterzeller.minifumo.typing
 
 import com.github.peterzeller.minifumo.ast
-import com.github.peterzeller.minifumo.ast.{AstTransform, FunParam, FunSig, SourceRange}
+import com.github.peterzeller.minifumo.ast.{FunParam, FunSig, SourceRange}
 import com.github.peterzeller.minifumo.parser.{SyntaxError, parseFile}
 import com.github.peterzeller.minifumo.typing.TypeChecker.{TypeError, checkProgram}
 import com.github.peterzeller.minifumo.typing.TypedAst.Expr.UnknownType
@@ -273,12 +273,11 @@ class ProjectSymbolCache(projectRoot: Path) extends NameCache with SymbolCache:
     astCache.get(path) match
       case Some(a) => a
       case None =>
-        val (cst, syntaxErrors) =
+        val (ast, syntaxErrors) =
           if path == "standard.minifumo" then
             parseInput(Standard.loadStandardSource())
           else
             parseFile(toPath(path))
-        val ast = AstTransform.program(cst)
         val r = (ast, syntaxErrors)
         astCache += path -> r
         r
