@@ -394,32 +394,32 @@ fun listAppend[T: Type](left: List[T], right: List[T]): List[T]
         case Nil
             right
         case Cons(head, tail)
-            Cons[T](head, listAppend[T](tail, right))
+            Cons(head, listAppend(tail, right))
 
 // Returns the element at the given Nat index.
 fun listGetNat[T: Type](values: List[T], index: Nat): Option[T]
     match values
         case Nil
-            None[T]
+            None
         case Cons(head, tail)
             match index
                 case Zero
-                    Some[T](head)
+                    Some(head)
                 case Suc(rest)
-                    listGetNat[T](tail, rest)
+                    listGetNat(tail, rest)
 
 
 // Updates the element at the given Nat index.
 fun listSetNat[T: Type](values: List[T], index: Nat, value: T): List[T]
     match values
         case Nil
-            Nil[T]
+            Nil
         case Cons(head, tail)
             match index
                 case Zero
-                    Cons[T](value, tail)
+                    Cons(value, tail)
                 case Suc(rest)
-                    Cons[T](head, listSetNat[T](tail, rest, value))
+                    Cons(head, listSetNat(tail, rest, value))
 
 // Checks whether a list contains the given value.
 fun listContains[T: Type](values: List[T], value: T, eq: Eq[T]): Bool
@@ -432,7 +432,7 @@ fun listContains[T: Type](values: List[T], value: T, eq: Eq[T]): Bool
                     if eqFn(value, head)
                         True
                     else
-                        listContains[T](tail, value, eq)
+                        listContains(tail, value, eq)
 
 // Returns True when two lists are equal.
 fun listEq[T: Type](left: List[T], right: List[T], eq: Eq[T]): Bool
@@ -451,7 +451,7 @@ fun listEq[T: Type](left: List[T], right: List[T], eq: Eq[T]): Bool
                             False
                         case Cons(rightHead, rightTail)
                             if eqFn(leftHead, rightHead)
-                                listEq[T](leftTail, rightTail, eq)
+                                listEq(leftTail, rightTail, eq)
                             else
                                 False
 
@@ -479,7 +479,7 @@ fun charListLe(left: List[Char], right: List[Char]): Bool
     if charListLt(left, right)
         True
     else
-        if listEq[Char](left, right, eqChar())
+        if listEq(left, right, eqChar())
             True
         else
             False
@@ -490,11 +490,11 @@ fun stringAppend(a: String, b: String): String
         case MakeString(left)
             match b
                 case MakeString(right)
-                    MakeString(listAppend[Char](left, right))
+                    MakeString(listAppend(left, right))
 
 // Builds a single-character String.
 fun stringFromChar(value: Char): String
-    MakeString(Cons[Char](value, Nil[Char]))
+    MakeString(Cons(value, Nil))
 
 // Builds a Char from a digit Nat (0-9).
 fun digitChar(value: Nat): Char
@@ -548,7 +548,7 @@ fun listToString[T: Type](s: Show[T], values: List[T]): String
                 case Cons(head, tail)
                     stringAppend(
                         "Cons(",
-                        stringAppend(showFn(head), stringAppend(", ", stringAppend(listToString[T](s, tail), ")")))
+                        stringAppend(showFn(head), stringAppend(", ", stringAppend(listToString(s, tail), ")")))
                     )
 
 // Defines a stub println that returns Unit.
@@ -578,7 +578,7 @@ fun eqBoolFn(a: Bool, b: Bool): Bool
 
 // Builds the Bool equality dictionary.
 fun eqBool(): Eq[Bool]
-    MakeEq[Bool](eqBoolFn)
+    MakeEq(eqBoolFn)
 
 // Compares two Nat values.
 fun eqNatFn(a: Nat, b: Nat): Bool
@@ -586,7 +586,7 @@ fun eqNatFn(a: Nat, b: Nat): Bool
 
 // Builds the Nat equality dictionary.
 fun eqNat(): Eq[Nat]
-    MakeEq[Nat](eqNatFn)
+    MakeEq(eqNatFn)
 
 // Compares two Int values.
 fun eqIntFn(a: Int, b: Int): Bool
@@ -594,7 +594,7 @@ fun eqIntFn(a: Int, b: Int): Bool
 
 // Builds the Int equality dictionary.
 fun eqInt(): Eq[Int]
-    MakeEq[Int](eqIntFn)
+    MakeEq(eqIntFn)
 
 // Compares two Char values.
 fun eqCharFn(a: Char, b: Char): Bool
@@ -602,7 +602,7 @@ fun eqCharFn(a: Char, b: Char): Bool
 
 // Builds the Char equality dictionary.
 fun eqChar(): Eq[Char]
-    MakeEq[Char](eqCharFn)
+    MakeEq(eqCharFn)
 
 // Compares two String values.
 fun eqStringFn(a: String, b: String): Bool
@@ -610,11 +610,11 @@ fun eqStringFn(a: String, b: String): Bool
         case MakeString(left)
             match b
                 case MakeString(right)
-                    listEq[Char](left, right, eqChar())
+                    listEq(left, right, eqChar())
 
 // Builds the String equality dictionary.
 fun eqString(): Eq[String]
-    MakeEq[String](eqStringFn)
+    MakeEq(eqStringFn)
 
 // Converts a Bool value to a String.
 fun showBoolFn(value: Bool): String
@@ -626,7 +626,7 @@ fun showBoolFn(value: Bool): String
 
 // Builds the Bool show dictionary.
 fun showBool(): Show[Bool]
-    MakeShow[Bool](showBoolFn)
+    MakeShow(showBoolFn)
 
 // Converts a Nat value to a String.
 fun showNatFn(value: Nat): String
@@ -634,7 +634,7 @@ fun showNatFn(value: Nat): String
 
 // Builds the Nat show dictionary.
 fun showNat(): Show[Nat]
-    MakeShow[Nat](showNatFn)
+    MakeShow(showNatFn)
 
 // Converts an Int value to a String.
 fun showIntFn(value: Int): String
@@ -642,7 +642,7 @@ fun showIntFn(value: Int): String
 
 // Builds the Int show dictionary.
 fun showInt(): Show[Int]
-    MakeShow[Int](showIntFn)
+    MakeShow(showIntFn)
 
 fun showList[T: Type](f: Show[T]): Show[List[T]]
     MakeShow(listToString(f))
@@ -653,7 +653,7 @@ fun showStringFn(value: String): String
 
 // Builds the String show dictionary.
 fun showString(): Show[String]
-    MakeShow[String](showStringFn)
+    MakeShow(showStringFn)
 
 // Converts a value to a String using the supplied Show instance.
 fun show[T: Type](value: T, s: Show[T]): String
@@ -667,7 +667,7 @@ fun opNegIntFn(value: Int): Int
 
 // Builds the Int negation dictionary.
 fun opNegInt(): OpNeg[Int]
-    MakeOpNeg[Int](opNegIntFn)
+    MakeOpNeg(opNegIntFn)
 
 // Adds two Int values.
 fun opPlusIntFn(a: Int, b: Int): Int
@@ -675,7 +675,7 @@ fun opPlusIntFn(a: Int, b: Int): Int
 
 // Builds the Int addition dictionary.
 fun opPlusInt(): OpPlus[Int]
-    MakeOpPlus[Int](opPlusIntFn)
+    MakeOpPlus(opPlusIntFn)
 
 // Subtracts two Int values.
 fun opMinusIntFn(a: Int, b: Int): Int
@@ -683,7 +683,7 @@ fun opMinusIntFn(a: Int, b: Int): Int
 
 // Builds the Int subtraction dictionary.
 fun opMinusInt(): OpMinus[Int]
-    MakeOpMinus[Int](opMinusIntFn)
+    MakeOpMinus(opMinusIntFn)
 
 // Multiplies two Int values.
 fun opTimesIntFn(a: Int, b: Int): Int
@@ -691,7 +691,7 @@ fun opTimesIntFn(a: Int, b: Int): Int
 
 // Builds the Int multiplication dictionary.
 fun opTimesInt(): OpTimes[Int]
-    MakeOpTimes[Int](opTimesIntFn)
+    MakeOpTimes(opTimesIntFn)
 
 // Divides two Int values.
 fun opDivIntFn(a: Int, b: Int): Int
@@ -699,7 +699,7 @@ fun opDivIntFn(a: Int, b: Int): Int
 
 // Builds the Int division dictionary.
 fun opDivInt(): OpDiv[Int]
-    MakeOpDiv[Int](opDivIntFn)
+    MakeOpDiv(opDivIntFn)
 
 // Computes the remainder of dividing two Int values.
 fun opModIntFn(a: Int, b: Int): Int
@@ -707,7 +707,7 @@ fun opModIntFn(a: Int, b: Int): Int
 
 // Builds the Int modulo dictionary.
 fun opModInt(): OpMod[Int]
-    MakeOpMod[Int](opModIntFn)
+    MakeOpMod(opModIntFn)
 
 // Compares two Int values for ordering.
 fun opLtIntFn(a: Int, b: Int): Bool
@@ -715,7 +715,7 @@ fun opLtIntFn(a: Int, b: Int): Bool
 
 // Builds the Int less-than dictionary.
 fun opLtInt(): OpLt[Int]
-    MakeOpLt[Int](opLtIntFn)
+    MakeOpLt(opLtIntFn)
 
 // Compares two Int values for ordering.
 fun opLeIntFn(a: Int, b: Int): Bool
@@ -723,7 +723,7 @@ fun opLeIntFn(a: Int, b: Int): Bool
 
 // Builds the Int less-than-or-equal dictionary.
 fun opLeInt(): OpLe[Int]
-    MakeOpLe[Int](opLeIntFn)
+    MakeOpLe(opLeIntFn)
 
 // Computes the logical and of two Bool values.
 fun opAndBoolFn(a: Bool, b: Bool): Bool
@@ -735,7 +735,7 @@ fun opAndBoolFn(a: Bool, b: Bool): Bool
 
 // Builds the Bool and dictionary.
 fun opAndBool(): OpAnd[Bool]
-    MakeOpAnd[Bool](opAndBoolFn)
+    MakeOpAnd(opAndBoolFn)
 
 // Computes the logical or of two Bool values.
 fun opOrBoolFn(a: Bool, b: Bool): Bool
@@ -747,7 +747,7 @@ fun opOrBoolFn(a: Bool, b: Bool): Bool
 
 // Builds the Bool or dictionary.
 fun opOrBool(): OpOr[Bool]
-    MakeOpOr[Bool](opOrBoolFn)
+    MakeOpOr(opOrBoolFn)
 
 // Concatenates two String values.
 fun opPlusStringFn(a: String, b: String): String
@@ -755,7 +755,7 @@ fun opPlusStringFn(a: String, b: String): String
 
 // Builds the String concatenation dictionary.
 fun opPlusString(): OpPlus[String]
-    MakeOpPlus[String](opPlusStringFn)
+    MakeOpPlus(opPlusStringFn)
 
 // Compares two String values for ordering.
 fun opLtStringFn(a: String, b: String): Bool
@@ -763,7 +763,7 @@ fun opLtStringFn(a: String, b: String): Bool
 
 // Builds the String less-than dictionary.
 fun opLtString(): OpLt[String]
-    MakeOpLt[String](opLtStringFn)
+    MakeOpLt(opLtStringFn)
 
 // Compares two String values for ordering.
 fun opLeStringFn(a: String, b: String): Bool
@@ -771,57 +771,57 @@ fun opLeStringFn(a: String, b: String): Bool
 
 // Builds the String less-than-or-equal dictionary.
 fun opLeString(): OpLe[String]
-    MakeOpLe[String](opLeStringFn)
+    MakeOpLe(opLeStringFn)
 
 // Concatenates two lists.
 fun opPlusListFn[T: Type](a: List[T], b: List[T]): List[T]
-    listAppend[T](a, b)
+    listAppend(a, b)
 
 // Builds the list concatenation dictionary.
 fun opPlusList[T: Type](): OpPlus[List[T]]
-    MakeOpPlus[List[T]](opPlusListFn[T])
+    MakeOpPlus(opPlusListFn)
 
 // Gets list sequence operations.
 // Gets a list element by index using an equality dictionary.
 fun listSequenceGet[T: Type](eq: Eq[T], seq: List[T], index: Int): Option[T]
-    listGetNat[T](seq, intToNat(index))
+    listGetNat(seq, intToNat(index))
 
 // Sets a list element by index.
 fun listSequenceSet[T: Type](eq: Eq[T], seq: List[T], index: Int, value: T): List[T]
     if intIsNegative(index)
         seq
     else
-        listSetNat[T](seq, intToNat(index), value)
+        listSetNat(seq, intToNat(index), value)
 
 // Checks whether a list contains a value.
 fun listSequenceContains[T: Type](eq: Eq[T], seq: List[T], value: T): Bool
-    listContains[T](seq, value, eq)
+    listContains(seq, value, eq)
 
 // Builds the list sequence dictionary.
 fun listSequence[T: Type](eq: Eq[T]): Sequence[List[T], T]
-    MakeSequence[List[T], T](
-        listSequenceGet[T](eq),
-        listSequenceSet[T](eq),
-        listSequenceContains[T](eq)
+    MakeSequence(
+        listSequenceGet(eq),
+        listSequenceSet(eq),
+        listSequenceContains(eq)
     )
 
 // Gets list set operations.
 // Checks whether a list-based set contains a value.
 fun listSetContains[T: Type](eq: Eq[T], set: List[T], value: T): Bool
-    listContains[T](set, value, eq)
+    listContains(set, value, eq)
 
 // Adds a value to a list-based set.
 fun listSetAdd[T: Type](eq: Eq[T], set: List[T], value: T): List[T]
-    if listContains[T](set, value, eq)
+    if listContains(set, value, eq)
         set
     else
-        Cons[T](value, set)
+        Cons(value, set)
 
 // Builds the list set dictionary.
 fun listSet[T: Type](eq: Eq[T]): Set[List[T], T]
-    MakeSet[List[T], T](
-        listSetContains[T](eq),
-        listSetAdd[T](eq)
+    MakeSet(
+        listSetContains(eq),
+        listSetAdd(eq)
     )
 
 // Inserts a key/value pair into the tree.
@@ -832,15 +832,15 @@ fun treePut[K: Type, V: Type](tree: Tree[K, V], key: K, value: V, lt: OpLt[K], e
                 case MakeEq(eqFn)
                     match tree
                         case Leaf
-                            Node[K, V](key, value, Leaf[K, V], Leaf[K, V])
+                            Node(key, value, Leaf, Leaf)
                         case Node(k, v, left, right)
                             if eqFn(key, k)
-                                Node[K, V](k, value, left, right)
+                                Node(k, value, left, right)
                             else
                                 if ltFn(key, k)
-                                    Node[K, V](k, v, treePut[K, V](left, key, value, lt, eq), right)
+                                    Node(k, v, treePut(left, key, value, lt, eq), right)
                                 else
-                                    Node[K, V](k, v, left, treePut[K, V](right, key, value, lt, eq))
+                                    Node(k, v, left, treePut(right, key, value, lt, eq))
 
 // Looks up a key in the tree.
 fun treeLookup[K: Type, V: Type](tree: Tree[K, V], key: K, lt: OpLt[K], eq: Eq[K]): Option[V]
@@ -850,28 +850,28 @@ fun treeLookup[K: Type, V: Type](tree: Tree[K, V], key: K, lt: OpLt[K], eq: Eq[K
                 case MakeEq(eqFn)
                     match tree
                         case Leaf
-                            None[V]
+                            None
                         case Node(k, v, left, right)
                             if eqFn(key, k)
-                                Some[V](v)
+                                Some(v)
                             else
                                 if ltFn(key, k)
-                                    treeLookup[K, V](left, key, lt, eq)
+                                    treeLookup(left, key, lt, eq)
                                 else
-                                    treeLookup[K, V](right, key, lt, eq)
+                                    treeLookup(right, key, lt, eq)
 
 // Builds a tree map instance.
 // Inserts a key/value pair into a tree map.
 fun treeMapPut[K: Type, V: Type](lt: OpLt[K], eq: Eq[K], tree: Tree[K, V], key: K, value: V): Tree[K, V]
-    treePut[K, V](tree, key, value, lt, eq)
+    treePut(tree, key, value, lt, eq)
 
 // Looks up a value in a tree map.
 fun treeMapLookup[K: Type, V: Type](lt: OpLt[K], eq: Eq[K], tree: Tree[K, V], key: K): Option[V]
-    treeLookup[K, V](tree, key, lt, eq)
+    treeLookup(tree, key, lt, eq)
 
 // Builds the tree map dictionary.
 fun treeMap[K: Type, V: Type](lt: OpLt[K], eq: Eq[K]): Map[Tree[K, V], K, V]
-    MakeMap[Tree[K, V], K, V](
-        treeMapPut[K, V](lt, eq),
-        treeMapLookup[K, V](lt, eq)
+    MakeMap(
+        treeMapPut(lt, eq),
+        treeMapLookup(lt, eq)
     )

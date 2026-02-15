@@ -1,7 +1,7 @@
 import add_one from "imports/exported_defs.minifumo"
 
 fun main(): Unit
-    println[Int](add_one(1), showInt())
+    println(add_one(1), showInt())
 
 // Output:
 // 2

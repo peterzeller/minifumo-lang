@@ -5,11 +5,11 @@ fun logAll(numbers: MyList[Int]): Unit
         case MyNil
             MakeUnit
         case MyCons(head, tail)
-            println[Int](head, showInt())
+            println(head, showInt())
             logAll(tail)
 
 fun main(): Unit
-    logAll(MyCons[Int](1, MyCons[Int](2, MyCons[Int](3, MyNil[Int]))))
+    logAll(MyCons(1, MyCons(2, MyCons(3, MyNil))))
 
 // Output:
 // 1

@@ -2,6 +2,6 @@ fun identity(x: Int): Int
     x
 
 fun main(): Unit
-    println[Int](identity(1), showInt())
+    println(identity(1), showInt())
 
 // Output: 1

@@ -4,7 +4,7 @@ fun ordIntFn(a: Int, b: Int): Bool
     a < b
 
 fun ordInt(): MyOrd[Int]
-    MyOrdMk[Int](ordIntFn)
+    MyOrdMk(ordIntFn)
 
 fun minOf2[T: Type](a: T, b: T, ord: MyOrd[T]): T
     match ord
@@ -12,10 +12,10 @@ fun minOf2[T: Type](a: T, b: T, ord: MyOrd[T]): T
             if ltFn(a, b) then a else b
 
 fun minOf3[T: Type](a: T, b: T, c: T, ord: MyOrd[T]): T
-    minOf2[T](minOf2[T](a, b, ord), c, ord)
+    minOf2(minOf2(a, b, ord), c, ord)
 
 fun main(): Unit
-    println[Int](minOf3[Int](3, 1, 2, ordInt()), showInt())
+    println(minOf3(3, 1, 2, ordInt()), showInt())
 
 // Output:
 // 1

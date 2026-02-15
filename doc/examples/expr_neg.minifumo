@@ -1,4 +1,4 @@
 fun main(): Unit
-    println[Int](let x = 1 in -x, showInt())
+    println(let x = 1 in -x, showInt())
 
 // Output: -1

@@ -18,17 +18,17 @@ fun myShowListFn(s: Show[Int]): MyList -> String
         case MyCons(head, tail)
             stringAppend(
                 "Cons(",
-                stringAppend(show[Int](head, s), stringAppend(", ", stringAppend(show[MyList](tail, myShowList(s)), ")")))
+                stringAppend(show(head, s), stringAppend(", ", stringAppend(show(tail, myShowList(s)), ")")))
             )
 
 // Builds a Show dictionary for MyList.
 fun myShowList(s: Show[Int]): Show[MyList]
-    MakeShow[MyList](myShowListFn(s))
+    MakeShow(myShowListFn(s))
 
 fun main(): Unit
     let lst1 = MyCons(1, MyCons(2, MyNil))
     let lst2 = MyCons(3, MyCons(4, MyNil))
     let lst3 = myAppend(lst1, lst2)
-    println[MyList](lst3, myShowList(showInt()))
+    println(lst3, myShowList(showInt()))
 
 // Output: Cons(1, Cons(2, Cons(3, Cons(4, Nil))))

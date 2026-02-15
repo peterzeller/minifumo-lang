@@ -1,4 +1,4 @@
 fun main(): Unit
-    println[Bool](1 < 2, showBool())
+    println(1 < 2, showBool())
 
 // Output: True

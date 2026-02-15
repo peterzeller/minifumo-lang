@@ -8,6 +8,6 @@ fun length(list: MyList): Int
             1 + length(t)
 
 fun main(): Unit
-    println[Int](length(MyCons(1, MyCons(2, MyNil))), showInt())
+    println(length(MyCons(1, MyCons(2, MyNil))), showInt())
 
 // Output: 2
