@@ -209,7 +209,7 @@ object TypeChecker:
     (instantiate(expr), errs)
 
   /** Translates a signature expression to a typed expression. */
-  private def signatureExpr(expr: ast.Expr, globals: GlobalEnv, locals: Map[String, TypedAst.TermSymbol]): TypedAst.Expr =
+  private[typing] def signatureExpr(expr: ast.Expr, globals: GlobalEnv, locals: Map[String, TypedAst.TermSymbol]): TypedAst.Expr =
     expr match
       case ast.Expr.Lit(value) => TypedAst.Expr.Lit(value)(expr.source)
       case ast.Expr.Var(name) =>
@@ -322,46 +322,25 @@ object TypeChecker:
     LocalSymbol(s.name, instantiate(s.tpe), s.id)
 
   /** Infers the type of an expression, producing a typed expression alongside its type. */
-  private def infer(expr: ast.Expr)
+  private[typing] def infer(expr: ast.Expr)
                    (implicit ctx: TypeContext, metas: MetaContext, ids: IdSupply): (TypedAst.Expr, TypedAst.Expr, List[TypeError]) =
-    TypeCheckerExprDispatcher.infer(
-      expr,
-      (e, c, m, i) => infer(e)(using c, m, i),
-      (e, c, m, i) => inferAndElaborate(e)(using c, m, i),
-      (e, t, c, m, i) => check(e, t)(using c, m, i),
-      checkPattern,
-      signatureExpr,
-      substitute,
-      literalType,
-      whnf,
-      isDefEq,
-      prettyExpr,
-      freshMeta
-    )
+    TypeCheckerExprDispatcher.infer(expr)
 
 
   /** Checks an expression against an expected type. */
-  private def check(expr: ast.Expr, expectedType: TypedAst.Expr)
+  private[typing] def check(expr: ast.Expr, expectedType: TypedAst.Expr)
                    (implicit ctx: TypeContext, metas: MetaContext, ids: IdSupply): (TypedAst.Expr, List[TypeError]) =
-    TypeCheckerExprDispatcher.check(
-      expr,
-      expectedType,
-      (e, c, m, i) => infer(e)(using c, m, i),
-      (e, t, c, m, i) => check(e, t)(using c, m, i),
-      (e, t, c, m, i) => checkAndElaborate(e, t)(using c, m, i),
-      checkPattern,
-      whnf
-    )
+    TypeCheckerExprDispatcher.check(expr, expectedType)
 
   /** Infers and elaborates an expression by inserting missing implicit arguments. */
-  private def inferAndElaborate(expr: ast.Expr)
+  private[typing] def inferAndElaborate(expr: ast.Expr)
                                (implicit ctx: TypeContext, metas: MetaContext, ids: IdSupply): (TypedAst.Expr, TypedAst.Expr, List[TypeError]) =
     val (typedExpr, inferredType, errs) = infer(expr)
     val (elaboratedExpr, elaboratedType) = insertImplicitArgs(typedExpr, inferredType, expr.source)
     (elaboratedExpr, elaboratedType, errs)
 
   /** Checks and elaborates an expression against an expected type. */
-  private def checkAndElaborate(expr: ast.Expr, expectedType: TypedAst.Expr)
+  private[typing] def checkAndElaborate(expr: ast.Expr, expectedType: TypedAst.Expr)
                                (implicit ctx: TypeContext, metas: MetaContext, ids: IdSupply): (TypedAst.Expr, List[TypeError]) =
     val expectedNorm = whnf(expectedType)
     val (inferredExpr, inferredType, errs) = inferAndElaborate(expr)
@@ -426,7 +405,7 @@ object TypeChecker:
       case _ => Set.empty
 
   /** Substitutes a local symbol with a value in a term. */
-  private def substitute(term: TypedAst.Expr, symbol: TypedAst.LocalSymbol, value: TypedAst.Expr): TypedAst.Expr =
+  private[typing] def substitute(term: TypedAst.Expr, symbol: TypedAst.LocalSymbol, value: TypedAst.Expr): TypedAst.Expr =
     term match
       case TypedAst.Expr.Var(sym: TypedAst.LocalSymbol) if sym.id == symbol.id => value
       case TypedAst.Expr.App(callee, arg, tpe) =>
@@ -484,7 +463,7 @@ object TypeChecker:
 //    check(expr, expectedType)
 
   // Renders typed expressions in a compact user-facing format for diagnostics.
-  private def prettyExpr(expr: TypedAst.Expr): String =
+  private[typing] def prettyExpr(expr: TypedAst.Expr): String =
     expr match
       case TypedAst.Expr.UnknownType() => "_"
       case TypedAst.Expr.Sort() => "Type"
@@ -503,7 +482,7 @@ object TypeChecker:
       case m@TypedAst.Expr.Meta(index, tpe) => s"?${m.name}_$index : ${prettyExpr(tpe)}"
 
   /** Determines the type of a literal value. */
-  private def literalType(value: ast.Literal, ctx: TypeContext): TypedAst.Expr =
+  private[typing] def literalType(value: ast.Literal, ctx: TypeContext): TypedAst.Expr =
     val typeName = value match
       case ast.Literal.IntLit(_) => "Int"
       case ast.Literal.BoolLit(_) => "Bool"
@@ -514,7 +493,7 @@ object TypeChecker:
       .getOrElse(TypedAst.Expr.UnknownType()(value.source))
 
   /** Checks a pattern against the expected scrutinee type. */
-  private def checkPattern(
+  private[typing] def checkPattern(
       pattern: ast.Pattern,
       expectedType: TypedAst.Expr,
       ctx: TypeContext,

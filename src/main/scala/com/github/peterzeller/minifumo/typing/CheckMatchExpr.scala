@@ -8,19 +8,13 @@ import scala.collection.mutable.ListBuffer
 /** Type-checking logic for match expressions. */
 object CheckMatchExpr:
   /** Infers the result type of a match expression. */
-  def infer(
-      expr: ast.Expr.Match,
-      inferRec: (ast.Expr, TypeContext, MetaContext, IdSupply) => (TypedAst.Expr, TypedAst.Expr, List[TypeError]),
-      checkPattern: (ast.Pattern, TypedAst.Expr, TypeContext, IdSupply) => (TypedAst.Pattern, Map[String, LocalBinding], List[TypeError]),
-      isDefEq: (TypedAst.Expr, TypedAst.Expr) => Boolean,
-      prettyExpr: TypedAst.Expr => String
-    )(using ctx: TypeContext, metas: MetaContext, ids: IdSupply): (TypedAst.Expr, TypedAst.Expr, List[TypeError]) =
+  def infer(expr: ast.Expr.Match)(using ctx: TypeContext, metas: MetaContext, ids: IdSupply): (TypedAst.Expr, TypedAst.Expr, List[TypeError]) =
     val ast.Expr.Match(scrutinee, cases) = expr
-    val (scrutineeExpr, scrutineeType, errs) = inferRec(scrutinee, ctx, metas, ids)
+    val (scrutineeExpr, scrutineeType, errs) = TypeChecker.infer(scrutinee)
     val typedCases = cases.map { case ast.MatchCase(pattern, body) =>
       val (typedPattern, patternCtx, patternErrors) = checkPattern(pattern, scrutineeType, ctx, ids)
       val caseCtx = ctx.copy(locals = ctx.locals ++ patternCtx)
-      val (typedBody, bodyType, bodyErrs) = inferRec(body, caseCtx, metas, ids)
+      val (typedBody, bodyType, bodyErrs) = TypeChecker.infer(body)(using caseCtx, metas, ids)
       (typedPattern, typedBody, bodyType, patternErrors ++ bodyErrs)
     }
     val errors = typedCases.flatMap(_._4)
@@ -35,19 +29,13 @@ object CheckMatchExpr:
     (TypedAst.Expr.Match(scrutineeExpr, typedCasesExpr)(expr.source), firstType, errs ++ errors ++ errs3.toList)
 
   /** Checks a match expression against an expected type. */
-  def check(
-      expr: ast.Expr.Match,
-      expectedType: TypedAst.Expr,
-      inferRec: (ast.Expr, TypeContext, MetaContext, IdSupply) => (TypedAst.Expr, TypedAst.Expr, List[TypeError]),
-      checkRec: (ast.Expr, TypedAst.Expr, TypeContext, MetaContext, IdSupply) => (TypedAst.Expr, List[TypeError]),
-      checkPattern: (ast.Pattern, TypedAst.Expr, TypeContext, IdSupply) => (TypedAst.Pattern, Map[String, LocalBinding], List[TypeError])
-    )(using ctx: TypeContext, metas: MetaContext, ids: IdSupply): (TypedAst.Expr, List[TypeError]) =
+  def check(expr: ast.Expr.Match, expectedType: TypedAst.Expr)(using ctx: TypeContext, metas: MetaContext, ids: IdSupply): (TypedAst.Expr, List[TypeError]) =
     val ast.Expr.Match(scrutinee, cases) = expr
-    val (scrutineeExpr, scrutineeType, errs) = inferRec(scrutinee, ctx, metas, ids)
+    val (scrutineeExpr, scrutineeType, errs) = TypeChecker.infer(scrutinee)
     val typedCases = cases.map { case ast.MatchCase(pattern, body) =>
       val (typedPattern, patternCtx, patternErrors) = checkPattern(pattern, scrutineeType, ctx, ids)
       val caseCtx = ctx.copy(locals = ctx.locals ++ patternCtx)
-      val (typedBody, bodyErrs) = checkRec(body, expectedType, caseCtx, metas, ids)
+      val (typedBody, bodyErrs) = TypeChecker.check(body, expectedType)(using caseCtx, metas, ids)
       (typedPattern, typedBody, patternErrors ++ bodyErrs)
     }
     val errors = typedCases.flatMap(_._3)
