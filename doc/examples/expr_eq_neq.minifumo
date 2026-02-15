@@ -1,5 +1,4 @@
 fun main(): Unit
-    let b = 1 == 1
-    println[Int](if b then 1 else 0, showInt())
+    println[Bool](1 == 1, showBool())
 
-// Output: 1
+// Output: True

@@ -2,24 +2,33 @@ data MyList =
    MyNil
  | MyCons(head: Int, tail: MyList)
 
+// Appends two MyList values.
 fun myAppend(a: MyList, b: MyList): MyList
     match a
         case MyNil
-            b
+          b
         case MyCons(h, t)
-            MyCons(h, myAppend(t, b))
+          MyCons(h, myAppend(t, b))
 
-fun length(list: MyList): Int
-    match list
+// Converts a MyList to a String using the provided Show dictionary.
+fun myShowListFn(s: Show[Int]): MyList -> String
+    (value: MyList) => match value
         case MyNil
-            0
-        case MyCons(_, t)
-            1 + length(t)
+            "Nil"
+        case MyCons(head, tail)
+            stringAppend(
+                "Cons(",
+                stringAppend(show[Int](head, s), stringAppend(", ", stringAppend(show[MyList](tail, myShowList(s)), ")")))
+            )
+
+// Builds a Show dictionary for MyList.
+fun myShowList(s: Show[Int]): Show[MyList]
+    MakeShow[MyList](myShowListFn(s))
 
 fun main(): Unit
     let lst1 = MyCons(1, MyCons(2, MyNil))
     let lst2 = MyCons(3, MyCons(4, MyNil))
     let lst3 = myAppend(lst1, lst2)
-    println[Int](length(lst3), showInt())
+    println[MyList](lst3, myShowList(showInt()))
 
-// Output: 4
+// Output: Cons(1, Cons(2, Cons(3, Cons(4, Nil))))
