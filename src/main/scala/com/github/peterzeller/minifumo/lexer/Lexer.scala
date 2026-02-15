@@ -5,7 +5,7 @@ import com.github.peterzeller.minifumo.parser.SyntaxError
 
 import scala.collection.mutable
 
-object HandwrittenLexer:
+object Lexer:
   /** Lexes source input and applies layout processing in a second pass. */
   def tokens(input: String): Iterator[Either[SyntaxError, Token]] =
     applyLayout(lexRaw(input)).iterator
@@ -32,6 +32,8 @@ object HandwrittenLexer:
       else col += 1
       c
 
+    def advanceUnit(): Unit = advance(): Unit
+
     while i < input.length do
       val ch = peek()
       if ch == ' ' then
@@ -46,13 +48,13 @@ object HandwrittenLexer:
         out += Left(SyntaxError(start, "Tabs are not supported for indentation."))
         emit(TokenKind.SPACETAB, "\t", start, SourcePos(line, col - 1))
       else if ch == '\r' then
-        advance()
+        advanceUnit()
       else if ch == '\n' then
         val start = pos
         advance()
         emit(TokenKind.NL, "\\n", start, start)
       else if ch == '/' && peek(1) == '/' then
-        while i < input.length && peek() != '\n' do advance()
+        while i < input.length && peek() != '\n' do advanceUnit()
       else if ch == '/' && peek(1) == '*' then
         val start = pos
         advance(); advance()
@@ -60,7 +62,7 @@ object HandwrittenLexer:
         while i < input.length && !closed do
           if peek() == '*' && peek(1) == '/' then
             advance(); advance(); closed = true
-          else advance()
+          else advanceUnit()
         if !closed then out += Left(SyntaxError(start, "Unterminated block comment."))
       else if ch == '"' then
         val start = pos

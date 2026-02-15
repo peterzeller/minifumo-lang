@@ -2,16 +2,17 @@ package com.github.peterzeller.minifumo.parser
 
 import com.github.peterzeller.minifumo.ast.*
 import com.github.peterzeller.minifumo.common.MinifumoError
-import com.github.peterzeller.minifumo.lexer.{HandwrittenLexer, Token, TokenKind}
+import com.github.peterzeller.minifumo.lexer.{Lexer, Token, TokenKind}
 
 import java.nio.file.{Files, Path}
+import scala.collection.mutable.ListBuffer
 
 case class SyntaxError(pos: SourcePos, message: String) extends MinifumoError:
   override def source: SourceRange = SourceRange(pos, pos)
 
 /** Parses source text into a full ProgramFile AST and syntax errors. */
 def parseInput(input: String): (ProgramFile, List[SyntaxError]) =
-  val stream = HandwrittenLexer.tokens(input).toVector
+  val stream = Lexer.tokens(input).toVector
   val errors = stream.collect { case Left(e) => e }.toList
   val toks = stream.collect { case Right(t) => t }
   val parser = new HandwrittenParser(toks)
@@ -24,7 +25,7 @@ def parseFile(input: Path): (ProgramFile, List[SyntaxError]) =
 
 /** Implements a recursive descent parser with simple synchronization recovery. */
 private class HandwrittenParser(tokens: Vector[Token]):
-  val errors = scala.collection.mutable.ListBuffer.empty[SyntaxError]
+  val errors: ListBuffer[SyntaxError] = scala.collection.mutable.ListBuffer.empty[SyntaxError]
   private var index = 0
 
   /** Parses the full program with imports and top-level items. */
@@ -33,7 +34,7 @@ private class HandwrittenParser(tokens: Vector[Token]):
     val items = scala.collection.mutable.ListBuffer.empty[TopLevel]
     while !isAtEnd do
       if check(TokenKind.NL) then
-      advance()
+      advanceUnit()
       else if check(TokenKind.IMPORT) then imports += parseImport()
       else if check(TokenKind.DATA) || check(TokenKind.EXPORT) || check(TokenKind.FUN) then
         parseTopLevel() match
@@ -391,8 +392,13 @@ private class HandwrittenParser(tokens: Vector[Token]):
     makeCall(Expr.Var(name)(source), args, source)
 
   /** Builds nested explicit calls from a function expression and arguments. */
-  private def makeCall(fn: Expr, args: List[Expr], source: SourceRange): Expr =
-    args.foldLeft(fn) { (acc, arg) => Expr.Call(acc, arg)(merge(acc.source, arg.source)) }
+  private def makeCall(fn: Expr, args: List[Expr], source: SourceRange): Expr = {
+    val r = args.foldLeft(fn) { (acc, arg) => Expr.Call(acc, arg)(merge(acc.source, arg.source)) }
+    r match {
+      case c: Expr.Call => c.copy()(source)
+      case _ => r
+    }
+  }
 
   /** Maps parser operators to their runtime builtin names. */
   private def binaryOpName(symbol: String): String =
@@ -420,12 +426,12 @@ private class HandwrittenParser(tokens: Vector[Token]):
   /** Consumes a trailing newline when present. */
   private def consumeOptionalNl(): Unit =
     if check(TokenKind.NL) then
-      advance()
+      advanceUnit()
 
   /** Synchronizes after an error to likely top-level restart points. */
   private def synchronizeTopLevel(): Unit =
     while !isAtEnd && !Set(TokenKind.NL, TokenKind.END, TokenKind.FUN, TokenKind.DATA, TokenKind.IMPORT).contains(current.kind) do
-      advance()
+      advanceUnit()
     while matchKind(TokenKind.NL) do ()
 
   /** Reports a parser error at a token position. */
@@ -465,6 +471,8 @@ private class HandwrittenParser(tokens: Vector[Token]):
     if !isAtEnd then index += 1
     tok
 
+  private def advanceUnit(): Unit =
+    val _ = advance()
 
   /** Returns true when parser reached EOF token. */
   private def isAtEnd: Boolean = current.kind == TokenKind.EOF
