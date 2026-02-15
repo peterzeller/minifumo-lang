@@ -36,6 +36,8 @@ object TypeChecker:
       val globals = GlobalEnv(names = symbolMap)
       val typedItems = program.items.map {
         case decl: ast.TopLevel.DataDecl =>
+          val ctorReturnTypeErrors = validateCtorReturnTypes(decl, globals, idSupply, metaStore)
+          errors.addAll(ctorReturnTypeErrors)
           buildDataDecl(path, decl, globals, idSupply)
         case decl: ast.TopLevel.FunDecl =>
           val context1 = TypeContext(globals, Map())
@@ -188,6 +190,48 @@ object TypeChecker:
     typeParams match
       case Nil => TypedAst.Expr.Sort()(SourceRange.empty)
       case x::xs => TypedAst.Expr.Pi(x, buildDatatypeType(xs), true)(SourceRange.empty)
+
+
+  /** Validates that explicit constructor return types match the declared data type. */
+  private def validateCtorReturnTypes(
+      decl: ast.TopLevel.DataDecl,
+      globals: GlobalEnv,
+      idSupply: IdSupply,
+      metas: MetaContext
+    ): List[TypeError] =
+    val errors = ListBuffer[TypeError]()
+    var localCtx = TypeContext(globals, Map())
+    val localTypeParams = ListBuffer[LocalSymbol]()
+
+    for param <- decl.implicitParams do
+      val (paramType, paramErrors) = check(param.tpe, Sort()(SourceRange.empty))(using localCtx, metas, idSupply)
+      errors.addAll(paramErrors)
+      val localSymbol = LocalSymbol(param.name, paramType, idSupply.freshLocalId())
+      localTypeParams.addOne(localSymbol)
+      localCtx = localCtx.withLocal(localSymbol)
+
+    for ctor <- decl.ctors do
+      ctor.returnType.foreach { returnType =>
+        val (typedReturnType, returnTypeErrors) = check(returnType, Sort()(SourceRange.empty))(using localCtx, metas, idSupply)
+        errors.addAll(returnTypeErrors)
+        if returnTypeErrors.isEmpty && !hasDatatypeHead(typedReturnType, decl.name)(using localCtx, metas) then
+          val message = s"Constructor ${ctor.name} must return ${decl.name} but got ${prettyExpr(typedReturnType)}"
+          errors.addOne(TypeError(message, returnType.source))
+      }
+
+    errors.toList
+
+
+  /** Checks whether an expression has the given datatype name at its application head. */
+  private def hasDatatypeHead(expr: TypedAst.Expr, datatypeName: String)(using ctx: TypeContext, metas: MetaContext): Boolean =
+    def loop(current: TypedAst.Expr): Boolean =
+      whnf(current) match
+        case TypedAst.Expr.App(callee, _, _) => loop(callee)
+        case TypedAst.Expr.AppImplicit(callee, _, _) => loop(callee)
+        case TypedAst.Expr.Var(symbol) => symbol.name == datatypeName
+        case _ => false
+
+    loop(expr)
 
   /** Type-checks a function body against its return type. */
   private def checkFunctionBody(
