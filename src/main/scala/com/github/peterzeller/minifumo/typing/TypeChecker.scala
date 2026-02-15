@@ -542,28 +542,29 @@ object TypeChecker:
       expectedType: TypedAst.Expr,
       ctx: TypeContext,
       ids: IdSupply
-    ): (TypedAst.Pattern, Map[String, LocalBinding], List[TypeError]) =
+    ): (TypedAst.Pattern, Map[String, LocalBinding], Map[Int, TypedAst.Expr], List[TypeError]) =
     pattern match
       case ast.Pattern.Wildcard() =>
-        (TypedAst.Pattern.Wildcard()(pattern.source), Map(), List())
+        (TypedAst.Pattern.Wildcard()(pattern.source), Map(), Map(), List())
       case ast.Pattern.Lit(value) =>
         val litType = literalType(value, ctx)
         val typed = TypedAst.Pattern.Lit(value)(pattern.source)
         val err = if litType == expectedType || expectedType.isInstanceOf[TypedAst.Expr.UnknownType] then Nil
         else List(TypeError("Pattern literal type mismatch", pattern.source))
-        (typed, Map(), err)
+        (typed, Map(), Map(), err)
       case ast.Pattern.BinderOrCtor0(name) =>
         ctx.globals.names.get(name) match
           case Some(symbol) =>
             // if the symbol exists and is a constructor, match against the constructor
             val (ctorSymbol, ctorErrors) = globalSymbolToCtorSymbol(symbol, pattern.source)
             val typed = TypedAst.Pattern.Ctor(ctorSymbol, Nil)(pattern.source)
-            (typed, Map(), ctorErrors)
+            val refinement = extractPatternRefinement(ctorSymbol.tpe, expectedType)
+            (typed, Map(), refinement, ctorErrors)
           case None =>
             // if the symbol does not exist, match against binder
             val symbol = TypedAst.LocalSymbol(name, expectedType, ids.freshLocalId())
             val typed = TypedAst.Pattern.Binder(symbol)(pattern.source)
-            (typed, Map(name -> LocalBinding(symbol, None)), List())
+            (typed, Map(name -> LocalBinding(symbol, None)), Map(), List())
       case ast.Pattern.Ctor(name, args) =>
         ctx.globals.names.get(name) match
           case Some(symbol) =>
@@ -573,13 +574,39 @@ object TypeChecker:
             val argResults = args.zip(paddedFieldTypes).map { (arg, fieldType) =>
               checkPattern(arg, fieldType, ctx, ids)
             }
-            val errors = argResults.flatMap(_._3)
+            val errors = argResults.flatMap(_._4)
             val bindings = argResults.flatMap(_._2).toMap
+            val nestedRefinements = argResults.foldLeft(Map[Int, TypedAst.Expr]())((acc, result) => acc ++ result._3)
             val typedArgs = argResults.map(_._1)
-            (TypedAst.Pattern.Ctor(ctorSymbol, typedArgs)(pattern.source), bindings, errors ++ ctorErrors)
+            val ctorRefinement = extractPatternRefinement(ctorSymbol.tpe, expectedType)
+            (TypedAst.Pattern.Ctor(ctorSymbol, typedArgs)(pattern.source), bindings, nestedRefinements ++ ctorRefinement, errors ++ ctorErrors)
           case None =>
             val symbol = TypedAst.CtorSymbol(name, TypedAst.Expr.UnknownType()(pattern.source))
-            (TypedAst.Pattern.Ctor(symbol, Nil)(pattern.source), Map(), List(TypeError(s"Unknown constructor ${name}", pattern.source)))
+            (TypedAst.Pattern.Ctor(symbol, Nil)(pattern.source), Map(), Map(), List(TypeError(s"Unknown constructor ${name}", pattern.source)))
+
+  /** Extracts substitutions for scrutinee indices that become known from a constructor pattern. */
+  private def extractPatternRefinement(ctorType: TypedAst.Expr, expectedType: TypedAst.Expr): Map[Int, TypedAst.Expr] =
+    val (_, resultType) = decomposeCtorType(ctorType)
+    val ctorParamIds = collectParamIds(resultType)
+    val ctorTypeParamSubst = collectTypeParamSubst(resultType, expectedType, ctorParamIds, Map())
+    val instantiatedResultType = substituteTypeParams(resultType, ctorTypeParamSubst)
+    val expectedParamIds = collectParamIds(expectedType)
+    collectTypeParamSubst(expectedType, instantiatedResultType, expectedParamIds, Map())
+
+  /** Applies type refinements to all local bindings in a context. */
+  private[typing] def applyTypeRefinements(ctx: TypeContext, refinements: Map[Int, TypedAst.Expr]): TypeContext =
+    if refinements.isEmpty then
+      ctx
+    else
+      val rewrittenLocals = ctx.locals.map { case (name, binding) =>
+        val rewrittenBinding = binding.symbol match
+          case symbol: LocalSymbol =>
+            val rewrittenSymbol = substituteTypeParamsInLocalSymbol(symbol, refinements)
+            LocalBinding(rewrittenSymbol, binding.value)
+          case _ => binding
+        name -> rewrittenBinding
+      }
+      ctx.copy(locals = rewrittenLocals)
 
   private def globalSymbolToCtorSymbol(s: GlobalSymbol, source: SourceRange): (CtorSymbol, List[TypeError]) =
     s.symbolSignature match
@@ -636,7 +663,7 @@ object TypeChecker:
         acc
 
   // Replaces constructor type parameters with inferred concrete types from the scrutinee.
-  private def substituteTypeParams(expr: TypedAst.Expr, subst: Map[Int, TypedAst.Expr]): TypedAst.Expr =
+  private[typing] def substituteTypeParams(expr: TypedAst.Expr, subst: Map[Int, TypedAst.Expr]): TypedAst.Expr =
     expr match
       case TypedAst.Expr.Var(param: TypedAst.LocalSymbol) =>
         subst.getOrElse(param.id, expr)
