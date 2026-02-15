@@ -1,5 +1,5 @@
 export data SizedList[T: Type, N: Nat] =
-   SizedNil: SizedList[T, 0] // error: Expected Nat but got Int
+   SizedNil: SizedList[T, Zero]
  | SizedCons(head: T, tail: SizedList[T, N]): SizedList[T, Suc(N)]
 
 export fun appendSizedList[T: Type, N: Nat, M: Nat](xs: SizedList[T, N], ys: SizedList[T, M]): SizedList[T, natAdd(N, M)]
@@ -7,4 +7,4 @@ export fun appendSizedList[T: Type, N: Nat, M: Nat](xs: SizedList[T, N], ys: Siz
     case SizedNil
       ys // error: Expected SizedList[T][natAdd(N)(M)] but got SizedList[T][M]
     case SizedCons(h, t)
-      SizedCons(h, appendSizedList(t, ys)) // error: Expected SizedList // error: Expected SizedList // error: Could not infer implicit argument
+      SizedCons(h, appendSizedList(t, ys)) // error: Expected SizedList[T][natAdd(N)(M)] but got SizedList[T][Suc(?N_1 : Nat)] // error: Expected SizedList[T][?N_1 : Nat] but got SizedList[ys][natAdd(N)(?M_4 : Nat)] // error: Could not infer implicit argument
