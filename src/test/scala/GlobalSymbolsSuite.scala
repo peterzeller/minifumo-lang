@@ -1,7 +1,6 @@
 package com.github.peterzeller.minifumo.typing
 
 import com.github.peterzeller.minifumo.ast
-import com.github.peterzeller.minifumo.ast.AstTransform
 import com.github.peterzeller.minifumo.parser.parseInput
 
 import java.nio.file.Paths
@@ -9,8 +8,8 @@ import java.nio.file.Paths
 class GlobalSymbolsSuite extends munit.FunSuite:
   // Parses a program from a string for global symbol tests.
   private def parseProgram(input: String): ast.ProgramFile =
-    val (cst, _) = parseInput(input)
-    AstTransform.program(cst)
+    val (ast, _) = parseInput(input)
+    ast
 
   case class DummyNameCache(names: Map[String, Map[String, GlobalName]]) extends NameCache with SymbolCache:
     override def globalNames(path: String): Map[String, GlobalName] = names.getOrElse(path, Map())
