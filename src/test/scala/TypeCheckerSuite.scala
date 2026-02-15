@@ -87,7 +87,7 @@ class TypeCheckerSuite extends munit.FunSuite:
 
   test("isDefEq solves metas during definitional equality checks") {
     val source = ast.SourceRange.empty
-    val meta = TypedAst.Expr.Meta(0, TypedAst.Expr.UnknownType()(source))(source)
+    val meta = TypedAst.Expr.Meta(0, TypedAst.Expr.UnknownType()(source))("T", source)
     val literal = TypedAst.Expr.Lit(ast.Literal.IntLit("7")(source))(source)
     given TypeChecker.Context = emptyContext
     val assignments = mutable.Map[Int, TypedAst.Expr]()

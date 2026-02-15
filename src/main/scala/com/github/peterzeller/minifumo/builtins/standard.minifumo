@@ -539,7 +539,7 @@ fun stringLe(a: String, b: String): Bool
                     charListLe(left, right)
 
 // Converts a list into a String using Cons/Nil notation.
-fun listToString[T: Type](values: List[T], s: Show[T]): String
+fun listToString[T: Type](s: Show[T], values: List[T]): String
     match s
         case MakeShow(showFn)
             match values
@@ -548,7 +548,7 @@ fun listToString[T: Type](values: List[T], s: Show[T]): String
                 case Cons(head, tail)
                     stringAppend(
                         "Cons(",
-                        stringAppend(showFn(head), stringAppend(", ", stringAppend(listToString[T](tail, s), ")")))
+                        stringAppend(showFn(head), stringAppend(", ", stringAppend(listToString[T](s, tail), ")")))
                     )
 
 // Defines a stub println that returns Unit.
@@ -643,6 +643,9 @@ fun showIntFn(value: Int): String
 // Builds the Int show dictionary.
 fun showInt(): Show[Int]
     MakeShow[Int](showIntFn)
+
+fun showList[T: Type](f: Show[T]): Show[List[T]]
+    MakeShow(listToString(f))
 
 // Converts a String value to a String.
 fun showStringFn(value: String): String

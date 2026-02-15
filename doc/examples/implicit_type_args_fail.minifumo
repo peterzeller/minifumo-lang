@@ -1,0 +1,18 @@
+
+fun test(): Int
+    let x = Nil // error: Could not infer implicit argument ?T_0 : Type
+    35
+
+fun test2(): Int
+    let x = Cons(42, Cons(True, Nil)) // error: Expected List[Int] but got List[Bool]
+    15
+
+
+fun test3(): List[Int]
+    // we don't have let polymorphism for now, so n and c will be instantiated to the first use (Bool) ...
+    // TODO the following error should not be there, we should improve it
+    let n = Nil // error: Expected List[Int] but got List[Bool]
+    let c = Cons
+    let x = c(True, n)
+    // ... meaning we can't use it for Int lists later
+    c(1, n) // error: Expected Bool but got Int

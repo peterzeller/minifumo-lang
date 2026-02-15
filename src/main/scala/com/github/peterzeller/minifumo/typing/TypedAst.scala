@@ -77,7 +77,7 @@ object TypedAst:
         body: Expr,
       )(val source: SourceRange)
 
-    case Meta(index: Int, tpe: Expr)(val source: SourceRange)
+    case Meta(index: Int, tpe: Expr)(val name: String, val source: SourceRange)
 
     // placeholder when typing is unknown
     case UnknownType()(val source: SourceRange)
