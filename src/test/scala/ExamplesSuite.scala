@@ -1,6 +1,6 @@
 package com.github.peterzeller.minifumo
 
-import com.github.peterzeller.minifumo.ast.{AstTransform, SourceRange, TopLevel}
+import com.github.peterzeller.minifumo.ast.{SourceRange, TopLevel}
 import com.github.peterzeller.minifumo.common.MinifumoErrorWithPath
 import com.github.peterzeller.minifumo.parser.parseInput
 import munit.FunSuite
@@ -158,8 +158,7 @@ class ExamplesSuite extends FunSuite:
 
   // Determines whether a file declares a top-level main function.
   private def hasMainFunction(content: String): Boolean =
-    val (cst, _) = parseInput(content)
-    val ast = AstTransform.program(cst)
+    val (ast, _) = parseInput(content)
     ast.items.exists:
       case fun: TopLevel.FunDecl => fun.sig.name == "main"
       case _ => false

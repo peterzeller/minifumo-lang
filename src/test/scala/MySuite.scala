@@ -1,7 +1,5 @@
 // For more information on writing tests, see
 import com.github.peterzeller.minifumo.parser.parseInput
-import com.github.peterzeller.minifumo.antlr.MinifumoParser
-import com.github.peterzeller.minifumo.ast.AstTransform
 import com.github.peterzeller.minifumo.interpreter.Interpreter
 import com.github.peterzeller.minifumo.typing.{ProjectSymbolCache, TypeChecker}
 
@@ -24,36 +22,34 @@ class MySuite extends munit.FunSuite {
   private val dummyCache = new ProjectSymbolCache(Path.of("."))
 
   test("interpreter evals main with a simple function call") {
-    val (c, _) = parseInput("""
+    val (ast, _) = parseInput("""
       |fun id(x: Int): Int
       |    x
       |
       |fun main(): Int
       |    id(3)
     """.stripMargin)
-    val ast = AstTransform.program(c)
-    val (typed, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true)
+        val (typed, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true)
     assertEquals(errors, List())
     val result = Interpreter.evalProg(typed, dummyCache, "main")
     assertEquals(result, intValue(3))
   }
 
   test("type checker can type ints") {
-    val (c, _) = parseInput("""
+    val (ast, _) = parseInput("""
       |fun main(): Int
       |    let x = 1
       |    let y = 2
       |    y
     """.stripMargin)
-    val ast = AstTransform.program(c)
-    val (typed, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true)
+        val (typed, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true)
     assertEquals(errors, List())
     val result = Interpreter.evalProg(typed, dummyCache, "main")
     assertEquals(result, intValue(2))
   }
 
   test("type checker can handle pattern matching on local data") {
-    val (c, _) = parseInput("""
+    val (ast, _) = parseInput("""
       |data Maybe = None | Some(value: Int)
       |
       |fun main(): Int
@@ -63,8 +59,7 @@ class MySuite extends munit.FunSuite {
       |        case Some(value)
       |            value
     """.stripMargin)
-    val ast = AstTransform.program(c)
-    val (typed, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true)
+        val (typed, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true)
     assertEquals(errors, List())
     val result = Interpreter.evalProg(typed, dummyCache, "main")
     assertEquals(result, intValue(42))
@@ -72,7 +67,7 @@ class MySuite extends munit.FunSuite {
 
 
   // test("type checker can work with simple data types") {
-  //   val (c, _) = parseInput("""
+  //   val (ast, _) = parseInput("""
   //     |data List =
   //     |   Nil
   //     | | Cons(head Int, tail List)
@@ -96,8 +91,7 @@ class MySuite extends munit.FunSuite {
   //     |    let lst3 = myAppend(lst1, lst2)
   //     |    println(lst3)
   //   """.stripMargin)
-  //   val ast = AstTransform.program(c)
-  //   val (typed, errors) = TypeChecker.checkProgram(ast)
+  //     //   val (typed, errors) = TypeChecker.checkProgram(ast)
   //   assert(errors.isEmpty, s"Type errors:\n${errors.mkString("\n")}")
   //   println("Evaluating program...")
   //   val combined = TypedAst.Program(Standard.typedProgram.items ++ typed.items)(typed.source)
