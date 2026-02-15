@@ -31,12 +31,10 @@ object BuiltInFunctions:
       case _ =>
         throw new RuntimeException(s"not a list: $v")
 
-  // Converts runtime character values from either legacy or current constructor names.
+  // Converts a runtime character value to a Scala Char.
   private def convertChar(v: Value): Char =
     v match
       case Value.AdtVal("MakeChar", List(n)) =>
-        convertNat(n).toChar
-      case Value.AdtVal("Char", List(n)) =>
         convertNat(n).toChar
       case _ =>
         throw new RuntimeException(s"not a char: $v")
