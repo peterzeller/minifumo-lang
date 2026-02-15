@@ -3,4 +3,8 @@ export data SizedList[T: Type, N: Nat] =
  | SizedCons(head: T, tail: SizedList[T, N]): SizedList[T, Suc(N)]
 
 export fun appendSizedList[T: Type, N: Nat, M: Nat](xs: SizedList[T, N], ys: SizedList[T, M]): SizedList[T, natAdd(N, M)]
-  xs // error: Expected SizedList
+  match xs
+    case SizedNil
+      ys // error: Expected SizedList[T][natAdd(N)(M)] but got SizedList[T][M]
+    case SizedCons(h, t)
+      SizedCons(h, appendSizedList(t, ys)) // error: Expected SizedList[T][natAdd(N)(M)] but got SizedList[T][Suc(?N_1 : Nat)]
