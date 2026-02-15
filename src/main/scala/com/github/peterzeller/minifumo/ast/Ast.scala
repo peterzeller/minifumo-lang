@@ -67,7 +67,7 @@ final case class FunSig(
     returnType: Expr
   )(val source: SourceRange)
 
-final case class CtorDecl(name: String, fields: List[CtorField])(val source: SourceRange)
+final case class CtorDecl(name: String, fields: List[CtorField], returnType: Option[Expr])(val source: SourceRange)
 final case class CtorField(name: String, tpe: Expr)(val source: SourceRange)
 
 final case class FunParam(name: String, tpe: Expr)(val source: SourceRange)

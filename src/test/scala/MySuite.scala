@@ -66,6 +66,16 @@ class MySuite extends munit.FunSuite {
   }
 
 
+  test("constructor result type must match enclosing datatype") {
+    val (ast, _) = parseInput("""
+      |data Bad =
+      |   MakeBad: Int
+    """.stripMargin)
+    val (_, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true)
+    assert(errors.exists(_.message.contains("Constructor MakeBad must return Bad")))
+  }
+
+
   // test("type checker can work with simple data types") {
   //   val (ast, _) = parseInput("""
   //     |data List =

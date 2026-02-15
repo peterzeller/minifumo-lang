@@ -88,7 +88,10 @@ private class HandwrittenParser(tokens: Vector[Token]):
         consume(TokenKind.PAREN_RIGHT, "Expected ')' after constructor fields.")
         fs
       else Nil
-    CtorDecl(name.text, fields)(merge(name, previous))
+    val returnType =
+      if matchKind(TokenKind.COLON) then Some(parseExpr())
+      else None
+    CtorDecl(name.text, fields, returnType)(merge(name, previous))
 
   /** Parses one constructor field declaration. */
   private def parseCtorField(): CtorField =

@@ -1,0 +1,2 @@
+export data Bad =
+   MakeBad: Int // error: Constructor MakeBad must return Bad
