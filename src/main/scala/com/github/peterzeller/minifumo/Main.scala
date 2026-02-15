@@ -23,8 +23,8 @@ object Main:
           System.exit(2)
         runFile(path) match
           case Right(value) => println(value)
-          case Left(messages) =>
-            messages.foreach(Console.err.println)
+          case Left(errs) =>
+            println(renderTypeErrors(errs).mkString("\n\n"))
             System.exit(1)
       case "check" :: filename :: Nil =>
         val path = Paths.get(filename)
@@ -61,8 +61,7 @@ object Main:
       val allErrors = globalNames.allErrors
 
       if allErrors.nonEmpty then
-        throw new RuntimeException(s"errros: $allErrors")
-        // Left(renderTypeErrors(path, typeErrors))
+         Left(allErrors)
       else
         Right(Interpreter.evalProg(typedProgram, globalNames, "main"))
 
@@ -137,9 +136,9 @@ object Main:
         val endColumn = math.max(startColumn, error.source.end.column)
         val underlineWidth = math.max(1, endColumn - startColumn + 1)
         val underline = (" " * (startColumn - 1)) + ("^" * underlineWidth)
-        s"line ${error.source.start.line}: ${error.message}\n    ${sourceLine}\n    ${underline}"
+        s"${errorWithPath.p}:${error.source.start.line}:${error.source.start.column}: ${error.message}\n    ${sourceLine}\n    ${underline}"
       else
-        s"line ${error.source.start.line}: ${error.message}"
+        s"${errorWithPath.p}:${error.source.start.line}:${error.source.start.column}: ${error.message}"
     }
 
 def readLines(path: Path): Vector[String] =

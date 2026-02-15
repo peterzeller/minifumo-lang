@@ -4,3 +4,8 @@ fun addOne(l: List[Int]): List[Int]
             Nil
         case Cons(x, xs)
             Cons(x + 1, addOne(xs))
+
+fun main(): Unit
+    println(addOne(Cons(1, Cons(2, Cons(3, Nil)))), showList(showInt()))
+
+// Output: Cons(2, Cons(3, Cons(4, Nil)))
