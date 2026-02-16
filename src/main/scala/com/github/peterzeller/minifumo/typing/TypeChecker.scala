@@ -22,14 +22,13 @@ object TypeChecker:
 
 
   /** Type-checks a program */
-  def checkProgram(path: Path, program: ast.ProgramFile, globalNames: NameCache & SymbolCache, importStandard: Boolean): (TypedAst.Program, List[TypeError]) =
+  def checkProgram(path: Path, program: ast.ProgramFile, globalNames: NameCache & SymbolCache, importStandard: Boolean, idSupply: TypeChecker.IdSupply): (TypedAst.Program, List[TypeError]) =
     try
       val errors = ListBuffer[TypeError]()
-      val idSupply = IdSupply()
-      var (symbolMap, importErrors) = GlobalSymbols.buildGlobalSymbols(path, program, globalNames, false)
+      var (symbolMap, importErrors) = GlobalSymbols.buildGlobalSymbols(path, program, globalNames, false, idSupply)
       if importStandard then
         // import the standard library symbols into the program file scope
-        val (standardLibSymbolMap, standardLibImportErrors) = GlobalSymbols.buildGlobalSymbols(Path.of("standard.minifumo"), Standard.standardProgram, globalNames, false)
+        val (standardLibSymbolMap, standardLibImportErrors) = GlobalSymbols.buildGlobalSymbols(Path.of("standard.minifumo"), Standard.standardProgram, globalNames, false, idSupply)
         symbolMap ++= standardLibSymbolMap
         importErrors ++= standardLibImportErrors
       errors.addAll(importErrors)
@@ -42,7 +41,7 @@ object TypeChecker:
           case decl: ast.TopLevel.DataDecl =>
             val ctorReturnTypeErrors = validateCtorReturnTypes(decl, globals, idSupply, itemMetaStore)
             errors.addAll(ctorReturnTypeErrors)
-            buildDataDecl(path, decl, globals, idSupply)
+            buildDataDecl(path, decl, globals, idSupply)(using idSupply)
           case decl: ast.TopLevel.FunDecl =>
             val context1 = TypeContext(globals, Map(), definitionCache)
             val (typedSig, context2, errs) = checkFunSig(decl.sig)(using context1, itemMetaStore, idSupply)
@@ -166,7 +165,7 @@ object TypeChecker:
       constraints.toList
 
   /** Tracks identifier allocation for local symbols and metas. */
-  private[typing] final case class IdSupply(var nextId: Int = 0, var nextMeta: Int = 0):
+  final case class IdSupply(var nextId: Int = 0, var nextMeta: Int = 0):
     /** Creates a fresh local symbol id. */
     def freshLocalId(): Int =
       val id = nextId
@@ -193,7 +192,7 @@ object TypeChecker:
       decl: ast.TopLevel.DataDecl,
       globals: GlobalEnv,
       idSupply: IdSupply
-    ): TypedAst.TopLevel =
+    )(implicit ids: TypeChecker.IdSupply): TypedAst.TopLevel =
     val localTypeParams = decl.implicitParams.map { param =>
       val paramType = signatureExpr(param.tpe, globals, Map())
       param.name -> TypedAst.LocalSymbol(param.name, paramType, idSupply.freshLocalId())
@@ -291,7 +290,7 @@ object TypeChecker:
     (instantiate(expr), metaErrors ++ constraintErrors)
 
   /** Translates a signature expression to a typed expression. */
-  private[typing] def signatureExpr(expr: ast.Expr, globals: GlobalEnv, locals: Map[String, TypedAst.TermSymbol]): TypedAst.Expr =
+  private[typing] def signatureExpr(expr: ast.Expr, globals: GlobalEnv, locals: Map[String, TypedAst.TermSymbol])(implicit ids: TypeChecker.IdSupply): TypedAst.Expr =
     expr match
       case ast.Expr.Lit(value) => TypedAst.Expr.Lit(value)(expr.source)
       case ast.Expr.Var(name) =>
@@ -318,7 +317,7 @@ object TypeChecker:
       case ast.Expr.Pi(param, body) =>
         val dom = signatureExpr(param.tpe, globals, locals)
         val cod = signatureExpr(body, globals, locals)
-        val domSym = LocalSymbol(param.name, dom, 0) // TODO create ID
+        val domSym = LocalSymbol(param.name, dom, ids.freshLocalId()) // TODO create ID
         TypedAst.Expr.Pi(domSym, cod, isImplicit = false)(expr.source)
       case ast.Expr.Hole() =>
         TypedAst.Expr.UnknownType()(expr.source)
@@ -759,12 +758,8 @@ object TypeChecker:
         TypedAst.Expr.App(substitute(callee, symbol, value), substitute(arg, symbol, value), tpe)(term.source)
       case TypedAst.Expr.AppImplicit(callee, arg, tpe) =>
         TypedAst.Expr.AppImplicit(substitute(callee, symbol, value), substitute(arg, symbol, value), tpe)(term.source)
-      case TypedAst.Expr.Lambda(param, body, tpe) if param.id == symbol.id =>
-        TypedAst.Expr.Lambda(param, body, tpe)(term.source)
       case TypedAst.Expr.Lambda(param, body, tpe) =>
         TypedAst.Expr.Lambda(param, substitute(body, symbol, value), tpe)(term.source)
-      case TypedAst.Expr.LetIn(sym, isConstant, declaredType, valExpr, body) if sym.id == symbol.id =>
-        TypedAst.Expr.LetIn(sym, isConstant, declaredType, substitute(valExpr, symbol, value), body)(term.source)
       case TypedAst.Expr.LetIn(sym, isConstant, declaredType, valExpr, body) =>
         TypedAst.Expr.LetIn(sym, isConstant, declaredType, substitute(valExpr, symbol, value), substitute(body, symbol, value))(term.source)
       case TypedAst.Expr.Pi(dom, cod, isImplicit) =>
@@ -772,7 +767,8 @@ object TypeChecker:
       case TypedAst.Expr.Match(scrutinee, cases) =>
         val newCases = cases.map(c => TypedAst.MatchCase(c.pattern, substitute(c.body, symbol, value))(c.source))
         TypedAst.Expr.Match(substitute(scrutinee, symbol, value), newCases)(term.source)
-      case other => other
+      case TypedAst.Expr.Lit(_) | TypedAst.Expr.Var(_) | TypedAst.Expr.Sort() | TypedAst.Expr.Meta(_, _) | TypedAst.Expr.UnknownType() =>
+        term
 
   private def substituteInLocalSymbol(s: LocalSymbol, symbol: TypedAst.LocalSymbol, value: TypedAst.Expr): LocalSymbol =
     LocalSymbol(s.name, substitute(s.tpe, symbol, value), s.id)

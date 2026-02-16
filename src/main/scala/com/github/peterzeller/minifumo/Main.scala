@@ -51,7 +51,8 @@ object Main:
 
   // Runs a program file and returns either error messages or the evaluated value.
   def runFile(path: Path): Either[List[MinifumoErrorWithPath], Interpreter.Value] =
-    val globalNames = new ProjectSymbolCache(findProjectRoot(path))
+    val idSupply = TypeChecker.IdSupply()
+    val globalNames = new ProjectSymbolCache(findProjectRoot(path), idSupply)
     val (_, syntaxErrors) = globalNames.getAst(globalNames.fromPath(path))
     if syntaxErrors.nonEmpty then
       Left(syntaxErrors.map(MinifumoErrorWithPath(path, _)))
@@ -67,10 +68,11 @@ object Main:
 
   // Checks a directory of examples, reusing cached parse/import info across files.
   def checkDirectory(path: Path): List[MinifumoErrorWithPath] =
+    val idSupply = TypeChecker.IdSupply()
     if !Files.exists(path) then
       List(MinifumoErrorWithPath(path, SyntaxError(SourcePos(0,0), "Directory not found")))
     else
-      val globalNames = new ProjectSymbolCache(findProjectRoot(path))
+      val globalNames = new ProjectSymbolCache(findProjectRoot(path), idSupply)
       Try {
         Using.resource(Files.list(path)) { stream =>
           stream.iterator().asScala.toList
@@ -83,7 +85,8 @@ object Main:
 
   // Checks a single file for syntax and type errors, including imports.
   def checkFile(path: Path): List[MinifumoErrorWithPath] =
-    val globalNames = new ProjectSymbolCache(findProjectRoot(path))
+    val idSupply = TypeChecker.IdSupply()
+    val globalNames = new ProjectSymbolCache(findProjectRoot(path), idSupply)
     checkFile(path, globalNames)
 
   // Checks a file using shared caches to avoid reparsing across a project.
@@ -92,7 +95,7 @@ object Main:
     if syntaxErrors.nonEmpty then
       syntaxErrors.map(MinifumoErrorWithPath(path, _))
     else
-      val (_, errors) = TypeChecker.checkProgram(path, program, info, true)
+      val (_, errors) = TypeChecker.checkProgram(path, program, info, true, info.ids)
       if errors.isEmpty then
         Nil
       else
