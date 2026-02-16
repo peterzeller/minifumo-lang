@@ -169,7 +169,7 @@ object GlobalSymbols:
           val sig = FunSig(ctor.name, implicitParams, ctor.fields.map(f => FunParam(f.name, f.tpe)(f.source)), ctorReturnType)(ctor.source)
           val f: ast.TopLevel.FunDecl = ast.TopLevel.FunDecl(sig, ast.Expr.Hole()(ctor.source), true)(ctor.source)
 
-          val (syms, errs) = symbolsForFunDef(f, file, env)
+          val (syms, errs) = symbolsForFunDef(f, file, env.copy(localNames = localNames))
           errors.addAll(errs)
           symbols.addAll(syms)
 
