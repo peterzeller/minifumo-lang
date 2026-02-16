@@ -12,10 +12,10 @@ object CheckMatchExpr:
     val ast.Expr.Match(scrutinee, cases) = expr
     val (scrutineeExpr, scrutineeType, errs) = TypeChecker.infer(scrutinee)
     val typedCases = cases.map { case ast.MatchCase(pattern, body) =>
-      val (typedPattern, patternCtx, patternErrors) = checkPattern(pattern, scrutineeType, ctx, ids)
-      val caseCtx = ctx.copy(locals = ctx.locals ++ patternCtx)
+      val patternResult = checkPattern(pattern, scrutineeType, ctx, ids)
+      val caseCtx = applyTypeRefinements(ctx.copy(locals = ctx.locals ++ patternResult.bindings), patternResult.refinements)
       val (typedBody, bodyType, bodyErrs) = TypeChecker.infer(body)(using caseCtx, metas, ids)
-      (typedPattern, typedBody, bodyType, patternErrors ++ bodyErrs)
+      (patternResult.typedPattern, typedBody, bodyType, patternResult.errors ++ bodyErrs)
     }
     val errors = typedCases.flatMap(_._4)
     val typedCasesExpr = typedCases.map { case (pat, bodyExpr, _, _) =>
@@ -33,10 +33,11 @@ object CheckMatchExpr:
     val ast.Expr.Match(scrutinee, cases) = expr
     val (scrutineeExpr, scrutineeType, errs) = TypeChecker.infer(scrutinee)
     val typedCases = cases.map { case ast.MatchCase(pattern, body) =>
-      val (typedPattern, patternCtx, patternErrors) = checkPattern(pattern, scrutineeType, ctx, ids)
-      val caseCtx = ctx.copy(locals = ctx.locals ++ patternCtx)
-      val (typedBody, bodyErrs) = TypeChecker.check(body, expectedType)(using caseCtx, metas, ids)
-      (typedPattern, typedBody, patternErrors ++ bodyErrs)
+      val patternResult = checkPattern(pattern, scrutineeType, ctx, ids)
+      val caseCtx = applyTypeRefinements(ctx.copy(locals = ctx.locals ++ patternResult.bindings), patternResult.refinements)
+      val caseExpectedType = substituteTypeParams(expectedType, patternResult.refinements)
+      val (typedBody, bodyErrs) = TypeChecker.check(body, caseExpectedType)(using caseCtx, metas, ids)
+      (patternResult.typedPattern, typedBody, patternResult.errors ++ bodyErrs)
     }
     val errors = typedCases.flatMap(_._3)
     val typedCasesExpr = typedCases.map { case (pat, bodyExpr, _) =>
