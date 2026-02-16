@@ -322,17 +322,23 @@ object TypeChecker:
              (implicit ctx: Context, metas: MetaContext): Boolean =
     val norm1 = whnf(t1)
     val norm2 = whnf(t2)
-    (extractHeadedExpr(norm1), extractHeadedExpr(norm2)) match
-      case (Some(h1), Some(h2)) if h1.kind == h2.kind =>
-        if symbolsEqual(h1.head, h2.head) then
-          h1.args.length == h2.args.length && h1.args.zip(h2.args).forall((a, b) => isDefEq(a, b))
-        else
-          false
-      case _ if syntacticallyEquivalent(norm1, norm2) =>
-        true
+    (norm1, norm2) match
+      case (TypedAst.Expr.Meta(id, _), other) =>
+        solveMeta(id, other)
+      case (other, TypedAst.Expr.Meta(id, _)) =>
+        solveMeta(id, other)
       case _ =>
-        metas.addEqualityConstraint(EqualityConstraint(t1, t2, t1.source))
-        true
+        (extractHeadedExpr(norm1), extractHeadedExpr(norm2)) match
+          case (Some(h1), Some(h2)) if h1.kind == h2.kind =>
+            if symbolsEqual(h1.head, h2.head) then
+              h1.args.length == h2.args.length && h1.args.zip(h2.args).forall((a, b) => isDefEq(a, b))
+            else
+              false
+          case _ if syntacticallyEquivalent(norm1, norm2) =>
+            true
+          case _ =>
+            metas.addEqualityConstraint(EqualityConstraint(t1, t2, t1.source))
+            true
 
   def symbolsEqual(a: Symbol, b: Symbol): Boolean =
     if a == b then
@@ -393,6 +399,7 @@ object TypeChecker:
           case SymbolSignature.Datatype(_) => Some(DefEqHeadKind.TypeConstructor)
           case SymbolSignature.Def(tpe) if hasDatatypeResultType(tpe) => Some(DefEqHeadKind.Constructor)
           case _ => None
+      case _: TypedAst.GlobalNameSymbol => Some(DefEqHeadKind.TypeConstructor)
       case _ => None
 
   /** Checks whether a function type eventually returns a datatype head. */

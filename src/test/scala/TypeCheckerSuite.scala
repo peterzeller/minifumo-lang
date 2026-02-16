@@ -88,7 +88,7 @@ class TypeCheckerSuite extends munit.FunSuite:
 //    assert(funBody.exists(_.isInstanceOf[TypedAst.Expr.Lambda]))
 //  }
 
-  test("isDefEq defers non-constructor equalities as constraints") {
+  test("isDefEq solves metas during definitional equality checks") {
     val source = ast.SourceRange.empty
     val meta = TypedAst.Expr.Meta(0, TypedAst.Expr.UnknownType()(source))("T", source)
     val literal = TypedAst.Expr.Lit(ast.Literal.IntLit("7")(source))(source)
@@ -102,8 +102,8 @@ class TypeCheckerSuite extends munit.FunSuite:
       override def equalityConstraints: List[TypeChecker.EqualityConstraint] = constraints.toList
     val result = TypeChecker.isDefEq(meta, literal)
     assert(result)
-    assertEquals(assignments.get(0), None)
-    assertEquals(constraints.length, 1)
+    assertEquals(assignments.get(0), Some(literal))
+    assertEquals(constraints.length, 0)
   }
 
 //  test("pattern matching substitutes constructor type parameters without standard library") {
