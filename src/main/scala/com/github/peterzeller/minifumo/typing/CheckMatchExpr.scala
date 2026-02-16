@@ -24,7 +24,7 @@ object CheckMatchExpr:
     val firstType = typedCases.head._3
     val errs3 = ListBuffer[TypeError]()
     for (_, bodyExpr, caseType, _) <- typedCases.tail do
-      if !isDefEq(firstType, caseType) then
+      if !isDefEq(firstType, caseType, bodyExpr.source) then
         errs3.addOne(TypeError(s"Case should have type ${prettyExpr(firstType)}, but got ${prettyExpr(caseType)}", bodyExpr.source))
     (TypedAst.Expr.Match(scrutineeExpr, typedCasesExpr)(expr.source), firstType, errs ++ errors ++ errs3.toList)
 

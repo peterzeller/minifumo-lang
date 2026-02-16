@@ -19,7 +19,7 @@ class MySuite extends munit.FunSuite {
     Interpreter.Value.AdtVal("MakeInt", List(sign, natValue(math.abs(value))))
 
   private val dummyPath: Path = Path.of("dummy.minifumo")
-  private val dummyCache = new ProjectSymbolCache(Path.of("."))
+  private val dummyCache = new ProjectSymbolCache(Path.of("."), TypeChecker.IdSupply())
 
   test("interpreter evals main with a simple function call") {
     val (ast, _) = parseInput("""
@@ -29,7 +29,7 @@ class MySuite extends munit.FunSuite {
       |fun main(): Int
       |    id(3)
     """.stripMargin)
-        val (typed, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true)
+        val (typed, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
     assertEquals(errors, List())
     val result = Interpreter.evalProg(typed, dummyCache, "main")
     assertEquals(result, intValue(3))
@@ -42,7 +42,7 @@ class MySuite extends munit.FunSuite {
       |    let y = 2
       |    y
     """.stripMargin)
-        val (typed, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true)
+        val (typed, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
     assertEquals(errors, List())
     val result = Interpreter.evalProg(typed, dummyCache, "main")
     assertEquals(result, intValue(2))
@@ -50,16 +50,16 @@ class MySuite extends munit.FunSuite {
 
   test("type checker can handle pattern matching on local data") {
     val (ast, _) = parseInput("""
-      |data Maybe = None | Some(value: Int)
+      |data Maybe = MyNone | MySome(value: Int)
       |
       |fun main(): Int
-      |    match Some[Int](42)
-      |        case None
+      |    match MySome(42)
+      |        case MyNone
       |            0
-      |        case Some(value)
+      |        case MySome(value)
       |            value
     """.stripMargin)
-        val (typed, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true)
+    val (typed, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
     assertEquals(errors, List())
     val result = Interpreter.evalProg(typed, dummyCache, "main")
     assertEquals(result, intValue(42))
@@ -71,7 +71,7 @@ class MySuite extends munit.FunSuite {
       |data Bad =
       |   MakeBad: Int
     """.stripMargin)
-    val (_, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true)
+    val (_, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
     assert(errors.exists(_.message.contains("Constructor MakeBad must return Bad")))
   }
 

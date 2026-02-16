@@ -30,7 +30,7 @@ object TypedAst:
           def r(l: List[Expr]): Expr =
             l match
               case Nil => Expr.Sort()(SourceRange.empty)
-              case x::xs => Expr.Pi(LocalSymbol("_", x, 0), r(xs), true)(SourceRange.empty)
+              case x::xs => Expr.Pi(LocalSymbol("_", x, -1), r(xs), true)(SourceRange.empty)
           r(implicitParams)
 
 

@@ -14,6 +14,7 @@ import java.nio.file.Path
 
 object TypeChecker:
   private val throwOnError = false
+  private val defaultConstraintFuel = 128
 
   final case class TypeError(message: String, source: ast.SourceRange) extends MinifumoError:
     if throwOnError then
@@ -21,36 +22,39 @@ object TypeChecker:
 
 
   /** Type-checks a program */
-  def checkProgram(path: Path, program: ast.ProgramFile, globalNames: NameCache & SymbolCache, importStandard: Boolean): (TypedAst.Program, List[TypeError]) =
+  def checkProgram(path: Path, program: ast.ProgramFile, globalNames: NameCache & SymbolCache, importStandard: Boolean, idSupply: TypeChecker.IdSupply): (TypedAst.Program, List[TypeError]) =
     try
       val errors = ListBuffer[TypeError]()
-      val idSupply = IdSupply()
-      val metaStore = MetaStore()
-      var (symbolMap, importErrors) = GlobalSymbols.buildGlobalSymbols(path, program, globalNames, false)
+      var (symbolMap, importErrors) = GlobalSymbols.buildGlobalSymbols(path, program, globalNames, false, idSupply)
       if importStandard then
         // import the standard library symbols into the program file scope
-        val (standardLibSymbolMap, standardLibImportErrors) = GlobalSymbols.buildGlobalSymbols(Path.of("standard.minifumo"), Standard.standardProgram, globalNames, false)
+        val (standardLibSymbolMap, standardLibImportErrors) = GlobalSymbols.buildGlobalSymbols(Path.of("standard.minifumo"), Standard.standardProgram, globalNames, false, idSupply)
         symbolMap ++= standardLibSymbolMap
         importErrors ++= standardLibImportErrors
       errors.addAll(importErrors)
+      val definitionCache = DefinitionCache(path, globalNames)
       val globals = GlobalEnv(names = symbolMap)
-      val typedItems = program.items.map {
-        case decl: ast.TopLevel.DataDecl =>
-          val ctorReturnTypeErrors = validateCtorReturnTypes(decl, globals, idSupply, metaStore)
-          errors.addAll(ctorReturnTypeErrors)
-          buildDataDecl(path, decl, globals, idSupply)
-        case decl: ast.TopLevel.FunDecl =>
-          val context1 = TypeContext(globals, Map())
-          val (typedSig, context2, errs) = checkFunSig(decl.sig)(using context1, metaStore, idSupply)
-          errors.addAll(errs)
+      val typedItems = ListBuffer[TypedAst.TopLevel]()
+      for item <- program.items do
+        val itemMetaStore = MetaStore()
+        val typedItem = item match
+          case decl: ast.TopLevel.DataDecl =>
+            val ctorReturnTypeErrors = validateCtorReturnTypes(decl, globals, idSupply, itemMetaStore)
+            errors.addAll(ctorReturnTypeErrors)
+            buildDataDecl(path, decl, globals, idSupply)(using idSupply)
+          case decl: ast.TopLevel.FunDecl =>
+            val context1 = TypeContext(globals, Map(), definitionCache)
+            val (typedSig, context2, errs) = checkFunSig(decl.sig)(using context1, itemMetaStore, idSupply)
+            errors.addAll(errs)
 
-          val typedBody = checkFunctionBody(decl.body, typedSig.returnType, context2, metaStore, idSupply, errors)
-          val (elaboratedBody, unresolvedMetaErrors) = finalizeTopLevelExpr(typedBody)(using metaStore)
-          errors.addAll(unresolvedMetaErrors)
-          TypedAst.TopLevel.FunDecl(typedSig, elaboratedBody)(decl.source)
-      }
+            val typedBody = checkFunctionBody(decl.body, typedSig.returnType, context2, itemMetaStore, idSupply, errors)
+            val (elaboratedBody, unresolvedMetaErrors) = finalizeTopLevelExpr(typedBody)(using context2, itemMetaStore)
+            errors.addAll(unresolvedMetaErrors)
+            TypedAst.TopLevel.FunDecl(typedSig, elaboratedBody)(decl.source)
+        typedItems.addOne(typedItem)
+        definitionCache.recordTopLevel(typedItem)
       // Returns accumulated type errors to the caller instead of throwing.
-      (TypedAst.Program(typedItems)(program.source), errors.toList)
+      (TypedAst.Program(typedItems.toList)(program.source), errors.toList)
     catch
       case e: Exception =>
         throw new RuntimeException(s"error checking $path", e)
@@ -96,11 +100,14 @@ object TypeChecker:
   trait Context:
     def lookupSymbol(name: String): Option[TypedAst.Symbol]
     def lookupValue(symbol: TypedAst.TermSymbol): Option[TypedAst.Expr]
+    def lookupDefinition(symbol: TypedAst.Symbol): Option[TypedAst.Expr]
 
   /** Provides a mutable store for meta-variable assignments. */
   trait MetaContext:
     def assign(metaId: Int, term: TypedAst.Expr): Unit
     def getAssignment(metaId: Int): Option[TypedAst.Expr]
+    def addEqualityConstraint(constraint: EqualityConstraint): Unit
+    def equalityConstraints: List[EqualityConstraint]
 
   /** Represents a binding in the local context. */
   private[typing] final case class LocalBinding(symbol: TypedAst.TermSymbol, value: Option[TypedAst.Expr])
@@ -119,13 +126,17 @@ object TypeChecker:
     )
 
   /** Implements a context with local bindings and global symbols. */
-  private[typing] final case class TypeContext(globals: GlobalEnv, locals: Map[String, LocalBinding]) extends Context:
+  private[typing] final case class TypeContext(globals: GlobalEnv, locals: Map[String, LocalBinding], definitionCache: DefinitionCache = DefinitionCache.empty) extends Context:
     override def lookupSymbol(name: String): Option[TypedAst.Symbol] =
       locals.get(name).map(_.symbol)
         .orElse(globals.names.get(name).map(g => TypedAst.GlobalSymbolSymbol(g.name, g.file, g)))
 
     override def lookupValue(symbol: TypedAst.TermSymbol): Option[TypedAst.Expr] =
       locals.values.find(_.symbol == symbol).flatMap(_.value)
+
+    /** Resolves unfoldable global definitions on demand. */
+    override def lookupDefinition(symbol: TypedAst.Symbol): Option[TypedAst.Expr] =
+      definitionCache.definitionFor(symbol)
 
     /** Adds a local binding to the context. */
     def withLocal(symbol: TypedAst.TermSymbol, value: Option[TypedAst.Expr] = None): TypeContext =
@@ -137,14 +148,24 @@ object TypeChecker:
 
   /** Stores meta-variable assignments during unification. */
   private[typing] final case class MetaStore(assignments: mutable.Map[Int, TypedAst.Expr] = mutable.Map()) extends MetaContext:
+    private val constraints: ListBuffer[EqualityConstraint] = ListBuffer.empty
+
     override def assign(metaId: Int, term: TypedAst.Expr): Unit =
       assignments.update(metaId, term)
 
     override def getAssignment(metaId: Int): Option[TypedAst.Expr] =
       assignments.get(metaId)
 
+    /** Appends a new deferred equality constraint to the store. */
+    override def addEqualityConstraint(constraint: EqualityConstraint): Unit =
+      constraints.addOne(constraint)
+
+    /** Returns the currently tracked deferred equality constraints. */
+    override def equalityConstraints: List[EqualityConstraint] =
+      constraints.toList
+
   /** Tracks identifier allocation for local symbols and metas. */
-  private[typing] final case class IdSupply(var nextId: Int = 0, var nextMeta: Int = 0):
+  final case class IdSupply(var nextId: Int = 0, var nextMeta: Int = 0):
     /** Creates a fresh local symbol id. */
     def freshLocalId(): Int =
       val id = nextId
@@ -171,7 +192,7 @@ object TypeChecker:
       decl: ast.TopLevel.DataDecl,
       globals: GlobalEnv,
       idSupply: IdSupply
-    ): TypedAst.TopLevel =
+    )(implicit ids: TypeChecker.IdSupply): TypedAst.TopLevel =
     val localTypeParams = decl.implicitParams.map { param =>
       val paramType = signatureExpr(param.tpe, globals, Map())
       param.name -> TypedAst.LocalSymbol(param.name, paramType, idSupply.freshLocalId())
@@ -255,13 +276,21 @@ object TypeChecker:
 
   /** Resolves metas at the end of a declaration and reports unresolved placeholders. */
   private def finalizeTopLevelExpr(expr: TypedAst.Expr)
-                               (implicit metas: MetaContext): (TypedAst.Expr, List[TypeError]) =
+                               (implicit ctx: Context, metas: MetaContext): (TypedAst.Expr, List[TypeError]) =
+    val unresolvedConstraints = solveOpenConstraints(defaultConstraintFuel)
     val unresolved = collectUnresolvedMetas(expr)
-    val errs = unresolved.toList.map(meta => TypeError(s"Could not infer implicit argument ${prettyExpr(meta)}", meta.source))
-    (instantiate(expr), errs)
+    val metaErrors = unresolved.toList.map(meta => TypeError(s"Could not infer implicit argument ${prettyExpr(meta)}", meta.source))
+    val constraintErrors = unresolvedConstraints.map { case (constraint, reducedLeft, reducedRight) =>
+      val message =
+        s"Could not solve equality constraint ${prettyEqConstraint(constraint.left, constraint.right)}\n" +
+          s"Reduced left: ${prettyExpr(reducedLeft)}\n" +
+          s"Reduced right: ${prettyExpr(reducedRight)}"
+      TypeError(message, constraint.source)
+    }.distinctBy(err => (err.source.start.line, err.message))
+    (instantiate(expr), metaErrors ++ constraintErrors)
 
   /** Translates a signature expression to a typed expression. */
-  private[typing] def signatureExpr(expr: ast.Expr, globals: GlobalEnv, locals: Map[String, TypedAst.TermSymbol]): TypedAst.Expr =
+  private[typing] def signatureExpr(expr: ast.Expr, globals: GlobalEnv, locals: Map[String, TypedAst.TermSymbol])(implicit ids: TypeChecker.IdSupply): TypedAst.Expr =
     expr match
       case ast.Expr.Lit(value) => TypedAst.Expr.Lit(value)(expr.source)
       case ast.Expr.Var(name) =>
@@ -288,7 +317,7 @@ object TypeChecker:
       case ast.Expr.Pi(param, body) =>
         val dom = signatureExpr(param.tpe, globals, locals)
         val cod = signatureExpr(body, globals, locals)
-        val domSym = LocalSymbol(param.name, dom, 0) // TODO create ID
+        val domSym = LocalSymbol(param.name, dom, ids.freshLocalId()) // TODO create ID
         TypedAst.Expr.Pi(domSym, cod, isImplicit = false)(expr.source)
       case ast.Expr.Hole() =>
         TypedAst.Expr.UnknownType()(expr.source)
@@ -296,32 +325,31 @@ object TypeChecker:
         TypedAst.Expr.UnknownType()(expr.source)
 
 
-  /** Checks if two types are definitionally equal, solving metas as needed. */
-  def isDefEq(t1: TypedAst.Expr, t2: TypedAst.Expr)
+  /** Checks if two types are definitionally equal, solving metas as needed. 
+  */
+  def isDefEq(t1: TypedAst.Expr, t2: TypedAst.Expr, source: SourceRange)
              (implicit ctx: Context, metas: MetaContext): Boolean =
     val norm1 = whnf(t1)
     val norm2 = whnf(t2)
     (norm1, norm2) match
-      case (TypedAst.Expr.UnknownType(), _) => true
-      case (_, TypedAst.Expr.UnknownType()) => true
       case (TypedAst.Expr.Meta(id, _), other) =>
         solveMeta(id, other)
       case (other, TypedAst.Expr.Meta(id, _)) =>
         solveMeta(id, other)
-      case (TypedAst.Expr.Var(s1), TypedAst.Expr.Var(s2)) if symbolsEqual(s1, s2) => true
-      case (TypedAst.Expr.Var(p1: TypedAst.LocalSymbol), TypedAst.Expr.Var(p2: TypedAst.LocalSymbol))
-          if p1.name == p2.name => true // TODO name equality is not enough
-      case (TypedAst.Expr.Lit(v1), TypedAst.Expr.Lit(v2)) if v1 == v2 => true
-      case (TypedAst.Expr.Sort(), TypedAst.Expr.Sort()) => true
-      case (TypedAst.Expr.App(c1, a1, _), TypedAst.Expr.App(c2, a2, _)) =>
-        isDefEq(c1, c2) && isDefEq(a1, a2)
-      case (TypedAst.Expr.AppImplicit(c1, a1, _), TypedAst.Expr.AppImplicit(c2, a2, _)) =>
-        isDefEq(c1, c2) && isDefEq(a1, a2)
-      case (TypedAst.Expr.Lambda(p1, b1, _), TypedAst.Expr.Lambda(p2, b2, _)) =>
-        isDefEq(p1.tpe, p2.tpe) && isDefEq(b1, b2) // TODO this might not be correct, since we do not consider names; better use de-bruijn indices
-      case (TypedAst.Expr.Pi(d1, c1, i1), TypedAst.Expr.Pi(d2, c2, i2)) if i1 == i2 =>
-        isDefEq(d1.tpe, d2.tpe) && isDefEq(c1, c2) // TODO this might not be correct, since we do not consider names; better use de-bruijn indices
-      case _ => false
+      case _ =>
+        (extractHeadedExpr(norm1), extractHeadedExpr(norm2)) match
+          case (Some(h1), Some(h2)) if h1.kind == h2.kind =>
+            if symbolsEqual(h1.head, h2.head) then
+              h1.args.length == h2.args.length && h1.args.zip(h2.args).forall((a, b) => isDefEq(a, b, source))
+            else
+              false
+          case (Some(_), Some(_)) =>
+            false
+          case _ if syntacticallyEquivalent(norm1, norm2) =>
+            true
+          case _ =>
+            metas.addEqualityConstraint(EqualityConstraint(t1, t2, source))
+            true
 
   def symbolsEqual(a: Symbol, b: Symbol): Boolean =
     if a == b then
@@ -332,8 +360,272 @@ object TypeChecker:
           an == bn && af == bf
         case (GlobalNameSymbol(an, af), GlobalSymbolSymbol(bn, bf, _)) =>
           an == bn && af == bf
+        case (ctor: CtorSymbol, TypedAst.GlobalNameSymbol(name, _)) =>
+          ctor.name == name
+        case (TypedAst.GlobalNameSymbol(name, _), ctor: CtorSymbol) =>
+          name == ctor.name
+        case (ctor: CtorSymbol, TypedAst.GlobalSymbolSymbol(name, _, _)) =>
+          ctor.name == name
+        case (TypedAst.GlobalSymbolSymbol(name, _, _), ctor: CtorSymbol) =>
+          name == ctor.name
         case _ =>
           false
+
+  /** Renders a deferred equality constraint as an Eq(a, b) datatype application. */
+  private def prettyEqConstraint(left: TypedAst.Expr, right: TypedAst.Expr): String =
+    s"Eq(${prettyExpr(left)}, ${prettyExpr(right)})"
+
+  /** Checks whether two reduced terms are structurally equivalent. */
+  private def syntacticallyEquivalent(left: TypedAst.Expr, right: TypedAst.Expr): Boolean =
+    (left, right) match
+      case (TypedAst.Expr.UnknownType(), _) => true
+      case (_, TypedAst.Expr.UnknownType()) => true
+      case (TypedAst.Expr.Var(s1), TypedAst.Expr.Var(s2)) if symbolsEqual(s1, s2) => true
+      case (TypedAst.Expr.Var(p1: TypedAst.LocalSymbol), TypedAst.Expr.Var(p2: TypedAst.LocalSymbol)) if p1.name == p2.name => true
+      case (TypedAst.Expr.Lit(v1), TypedAst.Expr.Lit(v2)) => v1 == v2
+      case (TypedAst.Expr.Sort(), TypedAst.Expr.Sort()) => true
+      case (TypedAst.Expr.App(c1, a1, _), TypedAst.Expr.App(c2, a2, _)) => syntacticallyEquivalent(c1, c2) && syntacticallyEquivalent(a1, a2)
+      case (TypedAst.Expr.AppImplicit(c1, a1, _), TypedAst.Expr.AppImplicit(c2, a2, _)) => syntacticallyEquivalent(c1, c2) && syntacticallyEquivalent(a1, a2)
+      case (TypedAst.Expr.Lambda(p1, b1, _), TypedAst.Expr.Lambda(p2, b2, _)) => syntacticallyEquivalent(p1.tpe, p2.tpe) && syntacticallyEquivalent(b1, b2)
+      case (TypedAst.Expr.Pi(d1, c1, i1), TypedAst.Expr.Pi(d2, c2, i2)) if i1 == i2 => syntacticallyEquivalent(d1.tpe, d2.tpe) && syntacticallyEquivalent(c1, c2)
+      case (TypedAst.Expr.Meta(i1, _), TypedAst.Expr.Meta(i2, _)) => i1 == i2
+      case _ => false
+
+  /** Extracts constructor-like or datatype application heads from a term. */
+  private def extractHeadedExpr(expr: TypedAst.Expr)(using ctx: Context): Option[HeadedExpr] =
+    val (head, args) = decomposeApplication(expr)
+    head match
+      case TypedAst.Expr.Var(symbol) =>
+        classifyHead(symbol).map(kind => HeadedExpr(symbol, kind, args))
+      case _ =>
+        None
+
+  /** Decomposes nested applications into head and ordered argument list. */
+  private def decomposeApplication(expr: TypedAst.Expr): (TypedAst.Expr, List[TypedAst.Expr]) =
+    def loop(current: TypedAst.Expr, acc: List[TypedAst.Expr]): (TypedAst.Expr, List[TypedAst.Expr]) =
+      current match
+        case TypedAst.Expr.App(callee, arg, _) => loop(callee, arg :: acc)
+        case TypedAst.Expr.AppImplicit(callee, arg, _) => loop(callee, arg :: acc)
+        case _ => (current, acc)
+    loop(expr, Nil)
+
+  /** Classifies heads that represent constructors or type constructors. */
+  private def classifyHead(symbol: TypedAst.Symbol)(using ctx: Context): Option[DefEqHeadKind] =
+    symbol match
+      case _: TypedAst.CtorSymbol => Some(DefEqHeadKind.Constructor)
+      case TypedAst.GlobalSymbolSymbol(_, _, g) =>
+        g.symbolSignature match
+          case SymbolSignature.Datatype(_) => Some(DefEqHeadKind.TypeConstructor)
+          case SymbolSignature.Def(tpe) if hasDatatypeResultType(tpe) => Some(DefEqHeadKind.Constructor)
+          case _ => None
+      case _: TypedAst.GlobalNameSymbol => Some(DefEqHeadKind.TypeConstructor)
+      case _ => None
+
+  /** Checks whether a function type eventually returns a datatype head. */
+  private def hasDatatypeResultType(expr: TypedAst.Expr): Boolean =
+    def codomain(tpe: TypedAst.Expr): TypedAst.Expr =
+      tpe match
+        case TypedAst.Expr.Pi(_, cod, _) => codomain(cod)
+        case other => other
+    decomposeApplication(codomain(expr))._1 match
+      case TypedAst.Expr.Var(TypedAst.GlobalSymbolSymbol(_, _, g)) =>
+        g.symbolSignature match
+          case SymbolSignature.Datatype(_) => true
+          case _ => false
+      case _ => false
+
+  /** Tries to solve deferred equality constraints by normalizing both sides. */
+  private def solveOpenConstraints(fuel: Int)(implicit ctx: Context, metas: MetaContext): List[(EqualityConstraint, TypedAst.Expr, TypedAst.Expr)] =
+    var pending = metas.equalityConstraints
+    var changed = true
+    while changed do
+      changed = false
+      val nextPending = ListBuffer[(EqualityConstraint, TypedAst.Expr, TypedAst.Expr)]()
+      for constraint <- pending do
+        trySolveConstraint(constraint, fuel) match
+          case None =>
+            changed = true
+          case Some(unresolved) =>
+            nextPending.addOne(unresolved)
+      pending = nextPending.toList.map(_._1)
+      if !changed then
+        return nextPending.toList
+    List.empty
+
+  /** Attempts to solve one constraint by reducing it and assigning metas when possible. */
+  private def trySolveConstraint(constraint: EqualityConstraint, fuel: Int)
+                                (implicit ctx: Context, metas: MetaContext): Option[(EqualityConstraint, TypedAst.Expr, TypedAst.Expr)] =
+    val reducedLeft = reduceExpr(constraint.left, fuel)
+    val reducedRight = reduceExpr(constraint.right, fuel)
+    if canSolveByUnification(reducedLeft, reducedRight) then
+      None
+    else
+      Some((constraint, reducedLeft, reducedRight))
+
+  /** Solves equality by recursively assigning metas and matching term structure. */
+  private def canSolveByUnification(left: TypedAst.Expr, right: TypedAst.Expr)
+                                   (implicit metas: MetaContext): Boolean =
+    if syntacticallyEquivalent(left, right) then
+      true
+    else
+      (left, right) match
+        case (TypedAst.Expr.Meta(id, _), other) => solveMeta(id, other)
+        case (other, TypedAst.Expr.Meta(id, _)) => solveMeta(id, other)
+        case (TypedAst.Expr.App(c1, a1, _), TypedAst.Expr.App(c2, a2, _)) =>
+          canSolveByUnification(c1, c2) && canSolveByUnification(a1, a2)
+        case (TypedAst.Expr.AppImplicit(c1, a1, _), TypedAst.Expr.AppImplicit(c2, a2, _)) =>
+          canSolveByUnification(c1, c2) && canSolveByUnification(a1, a2)
+        case (TypedAst.Expr.Pi(d1, c1, i1), TypedAst.Expr.Pi(d2, c2, i2)) if i1 == i2 =>
+          canSolveByUnification(d1.tpe, d2.tpe) && canSolveByUnification(c1, c2)
+        case (TypedAst.Expr.Lambda(p1, b1, _), TypedAst.Expr.Lambda(p2, b2, _)) =>
+          canSolveByUnification(p1.tpe, p2.tpe) && canSolveByUnification(b1, b2)
+        case _ => false
+
+  /** Fully reduces a term with a fuel budget to keep normalization bounded. */
+  private def reduceExpr(term: TypedAst.Expr, fuel: Int)(implicit ctx: Context, metas: MetaContext): TypedAst.Expr =
+    if fuel <= 0 then
+      instantiate(term)
+    else
+      instantiate(term) match
+        case TypedAst.Expr.App(callee, arg, tpe) =>
+          val reducedCallee = reduceExpr(callee, fuel - 1)
+          val reducedArg = reduceExpr(arg, fuel - 1)
+          val unfoldedCallee = unfoldAppliedCallee(reducedCallee, reducedArg, fuel - 1)
+          unfoldedCallee match
+            case TypedAst.Expr.Lambda(param, body, _) =>
+              reduceExpr(substitute(body, param, reducedArg), fuel - 1)
+            case otherCallee =>
+              TypedAst.Expr.App(otherCallee, reducedArg, reduceExpr(tpe, fuel - 1))(term.source)
+        case TypedAst.Expr.AppImplicit(callee, arg, tpe) =>
+          val reducedCallee = reduceExpr(callee, fuel - 1)
+          val reducedArg = reduceExpr(arg, fuel - 1)
+          val unfoldedCallee = unfoldAppliedCallee(reducedCallee, reducedArg, fuel - 1)
+          unfoldedCallee match
+            case TypedAst.Expr.Lambda(param, body, _) =>
+              reduceExpr(substitute(body, param, reducedArg), fuel - 1)
+            case otherCallee =>
+              TypedAst.Expr.AppImplicit(otherCallee, reducedArg, reduceExpr(tpe, fuel - 1))(term.source)
+        case TypedAst.Expr.LetIn(symbol, isConstant, declaredType, value, body) =>
+          val reducedValue = reduceExpr(value, fuel - 1)
+          reduceExpr(substitute(body, symbol, reducedValue), fuel - 1)
+        case TypedAst.Expr.Match(scrutinee, cases) =>
+          val reducedScrutinee = reduceExpr(scrutinee, fuel - 1)
+          reduceMatchExpr(reducedScrutinee, cases, term.source, fuel - 1)
+        case TypedAst.Expr.Lambda(param, body, tpe) =>
+          TypedAst.Expr.Lambda(param, reduceExpr(body, fuel - 1), reduceExpr(tpe, fuel - 1))(term.source)
+        case TypedAst.Expr.Pi(dom, cod, isImplicit) =>
+          TypedAst.Expr.Pi(instantiateLocalSymbol(dom), reduceExpr(cod, fuel - 1), isImplicit)(term.source)
+        case other =>
+          other
+
+  /** Unfolds a callee when it appears in application position and fuel is available. */
+  /** Unfolds an applied callee when reduction is likely to make progress. */
+  private def unfoldAppliedCallee(callee: TypedAst.Expr, appliedArg: TypedAst.Expr, fuel: Int)(implicit ctx: Context, metas: MetaContext): TypedAst.Expr =
+    if fuel <= 0 then
+      callee
+    else
+      callee match
+        case TypedAst.Expr.Var(symbol: TypedAst.TermSymbol) =>
+          ctx.lookupValue(symbol).map(value => reduceExpr(value, fuel - 1)).getOrElse(callee)
+        case TypedAst.Expr.Var(symbol) =>
+          ctx.lookupDefinition(symbol) match
+            case Some(value) if shouldDeferUnfold(value, appliedArg) =>
+              callee
+            case Some(value) =>
+              reduceExpr(value, fuel - 1)
+            case None =>
+              callee
+        case _ =>
+          callee
+
+  /** Checks whether unfolding would get stuck on a non-constructor match scrutinee. */
+  private def shouldDeferUnfold(definition: TypedAst.Expr, appliedArg: TypedAst.Expr)(using ctx: Context): Boolean =
+    definition match
+      case TypedAst.Expr.Lambda(param, body, _) =>
+        val inspectsParam = hasMatchOnParam(body, param.id)
+        inspectsParam && !hasConstructorHead(appliedArg)
+      case _ =>
+        false
+
+  /** Checks whether a body contains a match that scrutinizes the given parameter id. */
+  private def hasMatchOnParam(body: TypedAst.Expr, paramId: Int): Boolean =
+    body match
+      case TypedAst.Expr.Match(TypedAst.Expr.Var(local: TypedAst.LocalSymbol), _) if local.id == paramId =>
+        true
+      case TypedAst.Expr.Lambda(_, nestedBody, _) =>
+        hasMatchOnParam(nestedBody, paramId)
+      case TypedAst.Expr.LetIn(_, _, _, _, nestedBody) =>
+        hasMatchOnParam(nestedBody, paramId)
+      case _ =>
+        false
+
+  /** Checks whether an expression has a constructor at its application head. */
+  private def hasConstructorHead(expr: TypedAst.Expr)(using ctx: Context): Boolean =
+    decomposeApplication(expr)._1 match
+      case TypedAst.Expr.Var(symbol) =>
+        classifyHead(symbol).contains(DefEqHeadKind.Constructor) || symbolLooksLikeCtor(symbol)
+      case _ =>
+        false
+
+  /** Approximates constructor symbols for unresolved global-name variants. */
+  private def symbolLooksLikeCtor(symbol: TypedAst.Symbol): Boolean =
+    symbol match
+      case TypedAst.GlobalNameSymbol(name, _) =>
+        name.headOption.exists(_.isUpper)
+      case _ =>
+        false
+
+  /** Reduces a match expression when the scrutinee head is a constructor. */
+  private def reduceMatchExpr(scrutinee: TypedAst.Expr, cases: List[TypedAst.MatchCase], source: SourceRange, fuel: Int)
+                            (implicit ctx: Context, metas: MetaContext): TypedAst.Expr =
+    selectMatchCase(scrutinee, cases) match
+      case Some(body) => reduceExpr(body, fuel)
+      case None =>
+        val reducedCases = cases.map(c => TypedAst.MatchCase(c.pattern, reduceExpr(c.body, fuel))(c.source))
+        TypedAst.Expr.Match(scrutinee, reducedCases)(source)
+
+  /** Selects and specializes the first matching branch for a reduced scrutinee. */
+  private def selectMatchCase(scrutinee: TypedAst.Expr, cases: List[TypedAst.MatchCase])(using ctx: Context): Option[TypedAst.Expr] =
+    val (head, args) = decomposeApplication(scrutinee)
+    head match
+      case TypedAst.Expr.Var(symbol) if hasConstructorLikeHead(symbol, cases) =>
+        cases.collectFirst(Function.unlift { c =>
+          matchPattern(c.pattern, scrutinee, args).map(bindings => applyBindings(c.body, bindings))
+        })
+      case _ =>
+        None
+
+  /** Checks whether a scrutinee symbol can participate in constructor-pattern reduction. */
+  private def hasConstructorLikeHead(symbol: TypedAst.Symbol, cases: List[TypedAst.MatchCase])(using ctx: Context): Boolean =
+    classifyHead(symbol).contains(DefEqHeadKind.Constructor) ||
+      cases.exists {
+        case TypedAst.MatchCase(TypedAst.Pattern.Ctor(ctorSymbol, _), _) => symbolsEqual(symbol, ctorSymbol)
+        case _ => false
+      }
+
+  /** Matches one typed pattern against a constructor-reduced scrutinee. */
+  private def matchPattern(pattern: TypedAst.Pattern, scrutinee: TypedAst.Expr, constructorArgs: List[TypedAst.Expr]): Option[Map[TypedAst.LocalSymbol, TypedAst.Expr]] =
+    pattern match
+      case TypedAst.Pattern.Wildcard() => Some(Map.empty)
+      case TypedAst.Pattern.Binder(symbol) => Some(Map(symbol -> scrutinee))
+      case TypedAst.Pattern.Lit(value) =>
+        scrutinee match
+          case TypedAst.Expr.Lit(actual) if actual == value => Some(Map.empty)
+          case _ => None
+      case TypedAst.Pattern.Ctor(symbol, args) =>
+        val (head, scrutineeArgs) = decomposeApplication(scrutinee)
+        head match
+          case TypedAst.Expr.Var(headSymbol) if symbolsEqual(headSymbol, symbol) && args.length == scrutineeArgs.length =>
+            args.zip(scrutineeArgs).foldLeft(Option(Map.empty[TypedAst.LocalSymbol, TypedAst.Expr])) {
+              case (Some(acc), (argPattern, argValue)) =>
+                matchPattern(argPattern, argValue, constructorArgs).map(acc ++ _)
+              case (None, _) => None
+            }
+          case _ => None
+
+  /** Applies pattern bindings by substituting each binder with the matched value. */
+  private def applyBindings(body: TypedAst.Expr, bindings: Map[TypedAst.LocalSymbol, TypedAst.Expr]): TypedAst.Expr =
+    bindings.foldLeft(body) { case (current, (symbol, value)) => substitute(current, symbol, value) }
 
   /** Reduces a term to weak head normal form. */
   def whnf(term: TypedAst.Expr)(implicit ctx: Context, metas: MetaContext): TypedAst.Expr =
@@ -397,7 +689,7 @@ object TypeChecker:
     val expectedNorm = whnf(expectedType)
     val (inferredExpr, inferredType, errs) = inferAndElaborate(expr)
     val errs2 =
-      if isDefEq(inferredType, expectedNorm) then errs
+      if isDefEq(inferredType, expectedNorm, expr.source) then errs
       else TypeError(s"Expected ${prettyExpr(expectedNorm)} but got ${prettyExpr(inferredType)}\nIn expression ${prettyExpr(inferredExpr)}", expr.source) :: errs
     (inferredExpr, errs2)
 
@@ -434,6 +726,9 @@ object TypeChecker:
                        (implicit metas: MetaContext): Boolean =
     TypeCheckerMetas.solveMeta(metaId, term)
 
+  /** Checks whether a meta-variable can be solved with a term. */
+  
+
   /** Performs an occurs check for a meta-variable inside a term. */
   
 
@@ -464,12 +759,8 @@ object TypeChecker:
         TypedAst.Expr.App(substitute(callee, symbol, value), substitute(arg, symbol, value), tpe)(term.source)
       case TypedAst.Expr.AppImplicit(callee, arg, tpe) =>
         TypedAst.Expr.AppImplicit(substitute(callee, symbol, value), substitute(arg, symbol, value), tpe)(term.source)
-      case TypedAst.Expr.Lambda(param, body, tpe) if param.id == symbol.id =>
-        TypedAst.Expr.Lambda(param, body, tpe)(term.source)
       case TypedAst.Expr.Lambda(param, body, tpe) =>
         TypedAst.Expr.Lambda(param, substitute(body, symbol, value), tpe)(term.source)
-      case TypedAst.Expr.LetIn(sym, isConstant, declaredType, valExpr, body) if sym.id == symbol.id =>
-        TypedAst.Expr.LetIn(sym, isConstant, declaredType, substitute(valExpr, symbol, value), body)(term.source)
       case TypedAst.Expr.LetIn(sym, isConstant, declaredType, valExpr, body) =>
         TypedAst.Expr.LetIn(sym, isConstant, declaredType, substitute(valExpr, symbol, value), substitute(body, symbol, value))(term.source)
       case TypedAst.Expr.Pi(dom, cod, isImplicit) =>
@@ -477,7 +768,8 @@ object TypeChecker:
       case TypedAst.Expr.Match(scrutinee, cases) =>
         val newCases = cases.map(c => TypedAst.MatchCase(c.pattern, substitute(c.body, symbol, value))(c.source))
         TypedAst.Expr.Match(substitute(scrutinee, symbol, value), newCases)(term.source)
-      case other => other
+      case TypedAst.Expr.Lit(_) | TypedAst.Expr.Var(_) | TypedAst.Expr.Sort() | TypedAst.Expr.Meta(_, _) | TypedAst.Expr.UnknownType() =>
+        term
 
   private def substituteInLocalSymbol(s: LocalSymbol, symbol: TypedAst.LocalSymbol, value: TypedAst.Expr): LocalSymbol =
     LocalSymbol(s.name, substitute(s.tpe, symbol, value), s.id)
@@ -485,6 +777,11 @@ object TypeChecker:
   /** Exposes substitution for tests. */
   def substituteForTest(term: TypedAst.Expr, symbol: TypedAst.LocalSymbol, value: TypedAst.Expr): TypedAst.Expr =
     substitute(term, symbol, value)
+
+  /** Exposes bounded reduction for tests. */
+  def reduceExprForTest(term: TypedAst.Expr, fuel: Int)(using ctx: Context, metas: MetaContext): TypedAst.Expr =
+    reduceExpr(term, fuel)
+
 
 //  /** Infers an expression in a test context built from a program and exports. */
 //  private[typing] def inferInTestContext(
@@ -712,6 +1009,89 @@ object TypeChecker:
     val subst = collectTypeParamSubst(resultType, expectedType, paramIds, Map())
     fieldTypes.map(fieldType => substituteTypeParams(fieldType, subst))
 
+
+  /** Caches unfoldable function bodies and loads external typed files on demand. */
+  private[typing] final case class DefinitionCache(currentFile: Path, symbolCache: NameCache & SymbolCache):
+    private val localDefinitions: mutable.Map[String, TypedAst.Expr] = mutable.Map.empty
+    private val externalDefinitions: mutable.Map[String, Map[String, TypedAst.Expr]] = mutable.Map.empty
+    private val loadingFiles: mutable.Set[String] = mutable.Set.empty
+
+    /** Records a newly checked top-level item for local unfolding. */
+    def recordTopLevel(item: TypedAst.TopLevel): Unit =
+      item match
+        case funDecl: TypedAst.TopLevel.FunDecl =>
+          localDefinitions.update(funDecl.sig.symbol.name, buildFunctionLambda(funDecl))
+        case _ => ()
+
+    /** Returns an unfoldable expression for a symbol if available. */
+    def definitionFor(symbol: TypedAst.Symbol): Option[TypedAst.Expr] =
+      symbol match
+        case TypedAst.GlobalSymbolSymbol(name, file, _) =>
+          definitionForName(name, file)
+        case TypedAst.GlobalNameSymbol(name, file) =>
+          definitionForName(name, file)
+        case _ =>
+          None
+
+    /** Resolves a definition by global name and owning file. */
+    private def definitionForName(name: String, file: Path): Option[TypedAst.Expr] =
+      if sameFile(file, currentFile) then
+        localDefinitions.get(name)
+      else
+        val fileKey = normalizeFileKey(file)
+        val fileDefs = externalDefinitions.getOrElseUpdate(fileKey, loadFileDefinitions(fileKey))
+        fileDefs.get(name)
+
+    /** Checks whether two file paths refer to the same source file. */
+    private def sameFile(left: Path, right: Path): Boolean =
+      normalizeFileKey(left) == normalizeFileKey(right)
+
+
+    /** Normalizes a symbol file path into a cache key understood by symbol caches. */
+    private def normalizeFileKey(file: Path): String =
+      val raw = file.toString
+      if raw.endsWith("standard.minifumo") then
+        "standard.minifumo"
+      else
+        symbolCache match
+          case projectCache: ProjectSymbolCache if file.isAbsolute => projectCache.fromPath(file)
+          case _ => raw
+
+    /** Loads and caches typed function bodies for one file with cycle detection. */
+    private def loadFileDefinitions(fileKey: String): Map[String, TypedAst.Expr] =
+      if loadingFiles.contains(fileKey) then
+        Map.empty
+      else
+        symbolCache match
+          case projectCache: ProjectSymbolCache =>
+            loadingFiles.add(fileKey)
+            try
+              val (typedProgram, _) = projectCache.typedAst(fileKey)
+              typedProgram.items.collect {
+                case funDecl: TypedAst.TopLevel.FunDecl =>
+                  funDecl.sig.symbol.name -> buildFunctionLambda(funDecl)
+              }.toMap
+            finally
+              loadingFiles.remove(fileKey): Unit
+          case _ =>
+            Map.empty
+
+
+  private object DefinitionCache:
+    private object EmptySymbolCache extends NameCache with SymbolCache:
+      override def globalNames(path: String): Map[String, GlobalName] = Map.empty
+      override def globalSymbols(path: String): Map[String, GlobalSymbol] = Map.empty
+
+    /** Provides a no-op definition cache for contexts without unfolding support. */
+    val empty: DefinitionCache = DefinitionCache(Path.of(""), EmptySymbolCache)
+
+  /** Converts a typed function declaration into a lambda term for unfolding. */
+  private def buildFunctionLambda(funDecl: TypedAst.TopLevel.FunDecl): TypedAst.Expr =
+    val params = funDecl.sig.typeParams ++ funDecl.sig.params
+    params.foldRight(funDecl.body) { (param, body) =>
+      TypedAst.Expr.Lambda(param, body, TypedAst.Expr.UnknownType()(body.source))(body.source)
+    }
+
   def formatError(path: String, sourceLines: Vector[String], error: TypeError): String =
     val lineNr = error.source.start.line
     val msgHead = s"Error in $path:${lineNr}:${error.source.start.column}"
@@ -727,3 +1107,12 @@ object TypeChecker:
       """.stripMargin('|')
     else
       s"$msgHead: ${error.message}"
+  /** Stores one deferred equality problem that should be solved after elaboration. */
+  final case class EqualityConstraint(left: TypedAst.Expr, right: TypedAst.Expr, source: SourceRange)
+
+  /** Classifies constructor-like application heads used by definitional equality. */
+  private enum DefEqHeadKind:
+    case Constructor, TypeConstructor
+
+  /** Captures an application head and all explicit/implicit arguments. */
+  private final case class HeadedExpr(head: TypedAst.Symbol, kind: DefEqHeadKind, args: List[TypedAst.Expr])
