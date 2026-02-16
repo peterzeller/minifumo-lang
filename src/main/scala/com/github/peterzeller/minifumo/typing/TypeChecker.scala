@@ -360,6 +360,14 @@ object TypeChecker:
           an == bn && af == bf
         case (GlobalNameSymbol(an, af), GlobalSymbolSymbol(bn, bf, _)) =>
           an == bn && af == bf
+        case (ctor: CtorSymbol, TypedAst.GlobalNameSymbol(name, _)) =>
+          ctor.name == name
+        case (TypedAst.GlobalNameSymbol(name, _), ctor: CtorSymbol) =>
+          name == ctor.name
+        case (ctor: CtorSymbol, TypedAst.GlobalSymbolSymbol(name, _, _)) =>
+          ctor.name == name
+        case (TypedAst.GlobalSymbolSymbol(name, _, _), ctor: CtorSymbol) =>
+          name == ctor.name
         case _ =>
           false
 
@@ -479,22 +487,22 @@ object TypeChecker:
       instantiate(term)
     else
       instantiate(term) match
-        case TypedAst.Expr.Var(symbol: TypedAst.TermSymbol) =>
-          ctx.lookupValue(symbol).map(value => reduceExpr(value, fuel - 1)).getOrElse(term)
-        case TypedAst.Expr.Var(symbol) =>
-          ctx.lookupDefinition(symbol).map(value => reduceExpr(value, fuel - 1)).getOrElse(term)
         case TypedAst.Expr.App(callee, arg, tpe) =>
-          reduceExpr(callee, fuel - 1) match
+          val reducedCallee = reduceExpr(callee, fuel - 1)
+          val unfoldedCallee = unfoldAppliedCallee(reducedCallee, fuel - 1)
+          unfoldedCallee match
             case TypedAst.Expr.Lambda(param, body, _) =>
               reduceExpr(substitute(body, param, arg), fuel - 1)
-            case reducedCallee =>
-              TypedAst.Expr.App(reducedCallee, reduceExpr(arg, fuel - 1), reduceExpr(tpe, fuel - 1))(term.source)
+            case otherCallee =>
+              TypedAst.Expr.App(otherCallee, reduceExpr(arg, fuel - 1), reduceExpr(tpe, fuel - 1))(term.source)
         case TypedAst.Expr.AppImplicit(callee, arg, tpe) =>
-          reduceExpr(callee, fuel - 1) match
+          val reducedCallee = reduceExpr(callee, fuel - 1)
+          val unfoldedCallee = unfoldAppliedCallee(reducedCallee, fuel - 1)
+          unfoldedCallee match
             case TypedAst.Expr.Lambda(param, body, _) =>
               reduceExpr(substitute(body, param, arg), fuel - 1)
-            case reducedCallee =>
-              TypedAst.Expr.AppImplicit(reducedCallee, reduceExpr(arg, fuel - 1), reduceExpr(tpe, fuel - 1))(term.source)
+            case otherCallee =>
+              TypedAst.Expr.AppImplicit(otherCallee, reduceExpr(arg, fuel - 1), reduceExpr(tpe, fuel - 1))(term.source)
         case TypedAst.Expr.LetIn(symbol, isConstant, declaredType, value, body) =>
           val reducedValue = reduceExpr(value, fuel - 1)
           reduceExpr(substitute(body, symbol, reducedValue), fuel - 1)
@@ -507,6 +515,19 @@ object TypeChecker:
           TypedAst.Expr.Pi(instantiateLocalSymbol(dom), reduceExpr(cod, fuel - 1), isImplicit)(term.source)
         case other =>
           other
+
+  /** Unfolds a callee when it appears in application position and fuel is available. */
+  private def unfoldAppliedCallee(callee: TypedAst.Expr, fuel: Int)(implicit ctx: Context, metas: MetaContext): TypedAst.Expr =
+    if fuel <= 0 then
+      callee
+    else
+      callee match
+        case TypedAst.Expr.Var(symbol: TypedAst.TermSymbol) =>
+          ctx.lookupValue(symbol).map(value => reduceExpr(value, fuel - 1)).getOrElse(callee)
+        case TypedAst.Expr.Var(symbol) =>
+          ctx.lookupDefinition(symbol).map(value => reduceExpr(value, fuel - 1)).getOrElse(callee)
+        case _ =>
+          callee
 
   /** Reduces a match expression when the scrutinee head is a constructor. */
   private def reduceMatchExpr(scrutinee: TypedAst.Expr, cases: List[TypedAst.MatchCase], source: SourceRange, fuel: Int)
@@ -521,12 +542,20 @@ object TypeChecker:
   private def selectMatchCase(scrutinee: TypedAst.Expr, cases: List[TypedAst.MatchCase]): Option[TypedAst.Expr] =
     val (head, args) = decomposeApplication(scrutinee)
     head match
-      case TypedAst.Expr.Var(symbol) if classifyHead(symbol).contains(DefEqHeadKind.Constructor) =>
+      case TypedAst.Expr.Var(symbol) if hasConstructorLikeHead(symbol, cases) =>
         cases.collectFirst(Function.unlift { c =>
           matchPattern(c.pattern, scrutinee, args).map(bindings => applyBindings(c.body, bindings))
         })
       case _ =>
         None
+
+  /** Checks whether a scrutinee symbol can participate in constructor-pattern reduction. */
+  private def hasConstructorLikeHead(symbol: TypedAst.Symbol, cases: List[TypedAst.MatchCase]): Boolean =
+    classifyHead(symbol).contains(DefEqHeadKind.Constructor) ||
+      cases.exists {
+        case TypedAst.MatchCase(TypedAst.Pattern.Ctor(ctorSymbol, _), _) => symbolsEqual(symbol, ctorSymbol)
+        case _ => false
+      }
 
   /** Matches one typed pattern against a constructor-reduced scrutinee. */
   private def matchPattern(pattern: TypedAst.Pattern, scrutinee: TypedAst.Expr, constructorArgs: List[TypedAst.Expr]): Option[Map[TypedAst.LocalSymbol, TypedAst.Expr]] =
@@ -949,14 +978,25 @@ object TypeChecker:
     /** Returns an unfoldable expression for a symbol if available. */
     def definitionFor(symbol: TypedAst.Symbol): Option[TypedAst.Expr] =
       symbol match
-        case TypedAst.GlobalSymbolSymbol(name, file, _) if file == currentFile =>
-          localDefinitions.get(name)
         case TypedAst.GlobalSymbolSymbol(name, file, _) =>
-          val fileKey = normalizeFileKey(file)
-          val fileDefs = externalDefinitions.getOrElseUpdate(fileKey, loadFileDefinitions(fileKey))
-          fileDefs.get(name)
+          definitionForName(name, file)
+        case TypedAst.GlobalNameSymbol(name, file) =>
+          definitionForName(name, file)
         case _ =>
           None
+
+    /** Resolves a definition by global name and owning file. */
+    private def definitionForName(name: String, file: Path): Option[TypedAst.Expr] =
+      if sameFile(file, currentFile) then
+        localDefinitions.get(name)
+      else
+        val fileKey = normalizeFileKey(file)
+        val fileDefs = externalDefinitions.getOrElseUpdate(fileKey, loadFileDefinitions(fileKey))
+        fileDefs.get(name)
+
+    /** Checks whether two file paths refer to the same source file. */
+    private def sameFile(left: Path, right: Path): Boolean =
+      normalizeFileKey(left) == normalizeFileKey(right)
 
 
     /** Normalizes a symbol file path into a cache key understood by symbol caches. */
