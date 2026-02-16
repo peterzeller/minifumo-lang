@@ -50,16 +50,16 @@ class MySuite extends munit.FunSuite {
 
   test("type checker can handle pattern matching on local data") {
     val (ast, _) = parseInput("""
-      |data Maybe = None | Some(value: Int)
+      |data Maybe = MyNone | MySome(value: Int)
       |
       |fun main(): Int
-      |    match Some[Int](42)
-      |        case None
+      |    match MySome(42)
+      |        case MyNone
       |            0
-      |        case Some(value)
+      |        case MySome(value)
       |            value
     """.stripMargin)
-        val (typed, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
+    val (typed, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
     assertEquals(errors, List())
     val result = Interpreter.evalProg(typed, dummyCache, "main")
     assertEquals(result, intValue(42))

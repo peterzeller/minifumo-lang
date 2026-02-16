@@ -262,6 +262,8 @@ class ProjectSymbolCache(projectRoot: Path, val ids: TypeChecker.IdSupply) exten
   private var typedAstCache: Map[String, (TypedAst.Program, List[TypeError])] = Map()
 
   def toPath(importPath: String): Path =
+    if importPath.endsWith("standard.minifumo") then
+      return Path.of("standard.minifumo")
     projectRoot.resolve(importPath)
 
   def fromPath(p: Path): String =
