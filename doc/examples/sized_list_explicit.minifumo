@@ -1,0 +1,9 @@
+export data SizedList[T: Type, N: Nat] =
+   SizedNil: SizedList[T, Zero]
+ | SizedCons(head: T, tail: SizedList[T, N]): SizedList[T, Suc(N)]
+
+export fun makeTwo[T: Type](a: T, b: T): SizedList[T, Suc(Suc(Zero))]
+  let nilList: SizedList[T, Zero] = SizedNil[T][Zero] // error: Could not solve equality constraint Eq(T, T)
+  let oneItem: SizedList[T, Suc(Zero)] = SizedCons[T][Zero](b, nilList) // error: Could not solve equality constraint Eq(T, T)
+  let twoItems: SizedList[T, Suc(Suc(Zero))] = SizedCons[T][Suc(Zero)](a, oneItem) // error: Could not solve equality constraint Eq(T, T)
+  twoItems
