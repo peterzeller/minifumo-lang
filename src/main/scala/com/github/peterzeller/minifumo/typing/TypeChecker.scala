@@ -14,6 +14,7 @@ import java.nio.file.Path
 
 object TypeChecker:
   private val throwOnError = false
+  private val defaultConstraintFuel = 128
 
   final case class TypeError(message: String, source: ast.SourceRange) extends MinifumoError:
     if throwOnError then
@@ -45,7 +46,7 @@ object TypeChecker:
           errors.addAll(errs)
 
           val typedBody = checkFunctionBody(decl.body, typedSig.returnType, context2, metaStore, idSupply, errors)
-          val (elaboratedBody, unresolvedMetaErrors) = finalizeTopLevelExpr(typedBody)(using metaStore)
+          val (elaboratedBody, unresolvedMetaErrors) = finalizeTopLevelExpr(typedBody)(using context2, metaStore)
           errors.addAll(unresolvedMetaErrors)
           TypedAst.TopLevel.FunDecl(typedSig, elaboratedBody)(decl.source)
       }
@@ -101,6 +102,8 @@ object TypeChecker:
   trait MetaContext:
     def assign(metaId: Int, term: TypedAst.Expr): Unit
     def getAssignment(metaId: Int): Option[TypedAst.Expr]
+    def addEqualityConstraint(constraint: EqualityConstraint): Unit
+    def equalityConstraints: List[EqualityConstraint]
 
   /** Represents a binding in the local context. */
   private[typing] final case class LocalBinding(symbol: TypedAst.TermSymbol, value: Option[TypedAst.Expr])
@@ -137,11 +140,21 @@ object TypeChecker:
 
   /** Stores meta-variable assignments during unification. */
   private[typing] final case class MetaStore(assignments: mutable.Map[Int, TypedAst.Expr] = mutable.Map()) extends MetaContext:
+    private val constraints: ListBuffer[EqualityConstraint] = ListBuffer.empty
+
     override def assign(metaId: Int, term: TypedAst.Expr): Unit =
       assignments.update(metaId, term)
 
     override def getAssignment(metaId: Int): Option[TypedAst.Expr] =
       assignments.get(metaId)
+
+    /** Appends a new deferred equality constraint to the store. */
+    override def addEqualityConstraint(constraint: EqualityConstraint): Unit =
+      constraints.addOne(constraint)
+
+    /** Returns the currently tracked deferred equality constraints. */
+    override def equalityConstraints: List[EqualityConstraint] =
+      constraints.toList
 
   /** Tracks identifier allocation for local symbols and metas. */
   private[typing] final case class IdSupply(var nextId: Int = 0, var nextMeta: Int = 0):
@@ -255,10 +268,18 @@ object TypeChecker:
 
   /** Resolves metas at the end of a declaration and reports unresolved placeholders. */
   private def finalizeTopLevelExpr(expr: TypedAst.Expr)
-                               (implicit metas: MetaContext): (TypedAst.Expr, List[TypeError]) =
+                               (implicit ctx: Context, metas: MetaContext): (TypedAst.Expr, List[TypeError]) =
+    val unresolvedConstraints = solveOpenConstraints(defaultConstraintFuel)
     val unresolved = collectUnresolvedMetas(expr)
-    val errs = unresolved.toList.map(meta => TypeError(s"Could not infer implicit argument ${prettyExpr(meta)}", meta.source))
-    (instantiate(expr), errs)
+    val metaErrors = unresolved.toList.map(meta => TypeError(s"Could not infer implicit argument ${prettyExpr(meta)}", meta.source))
+    val constraintErrors = unresolvedConstraints.map { case (constraint, reducedLeft, reducedRight) =>
+      val message =
+        s"Could not solve equality constraint ${prettyEqConstraint(constraint.left, constraint.right)}\n" +
+          s"Reduced left: ${prettyExpr(reducedLeft)}\n" +
+          s"Reduced right: ${prettyExpr(reducedRight)}"
+      TypeError(message, constraint.source)
+    }.distinctBy(err => (err.source.start.line, err.message))
+    (instantiate(expr), metaErrors ++ constraintErrors)
 
   /** Translates a signature expression to a typed expression. */
   private[typing] def signatureExpr(expr: ast.Expr, globals: GlobalEnv, locals: Map[String, TypedAst.TermSymbol]): TypedAst.Expr =
@@ -301,27 +322,17 @@ object TypeChecker:
              (implicit ctx: Context, metas: MetaContext): Boolean =
     val norm1 = whnf(t1)
     val norm2 = whnf(t2)
-    (norm1, norm2) match
-      case (TypedAst.Expr.UnknownType(), _) => true
-      case (_, TypedAst.Expr.UnknownType()) => true
-      case (TypedAst.Expr.Meta(id, _), other) =>
-        solveMeta(id, other)
-      case (other, TypedAst.Expr.Meta(id, _)) =>
-        solveMeta(id, other)
-      case (TypedAst.Expr.Var(s1), TypedAst.Expr.Var(s2)) if symbolsEqual(s1, s2) => true
-      case (TypedAst.Expr.Var(p1: TypedAst.LocalSymbol), TypedAst.Expr.Var(p2: TypedAst.LocalSymbol))
-          if p1.name == p2.name => true // TODO name equality is not enough
-      case (TypedAst.Expr.Lit(v1), TypedAst.Expr.Lit(v2)) if v1 == v2 => true
-      case (TypedAst.Expr.Sort(), TypedAst.Expr.Sort()) => true
-      case (TypedAst.Expr.App(c1, a1, _), TypedAst.Expr.App(c2, a2, _)) =>
-        isDefEq(c1, c2) && isDefEq(a1, a2)
-      case (TypedAst.Expr.AppImplicit(c1, a1, _), TypedAst.Expr.AppImplicit(c2, a2, _)) =>
-        isDefEq(c1, c2) && isDefEq(a1, a2)
-      case (TypedAst.Expr.Lambda(p1, b1, _), TypedAst.Expr.Lambda(p2, b2, _)) =>
-        isDefEq(p1.tpe, p2.tpe) && isDefEq(b1, b2) // TODO this might not be correct, since we do not consider names; better use de-bruijn indices
-      case (TypedAst.Expr.Pi(d1, c1, i1), TypedAst.Expr.Pi(d2, c2, i2)) if i1 == i2 =>
-        isDefEq(d1.tpe, d2.tpe) && isDefEq(c1, c2) // TODO this might not be correct, since we do not consider names; better use de-bruijn indices
-      case _ => false
+    (extractHeadedExpr(norm1), extractHeadedExpr(norm2)) match
+      case (Some(h1), Some(h2)) if h1.kind == h2.kind =>
+        if symbolsEqual(h1.head, h2.head) then
+          h1.args.length == h2.args.length && h1.args.zip(h2.args).forall((a, b) => isDefEq(a, b))
+        else
+          false
+      case _ if syntacticallyEquivalent(norm1, norm2) =>
+        true
+      case _ =>
+        metas.addEqualityConstraint(EqualityConstraint(t1, t2, t1.source))
+        true
 
   def symbolsEqual(a: Symbol, b: Symbol): Boolean =
     if a == b then
@@ -334,6 +345,190 @@ object TypeChecker:
           an == bn && af == bf
         case _ =>
           false
+
+  /** Renders a deferred equality constraint as an Eq(a, b) datatype application. */
+  private def prettyEqConstraint(left: TypedAst.Expr, right: TypedAst.Expr): String =
+    s"Eq(${prettyExpr(left)}, ${prettyExpr(right)})"
+
+  /** Checks whether two reduced terms are structurally equivalent. */
+  private def syntacticallyEquivalent(left: TypedAst.Expr, right: TypedAst.Expr): Boolean =
+    (left, right) match
+      case (TypedAst.Expr.UnknownType(), _) => true
+      case (_, TypedAst.Expr.UnknownType()) => true
+      case (TypedAst.Expr.Var(s1), TypedAst.Expr.Var(s2)) if symbolsEqual(s1, s2) => true
+      case (TypedAst.Expr.Var(p1: TypedAst.LocalSymbol), TypedAst.Expr.Var(p2: TypedAst.LocalSymbol)) if p1.name == p2.name => true
+      case (TypedAst.Expr.Lit(v1), TypedAst.Expr.Lit(v2)) => v1 == v2
+      case (TypedAst.Expr.Sort(), TypedAst.Expr.Sort()) => true
+      case (TypedAst.Expr.App(c1, a1, _), TypedAst.Expr.App(c2, a2, _)) => syntacticallyEquivalent(c1, c2) && syntacticallyEquivalent(a1, a2)
+      case (TypedAst.Expr.AppImplicit(c1, a1, _), TypedAst.Expr.AppImplicit(c2, a2, _)) => syntacticallyEquivalent(c1, c2) && syntacticallyEquivalent(a1, a2)
+      case (TypedAst.Expr.Lambda(p1, b1, _), TypedAst.Expr.Lambda(p2, b2, _)) => syntacticallyEquivalent(p1.tpe, p2.tpe) && syntacticallyEquivalent(b1, b2)
+      case (TypedAst.Expr.Pi(d1, c1, i1), TypedAst.Expr.Pi(d2, c2, i2)) if i1 == i2 => syntacticallyEquivalent(d1.tpe, d2.tpe) && syntacticallyEquivalent(c1, c2)
+      case (TypedAst.Expr.Meta(i1, _), TypedAst.Expr.Meta(i2, _)) => i1 == i2
+      case _ => false
+
+  /** Extracts constructor-like or datatype application heads from a term. */
+  private def extractHeadedExpr(expr: TypedAst.Expr): Option[HeadedExpr] =
+    val (head, args) = decomposeApplication(expr)
+    head match
+      case TypedAst.Expr.Var(symbol) =>
+        classifyHead(symbol).map(kind => HeadedExpr(symbol, kind, args))
+      case _ =>
+        None
+
+  /** Decomposes nested applications into head and ordered argument list. */
+  private def decomposeApplication(expr: TypedAst.Expr): (TypedAst.Expr, List[TypedAst.Expr]) =
+    def loop(current: TypedAst.Expr, acc: List[TypedAst.Expr]): (TypedAst.Expr, List[TypedAst.Expr]) =
+      current match
+        case TypedAst.Expr.App(callee, arg, _) => loop(callee, arg :: acc)
+        case TypedAst.Expr.AppImplicit(callee, arg, _) => loop(callee, arg :: acc)
+        case _ => (current, acc)
+    loop(expr, Nil)
+
+  /** Classifies heads that represent constructors or type constructors. */
+  private def classifyHead(symbol: TypedAst.Symbol): Option[DefEqHeadKind] =
+    symbol match
+      case _: TypedAst.CtorSymbol => Some(DefEqHeadKind.Constructor)
+      case TypedAst.GlobalSymbolSymbol(_, _, g) =>
+        g.symbolSignature match
+          case SymbolSignature.Datatype(_) => Some(DefEqHeadKind.TypeConstructor)
+          case SymbolSignature.Def(tpe) if hasDatatypeResultType(tpe) => Some(DefEqHeadKind.Constructor)
+          case _ => None
+      case _ => None
+
+  /** Checks whether a function type eventually returns a datatype head. */
+  private def hasDatatypeResultType(expr: TypedAst.Expr): Boolean =
+    def codomain(tpe: TypedAst.Expr): TypedAst.Expr =
+      tpe match
+        case TypedAst.Expr.Pi(_, cod, _) => codomain(cod)
+        case other => other
+    decomposeApplication(codomain(expr))._1 match
+      case TypedAst.Expr.Var(TypedAst.GlobalSymbolSymbol(_, _, g)) =>
+        g.symbolSignature match
+          case SymbolSignature.Datatype(_) => true
+          case _ => false
+      case _ => false
+
+  /** Tries to solve deferred equality constraints by normalizing both sides. */
+  private def solveOpenConstraints(fuel: Int)(implicit ctx: Context, metas: MetaContext): List[(EqualityConstraint, TypedAst.Expr, TypedAst.Expr)] =
+    var pending = metas.equalityConstraints
+    var changed = true
+    while changed do
+      changed = false
+      val nextPending = ListBuffer[(EqualityConstraint, TypedAst.Expr, TypedAst.Expr)]()
+      for constraint <- pending do
+        trySolveConstraint(constraint, fuel) match
+          case None =>
+            changed = true
+          case Some(unresolved) =>
+            nextPending.addOne(unresolved)
+      pending = nextPending.toList.map(_._1)
+      if !changed then
+        return nextPending.toList
+    List.empty
+
+  /** Attempts to solve one constraint by reducing it and assigning metas when possible. */
+  private def trySolveConstraint(constraint: EqualityConstraint, fuel: Int)
+                                (implicit ctx: Context, metas: MetaContext): Option[(EqualityConstraint, TypedAst.Expr, TypedAst.Expr)] =
+    val reducedLeft = reduceExpr(constraint.left, fuel)
+    val reducedRight = reduceExpr(constraint.right, fuel)
+    if canSolveByUnification(reducedLeft, reducedRight) then
+      None
+    else
+      Some((constraint, reducedLeft, reducedRight))
+
+  /** Solves equality by recursively assigning metas and matching term structure. */
+  private def canSolveByUnification(left: TypedAst.Expr, right: TypedAst.Expr)
+                                   (implicit metas: MetaContext): Boolean =
+    if syntacticallyEquivalent(left, right) then
+      true
+    else
+      (left, right) match
+        case (TypedAst.Expr.Meta(id, _), other) => solveMeta(id, other)
+        case (other, TypedAst.Expr.Meta(id, _)) => solveMeta(id, other)
+        case (TypedAst.Expr.App(c1, a1, _), TypedAst.Expr.App(c2, a2, _)) =>
+          canSolveByUnification(c1, c2) && canSolveByUnification(a1, a2)
+        case (TypedAst.Expr.AppImplicit(c1, a1, _), TypedAst.Expr.AppImplicit(c2, a2, _)) =>
+          canSolveByUnification(c1, c2) && canSolveByUnification(a1, a2)
+        case (TypedAst.Expr.Pi(d1, c1, i1), TypedAst.Expr.Pi(d2, c2, i2)) if i1 == i2 =>
+          canSolveByUnification(d1.tpe, d2.tpe) && canSolveByUnification(c1, c2)
+        case (TypedAst.Expr.Lambda(p1, b1, _), TypedAst.Expr.Lambda(p2, b2, _)) =>
+          canSolveByUnification(p1.tpe, p2.tpe) && canSolveByUnification(b1, b2)
+        case _ => false
+
+  /** Fully reduces a term with a fuel budget to keep normalization bounded. */
+  private def reduceExpr(term: TypedAst.Expr, fuel: Int)(implicit ctx: Context, metas: MetaContext): TypedAst.Expr =
+    if fuel <= 0 then
+      instantiate(term)
+    else
+      instantiate(term) match
+        case TypedAst.Expr.App(callee, arg, tpe) =>
+          reduceExpr(callee, fuel - 1) match
+            case TypedAst.Expr.Lambda(param, body, _) =>
+              reduceExpr(substitute(body, param, arg), fuel - 1)
+            case reducedCallee =>
+              TypedAst.Expr.App(reducedCallee, reduceExpr(arg, fuel - 1), reduceExpr(tpe, fuel - 1))(term.source)
+        case TypedAst.Expr.AppImplicit(callee, arg, tpe) =>
+          reduceExpr(callee, fuel - 1) match
+            case TypedAst.Expr.Lambda(param, body, _) =>
+              reduceExpr(substitute(body, param, arg), fuel - 1)
+            case reducedCallee =>
+              TypedAst.Expr.AppImplicit(reducedCallee, reduceExpr(arg, fuel - 1), reduceExpr(tpe, fuel - 1))(term.source)
+        case TypedAst.Expr.LetIn(symbol, isConstant, declaredType, value, body) =>
+          val reducedValue = reduceExpr(value, fuel - 1)
+          reduceExpr(substitute(body, symbol, reducedValue), fuel - 1)
+        case TypedAst.Expr.Match(scrutinee, cases) =>
+          val reducedScrutinee = reduceExpr(scrutinee, fuel - 1)
+          reduceMatchExpr(reducedScrutinee, cases, term.source, fuel - 1)
+        case TypedAst.Expr.Lambda(param, body, tpe) =>
+          TypedAst.Expr.Lambda(param, reduceExpr(body, fuel - 1), reduceExpr(tpe, fuel - 1))(term.source)
+        case TypedAst.Expr.Pi(dom, cod, isImplicit) =>
+          TypedAst.Expr.Pi(instantiateLocalSymbol(dom), reduceExpr(cod, fuel - 1), isImplicit)(term.source)
+        case other =>
+          other
+
+  /** Reduces a match expression when the scrutinee head is a constructor. */
+  private def reduceMatchExpr(scrutinee: TypedAst.Expr, cases: List[TypedAst.MatchCase], source: SourceRange, fuel: Int)
+                            (implicit ctx: Context, metas: MetaContext): TypedAst.Expr =
+    selectMatchCase(scrutinee, cases) match
+      case Some(body) => reduceExpr(body, fuel)
+      case None =>
+        val reducedCases = cases.map(c => TypedAst.MatchCase(c.pattern, reduceExpr(c.body, fuel))(c.source))
+        TypedAst.Expr.Match(scrutinee, reducedCases)(source)
+
+  /** Selects and specializes the first matching branch for a reduced scrutinee. */
+  private def selectMatchCase(scrutinee: TypedAst.Expr, cases: List[TypedAst.MatchCase]): Option[TypedAst.Expr] =
+    val (head, args) = decomposeApplication(scrutinee)
+    head match
+      case TypedAst.Expr.Var(symbol) if classifyHead(symbol).contains(DefEqHeadKind.Constructor) =>
+        cases.collectFirst(Function.unlift { c =>
+          matchPattern(c.pattern, scrutinee, args).map(bindings => applyBindings(c.body, bindings))
+        })
+      case _ =>
+        None
+
+  /** Matches one typed pattern against a constructor-reduced scrutinee. */
+  private def matchPattern(pattern: TypedAst.Pattern, scrutinee: TypedAst.Expr, constructorArgs: List[TypedAst.Expr]): Option[Map[TypedAst.LocalSymbol, TypedAst.Expr]] =
+    pattern match
+      case TypedAst.Pattern.Wildcard() => Some(Map.empty)
+      case TypedAst.Pattern.Binder(symbol) => Some(Map(symbol -> scrutinee))
+      case TypedAst.Pattern.Lit(value) =>
+        scrutinee match
+          case TypedAst.Expr.Lit(actual) if actual == value => Some(Map.empty)
+          case _ => None
+      case TypedAst.Pattern.Ctor(symbol, args) =>
+        val (head, scrutineeArgs) = decomposeApplication(scrutinee)
+        head match
+          case TypedAst.Expr.Var(headSymbol) if symbolsEqual(headSymbol, symbol) && args.length == scrutineeArgs.length =>
+            args.zip(scrutineeArgs).foldLeft(Option(Map.empty[TypedAst.LocalSymbol, TypedAst.Expr])) {
+              case (Some(acc), (argPattern, argValue)) =>
+                matchPattern(argPattern, argValue, constructorArgs).map(acc ++ _)
+              case (None, _) => None
+            }
+          case _ => None
+
+  /** Applies pattern bindings by substituting each binder with the matched value. */
+  private def applyBindings(body: TypedAst.Expr, bindings: Map[TypedAst.LocalSymbol, TypedAst.Expr]): TypedAst.Expr =
+    bindings.foldLeft(body) { case (current, (symbol, value)) => substitute(current, symbol, value) }
 
   /** Reduces a term to weak head normal form. */
   def whnf(term: TypedAst.Expr)(implicit ctx: Context, metas: MetaContext): TypedAst.Expr =
@@ -433,6 +628,9 @@ object TypeChecker:
   private def solveMeta(metaId: Int, term: TypedAst.Expr)
                        (implicit metas: MetaContext): Boolean =
     TypeCheckerMetas.solveMeta(metaId, term)
+
+  /** Checks whether a meta-variable can be solved with a term. */
+  
 
   /** Performs an occurs check for a meta-variable inside a term. */
   
@@ -727,3 +925,12 @@ object TypeChecker:
       """.stripMargin('|')
     else
       s"$msgHead: ${error.message}"
+  /** Stores one deferred equality problem that should be solved after elaboration. */
+  final case class EqualityConstraint(left: TypedAst.Expr, right: TypedAst.Expr, source: SourceRange)
+
+  /** Classifies constructor-like application heads used by definitional equality. */
+  private enum DefEqHeadKind:
+    case Constructor, TypeConstructor
+
+  /** Captures an application head and all explicit/implicit arguments. */
+  private final case class HeadedExpr(head: TypedAst.Symbol, kind: DefEqHeadKind, args: List[TypedAst.Expr])

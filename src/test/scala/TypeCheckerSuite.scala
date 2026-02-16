@@ -14,9 +14,12 @@ class TypeCheckerSuite extends munit.FunSuite:
   // Builds a mutable meta context for normalization tests.
   private def metaContext: TypeChecker.MetaContext =
     val assignments = mutable.Map[Int, TypedAst.Expr]()
+    val constraints = mutable.ListBuffer[TypeChecker.EqualityConstraint]()
     new TypeChecker.MetaContext:
       override def assign(metaId: Int, term: TypedAst.Expr): Unit = assignments.update(metaId, term)
       override def getAssignment(metaId: Int): Option[TypedAst.Expr] = assignments.get(metaId)
+      override def addEqualityConstraint(constraint: TypeChecker.EqualityConstraint): Unit = constraints.addOne(constraint)
+      override def equalityConstraints: List[TypeChecker.EqualityConstraint] = constraints.toList
 
   test("whnf reduces lambda application") {
     val source = ast.SourceRange.empty
@@ -85,18 +88,22 @@ class TypeCheckerSuite extends munit.FunSuite:
 //    assert(funBody.exists(_.isInstanceOf[TypedAst.Expr.Lambda]))
 //  }
 
-  test("isDefEq solves metas during definitional equality checks") {
+  test("isDefEq defers non-constructor equalities as constraints") {
     val source = ast.SourceRange.empty
     val meta = TypedAst.Expr.Meta(0, TypedAst.Expr.UnknownType()(source))("T", source)
     val literal = TypedAst.Expr.Lit(ast.Literal.IntLit("7")(source))(source)
     given TypeChecker.Context = emptyContext
     val assignments = mutable.Map[Int, TypedAst.Expr]()
+    val constraints = mutable.ListBuffer[TypeChecker.EqualityConstraint]()
     given TypeChecker.MetaContext = new TypeChecker.MetaContext:
       override def assign(metaId: Int, term: TypedAst.Expr): Unit = assignments.update(metaId, term)
       override def getAssignment(metaId: Int): Option[TypedAst.Expr] = assignments.get(metaId)
+      override def addEqualityConstraint(constraint: TypeChecker.EqualityConstraint): Unit = constraints.addOne(constraint)
+      override def equalityConstraints: List[TypeChecker.EqualityConstraint] = constraints.toList
     val result = TypeChecker.isDefEq(meta, literal)
     assert(result)
-    assertEquals(assignments.get(0), Some(literal))
+    assertEquals(assignments.get(0), None)
+    assertEquals(constraints.length, 1)
   }
 
 //  test("pattern matching substitutes constructor type parameters without standard library") {
