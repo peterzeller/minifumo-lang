@@ -392,7 +392,7 @@ object TypeChecker:
       case _ => false
 
   /** Extracts constructor-like or datatype application heads from a term. */
-  private def extractHeadedExpr(expr: TypedAst.Expr): Option[HeadedExpr] =
+  private def extractHeadedExpr(expr: TypedAst.Expr)(using ctx: Context): Option[HeadedExpr] =
     val (head, args) = decomposeApplication(expr)
     head match
       case TypedAst.Expr.Var(symbol) =>
@@ -410,7 +410,7 @@ object TypeChecker:
     loop(expr, Nil)
 
   /** Classifies heads that represent constructors or type constructors. */
-  private def classifyHead(symbol: TypedAst.Symbol): Option[DefEqHeadKind] =
+  private def classifyHead(symbol: TypedAst.Symbol)(using ctx: Context): Option[DefEqHeadKind] =
     symbol match
       case _: TypedAst.CtorSymbol => Some(DefEqHeadKind.Constructor)
       case TypedAst.GlobalSymbolSymbol(_, _, g) =>
@@ -489,20 +489,22 @@ object TypeChecker:
       instantiate(term) match
         case TypedAst.Expr.App(callee, arg, tpe) =>
           val reducedCallee = reduceExpr(callee, fuel - 1)
-          val unfoldedCallee = unfoldAppliedCallee(reducedCallee, fuel - 1)
+          val reducedArg = reduceExpr(arg, fuel - 1)
+          val unfoldedCallee = unfoldAppliedCallee(reducedCallee, reducedArg, fuel - 1)
           unfoldedCallee match
             case TypedAst.Expr.Lambda(param, body, _) =>
-              reduceExpr(substitute(body, param, arg), fuel - 1)
+              reduceExpr(substitute(body, param, reducedArg), fuel - 1)
             case otherCallee =>
-              TypedAst.Expr.App(otherCallee, reduceExpr(arg, fuel - 1), reduceExpr(tpe, fuel - 1))(term.source)
+              TypedAst.Expr.App(otherCallee, reducedArg, reduceExpr(tpe, fuel - 1))(term.source)
         case TypedAst.Expr.AppImplicit(callee, arg, tpe) =>
           val reducedCallee = reduceExpr(callee, fuel - 1)
-          val unfoldedCallee = unfoldAppliedCallee(reducedCallee, fuel - 1)
+          val reducedArg = reduceExpr(arg, fuel - 1)
+          val unfoldedCallee = unfoldAppliedCallee(reducedCallee, reducedArg, fuel - 1)
           unfoldedCallee match
             case TypedAst.Expr.Lambda(param, body, _) =>
-              reduceExpr(substitute(body, param, arg), fuel - 1)
+              reduceExpr(substitute(body, param, reducedArg), fuel - 1)
             case otherCallee =>
-              TypedAst.Expr.AppImplicit(otherCallee, reduceExpr(arg, fuel - 1), reduceExpr(tpe, fuel - 1))(term.source)
+              TypedAst.Expr.AppImplicit(otherCallee, reducedArg, reduceExpr(tpe, fuel - 1))(term.source)
         case TypedAst.Expr.LetIn(symbol, isConstant, declaredType, value, body) =>
           val reducedValue = reduceExpr(value, fuel - 1)
           reduceExpr(substitute(body, symbol, reducedValue), fuel - 1)
@@ -517,7 +519,8 @@ object TypeChecker:
           other
 
   /** Unfolds a callee when it appears in application position and fuel is available. */
-  private def unfoldAppliedCallee(callee: TypedAst.Expr, fuel: Int)(implicit ctx: Context, metas: MetaContext): TypedAst.Expr =
+  /** Unfolds an applied callee when reduction is likely to make progress. */
+  private def unfoldAppliedCallee(callee: TypedAst.Expr, appliedArg: TypedAst.Expr, fuel: Int)(implicit ctx: Context, metas: MetaContext): TypedAst.Expr =
     if fuel <= 0 then
       callee
     else
@@ -525,9 +528,52 @@ object TypeChecker:
         case TypedAst.Expr.Var(symbol: TypedAst.TermSymbol) =>
           ctx.lookupValue(symbol).map(value => reduceExpr(value, fuel - 1)).getOrElse(callee)
         case TypedAst.Expr.Var(symbol) =>
-          ctx.lookupDefinition(symbol).map(value => reduceExpr(value, fuel - 1)).getOrElse(callee)
+          ctx.lookupDefinition(symbol) match
+            case Some(value) if shouldDeferUnfold(value, appliedArg) =>
+              callee
+            case Some(value) =>
+              reduceExpr(value, fuel - 1)
+            case None =>
+              callee
         case _ =>
           callee
+
+  /** Checks whether unfolding would get stuck on a non-constructor match scrutinee. */
+  private def shouldDeferUnfold(definition: TypedAst.Expr, appliedArg: TypedAst.Expr)(using ctx: Context): Boolean =
+    definition match
+      case TypedAst.Expr.Lambda(param, body, _) =>
+        val inspectsParam = hasMatchOnParam(body, param.id)
+        inspectsParam && !hasConstructorHead(appliedArg)
+      case _ =>
+        false
+
+  /** Checks whether a body contains a match that scrutinizes the given parameter id. */
+  private def hasMatchOnParam(body: TypedAst.Expr, paramId: Int): Boolean =
+    body match
+      case TypedAst.Expr.Match(TypedAst.Expr.Var(local: TypedAst.LocalSymbol), _) if local.id == paramId =>
+        true
+      case TypedAst.Expr.Lambda(_, nestedBody, _) =>
+        hasMatchOnParam(nestedBody, paramId)
+      case TypedAst.Expr.LetIn(_, _, _, _, nestedBody) =>
+        hasMatchOnParam(nestedBody, paramId)
+      case _ =>
+        false
+
+  /** Checks whether an expression has a constructor at its application head. */
+  private def hasConstructorHead(expr: TypedAst.Expr)(using ctx: Context): Boolean =
+    decomposeApplication(expr)._1 match
+      case TypedAst.Expr.Var(symbol) =>
+        classifyHead(symbol).contains(DefEqHeadKind.Constructor) || symbolLooksLikeCtor(symbol)
+      case _ =>
+        false
+
+  /** Approximates constructor symbols for unresolved global-name variants. */
+  private def symbolLooksLikeCtor(symbol: TypedAst.Symbol): Boolean =
+    symbol match
+      case TypedAst.GlobalNameSymbol(name, _) =>
+        name.headOption.exists(_.isUpper)
+      case _ =>
+        false
 
   /** Reduces a match expression when the scrutinee head is a constructor. */
   private def reduceMatchExpr(scrutinee: TypedAst.Expr, cases: List[TypedAst.MatchCase], source: SourceRange, fuel: Int)
@@ -539,7 +585,7 @@ object TypeChecker:
         TypedAst.Expr.Match(scrutinee, reducedCases)(source)
 
   /** Selects and specializes the first matching branch for a reduced scrutinee. */
-  private def selectMatchCase(scrutinee: TypedAst.Expr, cases: List[TypedAst.MatchCase]): Option[TypedAst.Expr] =
+  private def selectMatchCase(scrutinee: TypedAst.Expr, cases: List[TypedAst.MatchCase])(using ctx: Context): Option[TypedAst.Expr] =
     val (head, args) = decomposeApplication(scrutinee)
     head match
       case TypedAst.Expr.Var(symbol) if hasConstructorLikeHead(symbol, cases) =>
@@ -550,7 +596,7 @@ object TypeChecker:
         None
 
   /** Checks whether a scrutinee symbol can participate in constructor-pattern reduction. */
-  private def hasConstructorLikeHead(symbol: TypedAst.Symbol, cases: List[TypedAst.MatchCase]): Boolean =
+  private def hasConstructorLikeHead(symbol: TypedAst.Symbol, cases: List[TypedAst.MatchCase])(using ctx: Context): Boolean =
     classifyHead(symbol).contains(DefEqHeadKind.Constructor) ||
       cases.exists {
         case TypedAst.MatchCase(TypedAst.Pattern.Ctor(ctorSymbol, _), _) => symbolsEqual(symbol, ctorSymbol)
@@ -734,6 +780,11 @@ object TypeChecker:
   /** Exposes substitution for tests. */
   def substituteForTest(term: TypedAst.Expr, symbol: TypedAst.LocalSymbol, value: TypedAst.Expr): TypedAst.Expr =
     substitute(term, symbol, value)
+
+  /** Exposes bounded reduction for tests. */
+  def reduceExprForTest(term: TypedAst.Expr, fuel: Int)(using ctx: Context, metas: MetaContext): TypedAst.Expr =
+    reduceExpr(term, fuel)
+
 
 //  /** Infers an expression in a test context built from a program and exports. */
 //  private[typing] def inferInTestContext(

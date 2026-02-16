@@ -1,6 +1,7 @@
 import com.github.peterzeller.minifumo.ast
 import com.github.peterzeller.minifumo.typing.{TypeChecker, TypedAst}
 
+import java.nio.file.Path
 import scala.collection.mutable
 
 class TypeCheckerSuite extends munit.FunSuite:
@@ -88,6 +89,64 @@ class TypeCheckerSuite extends munit.FunSuite:
 //    val funBody = typed.items.collectFirst { case TypedAst.TopLevel.FunDecl(_, _, _, body) => body }
 //    assert(funBody.exists(_.isInstanceOf[TypedAst.Expr.Lambda]))
 //  }
+
+
+  test("constraint reduction unfolds natAdd(Suc(N))(M) to Suc(natAdd(N)(M))") {
+    val source = ast.SourceRange.empty
+    val unknown = TypedAst.Expr.UnknownType()(source)
+    val natAddSymbol = TypedAst.GlobalNameSymbol("natAdd", Path.of("test.minifumo"))
+    val sucSymbol = TypedAst.CtorSymbol("Suc", unknown)
+    val zeroSymbol = TypedAst.CtorSymbol("Zero", unknown)
+    val paramN = TypedAst.LocalSymbol("n", unknown, 1)
+    val paramM = TypedAst.LocalSymbol("m", unknown, 2)
+    val caseK = TypedAst.LocalSymbol("k", unknown, 3)
+    val inputN = TypedAst.LocalSymbol("N", unknown, 4)
+    val inputM = TypedAst.LocalSymbol("M", unknown, 5)
+
+    val recursiveCall = TypedAst.Expr.App(
+      TypedAst.Expr.App(TypedAst.Expr.Var(natAddSymbol)(source), TypedAst.Expr.Var(caseK)(source), unknown)(source),
+      TypedAst.Expr.Var(paramM)(source),
+      unknown
+    )(source)
+    val sucResult = TypedAst.Expr.App(TypedAst.Expr.Var(sucSymbol)(source), recursiveCall, unknown)(source)
+    val natAddBody = TypedAst.Expr.Match(
+      TypedAst.Expr.Var(paramN)(source),
+      List(
+        TypedAst.MatchCase(TypedAst.Pattern.Ctor(zeroSymbol, Nil)(source), TypedAst.Expr.Var(paramM)(source))(source),
+        TypedAst.MatchCase(TypedAst.Pattern.Ctor(sucSymbol, List(TypedAst.Pattern.Binder(caseK)(source)))(source), sucResult)(source)
+      )
+    )(source)
+    val natAddDef = TypedAst.Expr.Lambda(paramN, TypedAst.Expr.Lambda(paramM, natAddBody, unknown)(source), unknown)(source)
+
+    given TypeChecker.Context = new TypeChecker.Context:
+      override def lookupSymbol(name: String): Option[TypedAst.Symbol] = None
+      override def lookupValue(symbol: TypedAst.TermSymbol): Option[TypedAst.Expr] = None
+      override def lookupDefinition(symbol: TypedAst.Symbol): Option[TypedAst.Expr] =
+        if symbol == natAddSymbol then Some(natAddDef) else None
+    given TypeChecker.MetaContext = metaContext
+
+    val expression = TypedAst.Expr.App(
+      TypedAst.Expr.App(
+        TypedAst.Expr.Var(natAddSymbol)(source),
+        TypedAst.Expr.App(TypedAst.Expr.Var(sucSymbol)(source), TypedAst.Expr.Var(inputN)(source), unknown)(source),
+        unknown
+      )(source),
+      TypedAst.Expr.Var(inputM)(source),
+      unknown
+    )(source)
+    val expected = TypedAst.Expr.App(
+      TypedAst.Expr.Var(sucSymbol)(source),
+      TypedAst.Expr.App(
+        TypedAst.Expr.App(TypedAst.Expr.Var(natAddSymbol)(source), TypedAst.Expr.Var(inputN)(source), unknown)(source),
+        TypedAst.Expr.Var(inputM)(source),
+        unknown
+      )(source),
+      unknown
+    )(source)
+
+    val reduced = TypeChecker.reduceExprForTest(expression, fuel = 32)
+    assertEquals(reduced, expected)
+  }
 
   test("isDefEq solves metas during definitional equality checks") {
     val source = ast.SourceRange.empty
