@@ -26,7 +26,6 @@ object TypeChecker:
     try
       val errors = ListBuffer[TypeError]()
       val idSupply = IdSupply()
-      val metaStore = MetaStore()
       var (symbolMap, importErrors) = GlobalSymbols.buildGlobalSymbols(path, program, globalNames, false)
       if importStandard then
         // import the standard library symbols into the program file scope
@@ -38,18 +37,19 @@ object TypeChecker:
       val globals = GlobalEnv(names = symbolMap)
       val typedItems = ListBuffer[TypedAst.TopLevel]()
       for item <- program.items do
+        val itemMetaStore = MetaStore()
         val typedItem = item match
           case decl: ast.TopLevel.DataDecl =>
-            val ctorReturnTypeErrors = validateCtorReturnTypes(decl, globals, idSupply, metaStore)
+            val ctorReturnTypeErrors = validateCtorReturnTypes(decl, globals, idSupply, itemMetaStore)
             errors.addAll(ctorReturnTypeErrors)
             buildDataDecl(path, decl, globals, idSupply)
           case decl: ast.TopLevel.FunDecl =>
             val context1 = TypeContext(globals, Map(), definitionCache)
-            val (typedSig, context2, errs) = checkFunSig(decl.sig)(using context1, metaStore, idSupply)
+            val (typedSig, context2, errs) = checkFunSig(decl.sig)(using context1, itemMetaStore, idSupply)
             errors.addAll(errs)
 
-            val typedBody = checkFunctionBody(decl.body, typedSig.returnType, context2, metaStore, idSupply, errors)
-            val (elaboratedBody, unresolvedMetaErrors) = finalizeTopLevelExpr(typedBody)(using context2, metaStore)
+            val typedBody = checkFunctionBody(decl.body, typedSig.returnType, context2, itemMetaStore, idSupply, errors)
+            val (elaboratedBody, unresolvedMetaErrors) = finalizeTopLevelExpr(typedBody)(using context2, itemMetaStore)
             errors.addAll(unresolvedMetaErrors)
             TypedAst.TopLevel.FunDecl(typedSig, elaboratedBody)(decl.source)
         typedItems.addOne(typedItem)
