@@ -160,7 +160,7 @@ class TypeCheckerSuite extends munit.FunSuite:
       override def getAssignment(metaId: Int): Option[TypedAst.Expr] = assignments.get(metaId)
       override def addEqualityConstraint(constraint: TypeChecker.EqualityConstraint): Unit = constraints.addOne(constraint)
       override def equalityConstraints: List[TypeChecker.EqualityConstraint] = constraints.toList
-    val result = TypeChecker.isDefEq(meta, literal)
+    val result = TypeChecker.isDefEq(meta, literal, source)
     assert(result)
     assertEquals(assignments.get(0), Some(literal))
     assertEquals(constraints.length, 0)

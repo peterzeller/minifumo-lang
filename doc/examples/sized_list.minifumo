@@ -1,10 +1,10 @@
 export data SizedList[T: Type, N: Nat] =
    SizedNil: SizedList[T, Zero]
- | SizedCons(head: T, tail: SizedList[T, N]): SizedList[T, Suc(N)] // error: Could not solve equality constraint Eq(Suc(natAdd(N)(M)), natAdd(Suc(N))(M))
+ | SizedCons(head: T, tail: SizedList[T, N]): SizedList[T, Suc(N)]
 
 export fun appendSizedList[T: Type, N: Nat, M: Nat](xs: SizedList[T, N], ys: SizedList[T, M]): SizedList[T, natAdd(N, M)]
   match xs
     case SizedNil
       ys
     case SizedCons(h, t)
-      SizedCons(h, appendSizedList(t, ys)) // error: Could not solve equality constraint Eq(ys, T)
+      SizedCons(h, appendSizedList(t, ys)) // error: Could not solve equality constraint Eq(Suc(natAdd(N)(M)), natAdd(Suc(N))(M))

@@ -139,7 +139,7 @@ object Main:
         val endColumn = math.max(startColumn, error.source.end.column)
         val underlineWidth = math.max(1, endColumn - startColumn + 1)
         val underline = (" " * (startColumn - 1)) + ("^" * underlineWidth)
-        s"${errorWithPath.p}:${error.source.start.line}:${error.source.start.column}: ${error.message}\n    ${sourceLine}\n    ${underline}"
+        s"${errorWithPath.p}:${error.source.start.line}:${error.source.start.column}\n    ${sourceLine}\n    ${underline}\n${error.message}"
       else
         s"${errorWithPath.p}:${error.source.start.line}:${error.source.start.column}: ${error.message}"
     }

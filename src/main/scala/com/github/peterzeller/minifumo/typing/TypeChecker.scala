@@ -325,8 +325,9 @@ object TypeChecker:
         TypedAst.Expr.UnknownType()(expr.source)
 
 
-  /** Checks if two types are definitionally equal, solving metas as needed. */
-  def isDefEq(t1: TypedAst.Expr, t2: TypedAst.Expr)
+  /** Checks if two types are definitionally equal, solving metas as needed. 
+  */
+  def isDefEq(t1: TypedAst.Expr, t2: TypedAst.Expr, source: SourceRange)
              (implicit ctx: Context, metas: MetaContext): Boolean =
     val norm1 = whnf(t1)
     val norm2 = whnf(t2)
@@ -339,7 +340,7 @@ object TypeChecker:
         (extractHeadedExpr(norm1), extractHeadedExpr(norm2)) match
           case (Some(h1), Some(h2)) if h1.kind == h2.kind =>
             if symbolsEqual(h1.head, h2.head) then
-              h1.args.length == h2.args.length && h1.args.zip(h2.args).forall((a, b) => isDefEq(a, b))
+              h1.args.length == h2.args.length && h1.args.zip(h2.args).forall((a, b) => isDefEq(a, b, source))
             else
               false
           case (Some(_), Some(_)) =>
@@ -347,7 +348,7 @@ object TypeChecker:
           case _ if syntacticallyEquivalent(norm1, norm2) =>
             true
           case _ =>
-            metas.addEqualityConstraint(EqualityConstraint(t1, t2, t1.source))
+            metas.addEqualityConstraint(EqualityConstraint(t1, t2, source))
             true
 
   def symbolsEqual(a: Symbol, b: Symbol): Boolean =
@@ -688,7 +689,7 @@ object TypeChecker:
     val expectedNorm = whnf(expectedType)
     val (inferredExpr, inferredType, errs) = inferAndElaborate(expr)
     val errs2 =
-      if isDefEq(inferredType, expectedNorm) then errs
+      if isDefEq(inferredType, expectedNorm, expr.source) then errs
       else TypeError(s"Expected ${prettyExpr(expectedNorm)} but got ${prettyExpr(inferredType)}\nIn expression ${prettyExpr(inferredExpr)}", expr.source) :: errs
     (inferredExpr, errs2)
 

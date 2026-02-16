@@ -15,6 +15,8 @@ class GlobalSymbolsSuite extends munit.FunSuite:
     override def globalNames(path: String): Map[String, GlobalName] = names.getOrElse(path, Map())
     override def globalSymbols(path: String): Map[String, GlobalSymbol] = ???
 
+  private val ids = TypeChecker.IdSupply()
+
   test("buildGlobalNames respects export flags") {
     val program = parseProgram("""
       |export data Foo = MakeFoo
@@ -32,12 +34,12 @@ class GlobalSymbolsSuite extends munit.FunSuite:
     val source = ast.SourceRange.empty
     val env = GlobalSymbols.PreEnv(globalNames = Map("Int" -> GlobalName(Paths.get("std"), "Int")))
     val intExpr = ast.Expr.Var("Int")(source)
-    val (resolved, errors) = GlobalSymbols.checkSignatureExpr(intExpr, env)
+    val (resolved, errors) = GlobalSymbols.checkSignatureExpr(intExpr, env)(using ids)
     assert(errors.isEmpty)
     assert(resolved.isInstanceOf[TypedAst.Expr.Var])
     val lambdaParam = ast.LambdaParam("x", None)(source)
     val lambdaExpr = ast.Expr.Lambda(lambdaParam, ast.Expr.Var("x")(source))(source)
-    val (_, lambdaErrors) = GlobalSymbols.checkSignatureExpr(lambdaExpr, env)
+    val (_, lambdaErrors) = GlobalSymbols.checkSignatureExpr(lambdaExpr, env)(using ids)
     assert(lambdaErrors.nonEmpty)
   }
 
@@ -47,7 +49,7 @@ class GlobalSymbolsSuite extends munit.FunSuite:
       |  1
     """.stripMargin)
     val cache = DummyNameCache(Map())
-    val (_, errors) = GlobalSymbols.buildGlobalSymbols(Paths.get("main.minifumo"), program, cache, onlyExported = false)
+    val (_, errors) = GlobalSymbols.buildGlobalSymbols(Paths.get("main.minifumo"), program, cache, onlyExported = false, ids)
     assert(errors.exists(_.message.contains("Could not find Missing")))
   }
 
@@ -86,7 +88,7 @@ class GlobalSymbolsSuite extends munit.FunSuite:
     """.stripMargin)
     assertEquals(parseErrors, List())
     val cache = DummyNameCache(Map())
-    val (symbols, errors) = GlobalSymbols.buildGlobalSymbols(Paths.get("main.minifumo"), program, cache, onlyExported = false)
+    val (symbols, errors) = GlobalSymbols.buildGlobalSymbols(Paths.get("main.minifumo"), program, cache, onlyExported = false, ids)
     assertEquals(errors, List())
     assert(symbols.contains("SizedList"))
     assert(symbols.contains("SizedNil"))
