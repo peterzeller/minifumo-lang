@@ -34,24 +34,28 @@ object TypeChecker:
         symbolMap ++= standardLibSymbolMap
         importErrors ++= standardLibImportErrors
       errors.addAll(importErrors)
+      val definitionCache = DefinitionCache(path, globalNames)
       val globals = GlobalEnv(names = symbolMap)
-      val typedItems = program.items.map {
-        case decl: ast.TopLevel.DataDecl =>
-          val ctorReturnTypeErrors = validateCtorReturnTypes(decl, globals, idSupply, metaStore)
-          errors.addAll(ctorReturnTypeErrors)
-          buildDataDecl(path, decl, globals, idSupply)
-        case decl: ast.TopLevel.FunDecl =>
-          val context1 = TypeContext(globals, Map())
-          val (typedSig, context2, errs) = checkFunSig(decl.sig)(using context1, metaStore, idSupply)
-          errors.addAll(errs)
+      val typedItems = ListBuffer[TypedAst.TopLevel]()
+      for item <- program.items do
+        val typedItem = item match
+          case decl: ast.TopLevel.DataDecl =>
+            val ctorReturnTypeErrors = validateCtorReturnTypes(decl, globals, idSupply, metaStore)
+            errors.addAll(ctorReturnTypeErrors)
+            buildDataDecl(path, decl, globals, idSupply)
+          case decl: ast.TopLevel.FunDecl =>
+            val context1 = TypeContext(globals, Map(), definitionCache)
+            val (typedSig, context2, errs) = checkFunSig(decl.sig)(using context1, metaStore, idSupply)
+            errors.addAll(errs)
 
-          val typedBody = checkFunctionBody(decl.body, typedSig.returnType, context2, metaStore, idSupply, errors)
-          val (elaboratedBody, unresolvedMetaErrors) = finalizeTopLevelExpr(typedBody)(using context2, metaStore)
-          errors.addAll(unresolvedMetaErrors)
-          TypedAst.TopLevel.FunDecl(typedSig, elaboratedBody)(decl.source)
-      }
+            val typedBody = checkFunctionBody(decl.body, typedSig.returnType, context2, metaStore, idSupply, errors)
+            val (elaboratedBody, unresolvedMetaErrors) = finalizeTopLevelExpr(typedBody)(using context2, metaStore)
+            errors.addAll(unresolvedMetaErrors)
+            TypedAst.TopLevel.FunDecl(typedSig, elaboratedBody)(decl.source)
+        typedItems.addOne(typedItem)
+        definitionCache.recordTopLevel(typedItem)
       // Returns accumulated type errors to the caller instead of throwing.
-      (TypedAst.Program(typedItems)(program.source), errors.toList)
+      (TypedAst.Program(typedItems.toList)(program.source), errors.toList)
     catch
       case e: Exception =>
         throw new RuntimeException(s"error checking $path", e)
@@ -97,6 +101,7 @@ object TypeChecker:
   trait Context:
     def lookupSymbol(name: String): Option[TypedAst.Symbol]
     def lookupValue(symbol: TypedAst.TermSymbol): Option[TypedAst.Expr]
+    def lookupDefinition(symbol: TypedAst.Symbol): Option[TypedAst.Expr]
 
   /** Provides a mutable store for meta-variable assignments. */
   trait MetaContext:
@@ -122,13 +127,17 @@ object TypeChecker:
     )
 
   /** Implements a context with local bindings and global symbols. */
-  private[typing] final case class TypeContext(globals: GlobalEnv, locals: Map[String, LocalBinding]) extends Context:
+  private[typing] final case class TypeContext(globals: GlobalEnv, locals: Map[String, LocalBinding], definitionCache: DefinitionCache = DefinitionCache.empty) extends Context:
     override def lookupSymbol(name: String): Option[TypedAst.Symbol] =
       locals.get(name).map(_.symbol)
         .orElse(globals.names.get(name).map(g => TypedAst.GlobalSymbolSymbol(g.name, g.file, g)))
 
     override def lookupValue(symbol: TypedAst.TermSymbol): Option[TypedAst.Expr] =
       locals.values.find(_.symbol == symbol).flatMap(_.value)
+
+    /** Resolves unfoldable global definitions on demand. */
+    override def lookupDefinition(symbol: TypedAst.Symbol): Option[TypedAst.Expr] =
+      definitionCache.definitionFor(symbol)
 
     /** Adds a local binding to the context. */
     def withLocal(symbol: TypedAst.TermSymbol, value: Option[TypedAst.Expr] = None): TypeContext =
@@ -334,6 +343,8 @@ object TypeChecker:
               h1.args.length == h2.args.length && h1.args.zip(h2.args).forall((a, b) => isDefEq(a, b))
             else
               false
+          case (Some(_), Some(_)) =>
+            false
           case _ if syntacticallyEquivalent(norm1, norm2) =>
             true
           case _ =>
@@ -468,6 +479,10 @@ object TypeChecker:
       instantiate(term)
     else
       instantiate(term) match
+        case TypedAst.Expr.Var(symbol: TypedAst.TermSymbol) =>
+          ctx.lookupValue(symbol).map(value => reduceExpr(value, fuel - 1)).getOrElse(term)
+        case TypedAst.Expr.Var(symbol) =>
+          ctx.lookupDefinition(symbol).map(value => reduceExpr(value, fuel - 1)).getOrElse(term)
         case TypedAst.Expr.App(callee, arg, tpe) =>
           reduceExpr(callee, fuel - 1) match
             case TypedAst.Expr.Lambda(param, body, _) =>
@@ -916,6 +931,78 @@ object TypeChecker:
     val paramIds = collectParamIds(resultType)
     val subst = collectTypeParamSubst(resultType, expectedType, paramIds, Map())
     fieldTypes.map(fieldType => substituteTypeParams(fieldType, subst))
+
+
+  /** Caches unfoldable function bodies and loads external typed files on demand. */
+  private[typing] final case class DefinitionCache(currentFile: Path, symbolCache: NameCache & SymbolCache):
+    private val localDefinitions: mutable.Map[String, TypedAst.Expr] = mutable.Map.empty
+    private val externalDefinitions: mutable.Map[String, Map[String, TypedAst.Expr]] = mutable.Map.empty
+    private val loadingFiles: mutable.Set[String] = mutable.Set.empty
+
+    /** Records a newly checked top-level item for local unfolding. */
+    def recordTopLevel(item: TypedAst.TopLevel): Unit =
+      item match
+        case funDecl: TypedAst.TopLevel.FunDecl =>
+          localDefinitions.update(funDecl.sig.symbol.name, buildFunctionLambda(funDecl))
+        case _ => ()
+
+    /** Returns an unfoldable expression for a symbol if available. */
+    def definitionFor(symbol: TypedAst.Symbol): Option[TypedAst.Expr] =
+      symbol match
+        case TypedAst.GlobalSymbolSymbol(name, file, _) if file == currentFile =>
+          localDefinitions.get(name)
+        case TypedAst.GlobalSymbolSymbol(name, file, _) =>
+          val fileKey = normalizeFileKey(file)
+          val fileDefs = externalDefinitions.getOrElseUpdate(fileKey, loadFileDefinitions(fileKey))
+          fileDefs.get(name)
+        case _ =>
+          None
+
+
+    /** Normalizes a symbol file path into a cache key understood by symbol caches. */
+    private def normalizeFileKey(file: Path): String =
+      val raw = file.toString
+      if raw.endsWith("standard.minifumo") then
+        "standard.minifumo"
+      else
+        symbolCache match
+          case projectCache: ProjectSymbolCache if file.isAbsolute => projectCache.fromPath(file)
+          case _ => raw
+
+    /** Loads and caches typed function bodies for one file with cycle detection. */
+    private def loadFileDefinitions(fileKey: String): Map[String, TypedAst.Expr] =
+      if loadingFiles.contains(fileKey) then
+        Map.empty
+      else
+        symbolCache match
+          case projectCache: ProjectSymbolCache =>
+            loadingFiles.add(fileKey)
+            try
+              val (typedProgram, _) = projectCache.typedAst(fileKey)
+              typedProgram.items.collect {
+                case funDecl: TypedAst.TopLevel.FunDecl =>
+                  funDecl.sig.symbol.name -> buildFunctionLambda(funDecl)
+              }.toMap
+            finally
+              loadingFiles.remove(fileKey): Unit
+          case _ =>
+            Map.empty
+
+
+  private object DefinitionCache:
+    private object EmptySymbolCache extends NameCache with SymbolCache:
+      override def globalNames(path: String): Map[String, GlobalName] = Map.empty
+      override def globalSymbols(path: String): Map[String, GlobalSymbol] = Map.empty
+
+    /** Provides a no-op definition cache for contexts without unfolding support. */
+    val empty: DefinitionCache = DefinitionCache(Path.of(""), EmptySymbolCache)
+
+  /** Converts a typed function declaration into a lambda term for unfolding. */
+  private def buildFunctionLambda(funDecl: TypedAst.TopLevel.FunDecl): TypedAst.Expr =
+    val params = funDecl.sig.typeParams ++ funDecl.sig.params
+    params.foldRight(funDecl.body) { (param, body) =>
+      TypedAst.Expr.Lambda(param, body, TypedAst.Expr.UnknownType()(body.source))(body.source)
+    }
 
   def formatError(path: String, sourceLines: Vector[String], error: TypeError): String =
     val lineNr = error.source.start.line

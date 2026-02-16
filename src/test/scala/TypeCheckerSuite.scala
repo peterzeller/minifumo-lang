@@ -10,6 +10,7 @@ class TypeCheckerSuite extends munit.FunSuite:
     new TypeChecker.Context:
       override def lookupSymbol(name: String): Option[TypedAst.Symbol] = None
       override def lookupValue(symbol: TypedAst.TermSymbol): Option[TypedAst.Expr] = None
+      override def lookupDefinition(symbol: TypedAst.Symbol): Option[TypedAst.Expr] = None
 
   // Builds a mutable meta context for normalization tests.
   private def metaContext: TypeChecker.MetaContext =
