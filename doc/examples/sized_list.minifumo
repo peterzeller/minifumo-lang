@@ -7,10 +7,24 @@ export fun appendSizedList[T: Type, N: Nat, M: Nat](xs: SizedList[T, N], ys: Siz
     case SizedNil
       ys
     case SizedCons(h, t)
-      SizedCons(h, appendSizedList(t, ys))
+      SizedCons[T][natAdd(N, M)](h, appendSizedList[T][N][M](t, ys))
 
-// fun main(): SizedList[Int, Suc(Suc(Suc(Zero)))]
-//   let as = SizedCons(1, SizedCons(2, SizedNil[Int, Zero]))
-//   let bs = SizedCons(3, SizedNil[Int, Zero])
-//   let cs = appendSizedList(as, bs)
-//   cs
+/*
+export fun sizedListToString[T: Type, PeterN: Nat](s: Show[T], list: SizedList[T, PeterN]): String
+    match s
+        case MakeShow(showFn)
+            match list
+                case SizedNil
+                    ""
+                case SizedCons(head, tail)
+                    stringAppend(showFn(head), stringAppend(", ", sizedListToString(s, tail)))
+
+fun main(): Unit
+  let as = SizedCons[Int][Suc(Zero)](1, SizedCons[Int][Zero](2, SizedNil[Int]))
+  let bs = SizedCons[Int][Zero](3, SizedNil[Int])
+  let cs = appendSizedList[Int][Suc(Suc(Zero))][Suc(Zero)](as, bs)
+  printlnString(sizedListToString(showInt, cs))
+
+// Output:
+// 1, 2, 3, 
+*/
