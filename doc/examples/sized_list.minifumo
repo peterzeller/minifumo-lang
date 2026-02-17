@@ -9,8 +9,8 @@ export fun appendSizedList[T: Type, N: Nat, M: Nat](xs: SizedList[T, N], ys: Siz
     case SizedCons(h, t)
       SizedCons(h, appendSizedList(t, ys))
 
-// fun main(): SizedList[Int, Suc(Suc(Suc(Zero)))]
-//   let as = SizedCons(1, SizedCons(2, SizedNil[Int, Zero]))
-//   let bs = SizedCons(3, SizedNil[Int, Zero])
-//   let cs = appendSizedList(as, bs)
-//   cs
+fun main(): SizedList[Int, Suc(Suc(Suc(Zero)))]
+  let as = SizedCons(1, SizedCons(2, SizedNil[Int]))
+  let bs = SizedCons(3, SizedNil[Int])
+  let cs = appendSizedList(as, bs)
+  cs

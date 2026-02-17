@@ -33,6 +33,25 @@ enum SymbolSignature:
   case Datatype(implicitParams: List[Expr])
 
 object GlobalSymbols:
+  // Collects variable names referenced from a constructor signature expression.
+  private def collectReferencedVariables(expr: ast.Expr): Set[String] =
+    expr match
+      case ast.Expr.Var(name) => Set(name)
+      case ast.Expr.Lit(_) => Set.empty
+      case ast.Expr.Call(callee, arg) => collectReferencedVariables(callee) ++ collectReferencedVariables(arg)
+      case ast.Expr.CallImplicit(callee, arg) => collectReferencedVariables(callee) ++ collectReferencedVariables(arg)
+      case ast.Expr.Lambda(param, body) => collectReferencedVariables(param.tpe) ++ collectReferencedVariables(body)
+      case ast.Expr.Pi(param, body) => collectReferencedVariables(param.tpe) ++ collectReferencedVariables(body)
+      case ast.Expr.LetIn(_, tpe, value, body) => collectReferencedVariables(tpe) ++ collectReferencedVariables(value) ++ collectReferencedVariables(body)
+      case ast.Expr.Match(scrutinee, cases) =>
+        collectReferencedVariables(scrutinee) ++ cases.flatMap(c => collectReferencedVariables(c.body)).toSet
+      case ast.Expr.Hole() => Set.empty
+
+  // Keeps only datatype implicit parameters that are needed by one constructor signature.
+  private def usedCtorImplicitParams(implicitParams: List[ast.FunParam], ctor: ast.CtorDecl, ctorReturnType: ast.Expr): List[ast.FunParam] =
+    val referencedNames = (ctor.fields.map(_.tpe) :+ ctorReturnType).flatMap(collectReferencedVariables).toSet
+    implicitParams.filter(param => referencedNames.contains(param.name))
+
   // build a map of global names in a program file
   def buildGlobalNames(file: Path, prog: ast.ProgramFile, onlyExported: Boolean): Map[String, GlobalName] =
     prog.items.flatMap(topLevelToGlobalNames(file, onlyExported)).toMap
@@ -166,7 +185,8 @@ object GlobalSymbols:
         for ctor <- ctors do
           // create a dummy fun decl for the constructor
           val ctorReturnType = ctor.returnType.getOrElse(dt)
-          val sig = FunSig(ctor.name, implicitParams, ctor.fields.map(f => FunParam(f.name, f.tpe)(f.source)), ctorReturnType)(ctor.source)
+          val ctorImplicitParams = usedCtorImplicitParams(implicitParams, ctor, ctorReturnType)
+          val sig = FunSig(ctor.name, ctorImplicitParams, ctor.fields.map(f => FunParam(f.name, f.tpe)(f.source)), ctorReturnType)(ctor.source)
           val f: ast.TopLevel.FunDecl = ast.TopLevel.FunDecl(sig, ast.Expr.Hole()(ctor.source), true)(ctor.source)
 
           val (syms, errs) = symbolsForFunDef(f, file, env.copy(localNames = localNames), ids)
