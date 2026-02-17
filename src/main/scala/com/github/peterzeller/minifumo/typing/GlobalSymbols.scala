@@ -40,9 +40,11 @@ object GlobalSymbols:
       case ast.Expr.Lit(_) => Set.empty
       case ast.Expr.Call(callee, arg) => collectReferencedVariables(callee) ++ collectReferencedVariables(arg)
       case ast.Expr.CallImplicit(callee, arg) => collectReferencedVariables(callee) ++ collectReferencedVariables(arg)
-      case ast.Expr.Lambda(param, body) => collectReferencedVariables(param.tpe) ++ collectReferencedVariables(body)
+      case ast.Expr.Lambda(param, body) =>
+        param.tpe.map(collectReferencedVariables).getOrElse(Set.empty) ++ collectReferencedVariables(body)
       case ast.Expr.Pi(param, body) => collectReferencedVariables(param.tpe) ++ collectReferencedVariables(body)
-      case ast.Expr.LetIn(_, tpe, value, body) => collectReferencedVariables(tpe) ++ collectReferencedVariables(value) ++ collectReferencedVariables(body)
+      case ast.Expr.LetIn(_, tpe, value, body) =>
+        tpe.map(collectReferencedVariables).getOrElse(Set.empty) ++ collectReferencedVariables(value) ++ collectReferencedVariables(body)
       case ast.Expr.Match(scrutinee, cases) =>
         collectReferencedVariables(scrutinee) ++ cases.flatMap(c => collectReferencedVariables(c.body)).toSet
       case ast.Expr.Hole() => Set.empty
