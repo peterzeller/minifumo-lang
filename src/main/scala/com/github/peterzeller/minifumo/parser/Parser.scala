@@ -439,6 +439,12 @@ private class HandwrittenParser(tokens: Vector[Token]):
 
   /** Reports a parser error at a token position. */
   private def error(token: Token, message: String): Unit =
+    errors.lastOption match
+      case Some(err) =>
+        if err.source.start == token.source.start then
+          // advance parser to avoid getting stuck on same error
+          advanceUnit()
+      case None =>  
     errors += SyntaxError(token.source.start, message)
 
   /** Consumes one token of the expected kind, with soft recovery on mismatch. */

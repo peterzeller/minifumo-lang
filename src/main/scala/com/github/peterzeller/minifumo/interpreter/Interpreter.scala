@@ -12,7 +12,7 @@ object Interpreter:
 
   def debugPrint(str: String): Unit =
     if debug then
-      println(str)
+      System.err.println(str)
 
   enum Value:
     case AdtVal(name: String, args: List[Value])
@@ -27,6 +27,12 @@ object Interpreter:
 
     override def toString: String =
       this match
+        case dt@Value.AdtVal(name, _) if name == "Suc" || name == "Zero"  =>
+          natToInt(dt).toString
+        case Value.AdtVal("MakeChar", List(x)) =>
+          "'" + natToInt(x).asInstanceOf[Char].toString + "'"
+        case Value.AdtVal("MakeString", List(x)) =>
+          readList(x, readChar).mkString("")
         case Value.AdtVal(name, args) =>
           if args.isEmpty then name else s"$name${args.map(_.toString).mkString("(", ", ", ")")}" 
         case Value.UnitVal => "unit"
@@ -34,6 +40,22 @@ object Interpreter:
         case Value.FuncVal(name, _) => s"<function $name>"
         case Value.LazyVal(name, _) => s"<lazy $name>"
         case Value.SortValue() => "Type"
+
+    private def natToInt(d: Value): Int = 
+      d match
+        case Value.AdtVal("Zero", _) => 0
+        case Value.AdtVal("Suc", List(x)) => 1 + natToInt(x)
+
+    private def readChar(d: Value): Char =
+      d match
+        case Value.AdtVal("MakeChar", List(x)) =>
+          natToInt(x).asInstanceOf[Char]
+
+    private def readList[T](d: Value, f: Value => T): List[T] = 
+      d match
+        case Value.AdtVal("Nil", _) => List()
+        case Value.AdtVal("Cons", List(x, xs)) => f(x) :: readList(xs, f)
+
 
     // force evaluation of lazy expressions
     def forceLazyExprs: Value =
@@ -131,6 +153,7 @@ object Interpreter:
       locals: Map[TypedAst.TermSymbol, Value],
       globals: mutable.Map[TypedAst.Symbol, Value]
     ): Value =
+    debugPrint(s"Start expression ${prettyPrint(expr)}")
     val res = expr match
       case TypedAst.Expr.Lit(value) => literalValue(value)
       case TypedAst.Expr.Var(symbol: TypedAst.TermSymbol) =>
