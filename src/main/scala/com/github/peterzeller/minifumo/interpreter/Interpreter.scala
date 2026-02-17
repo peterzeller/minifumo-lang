@@ -69,7 +69,8 @@ object Interpreter:
           // TODO add names for data decl
           res.put(sym, buildDatatypeValue(sym, typeParams))
           for ctor <- ctors do {
-            res.put(ctor.symbol, buildConstructorValue(ctor.symbol.name, typeParams, ctor.fields, List()))
+            val implicitParamCount = countImplicitConstructorParams(ctor.symbol.tpe)
+            res.put(ctor.symbol, buildConstructorValue(ctor.symbol.name, implicitParamCount, ctor.fields, List()))
           }
 
         case TypedAst.TopLevel.FunDecl(sig, body) =>
@@ -92,16 +93,26 @@ object Interpreter:
       case _ :: xs => Value.FuncVal(s"${sym.name}_${typeParams.length}", _ => buildDatatypeValue(sym, xs))
       case Nil => Value.SortValue()
 
-  private def buildConstructorValue(name: String, typeParams: List[LocalSymbol], fields: List[CtorField], values: List[Value]): Value =
-    typeParams match
-      case _::xs =>
-        Value.FuncVal(s"${name}_${fields.length+typeParams.length}", _ => buildConstructorValue(name, xs, fields, values))
-      case Nil =>
-        fields match
-          case _::xs =>
-            Value.FuncVal(s"${name}_${fields.length}", v => buildConstructorValue(name, typeParams, xs, values :+ v))
-          case Nil =>
-            Value.AdtVal(name, values)
+  /** Counts implicit constructor parameters from the constructor type. */
+  private def countImplicitConstructorParams(tpe: Expr): Int =
+    tpe match
+      case TypedAst.Expr.Pi(_, cod, true) =>
+        1 + countImplicitConstructorParams(cod)
+      case TypedAst.Expr.Pi(_, _, false) =>
+        0
+      case _ =>
+        0
+
+  /** Builds a constructor runtime value with the given implicit parameter arity and fields. */
+  private def buildConstructorValue(name: String, implicitParamCount: Int, fields: List[CtorField], values: List[Value]): Value =
+    if implicitParamCount > 0 then
+      Value.FuncVal(s"${name}_${fields.length + implicitParamCount}", _ => buildConstructorValue(name, implicitParamCount - 1, fields, values))
+    else
+      fields match
+        case _ :: xs =>
+          Value.FuncVal(s"${name}_${fields.length}", v => buildConstructorValue(name, implicitParamCount, xs, values :+ v))
+        case Nil =>
+          Value.AdtVal(name, values)
 
 
   def buildFnBody(name: String, params: List[LocalSymbol], body: Expr, locals: Map[TermSymbol, Value], globals: mutable.Map[Symbol, Value]): Value =
