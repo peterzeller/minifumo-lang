@@ -31,6 +31,6 @@ object TypeCheckerMetas:
       case TypedAst.Expr.Lambda(_, body, _) => occurs(metaId, body)
       case TypedAst.Expr.LetIn(_, _, _, value, body) => occurs(metaId, value) || occurs(metaId, body)
       case TypedAst.Expr.Pi(dom, cod, _) => occurs(metaId, dom.tpe) || occurs(metaId, cod)
-      case TypedAst.Expr.Match(scrutinee, cases) =>
-        occurs(metaId, scrutinee) || cases.exists(c => occurs(metaId, c.body))
+      case TypedAst.Expr.Match(scrutinee, motive, cases) =>
+        occurs(metaId, scrutinee) || occurs(metaId, motive) || cases.exists(c => occurs(metaId, c.body))
       case _ => false

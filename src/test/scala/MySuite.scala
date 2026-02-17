@@ -75,6 +75,50 @@ class MySuite extends munit.FunSuite {
     assert(errors.exists(_.message.contains("Constructor MakeBad must return Bad")))
   }
 
+  test("dependent match refines expected branch types for headOrUnit") {
+    val (ast, _) = parseInput("""
+      |fun HeadOrUnit[T: Type](n: Nat): Type
+      |    match n
+      |        case Zero
+      |            Unit
+      |        case Suc(_)
+      |            T
+      |
+      |data SizedList[T: Type, N: Nat] =
+      |   SizedNil: SizedList[T, Zero]
+      | | SizedCons(head: T, tail: SizedList[T, N]): SizedList[T, Suc(N)]
+      |
+      |fun headOrUnit[T: Type, N: Nat](xs: SizedList[T, N]): HeadOrUnit[T](N)
+      |    match xs
+      |        case SizedNil
+      |            ()
+      |        case SizedCons(head, _)
+      |            head
+    """.stripMargin)
+    val (_, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
+    assertEquals(errors, List())
+  }
+
+  test("dependent recursion with dependent match typechecks") {
+    val (ast, _) = parseInput("""
+      |fun RecResult[T: Type](n: Nat): Type
+      |    match n
+      |        case Zero
+      |            Unit
+      |        case Suc(_)
+      |            T
+      |
+      |fun recTest[T: Type](n: Nat, value: T): RecResult[T](n)
+      |    match n
+      |        case Zero
+      |            ()
+      |        case Suc(k)
+      |            value
+    """.stripMargin)
+    val (_, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
+    assertEquals(errors, List())
+  }
+
 
   // test("type checker can work with simple data types") {
   //   val (ast, _) = parseInput("""

@@ -81,7 +81,7 @@ object TypedAst:
 
     // placeholder when typing is unknown
     case UnknownType()(val source: SourceRange)
-    case Match(scrutinee: Expr, cases: List[MatchCase])(val source: SourceRange)
+    case Match(scrutinee: Expr, motive: Expr, cases: List[MatchCase])(val source: SourceRange)
 
     def tpe(env: PreEnv): Expr =
       this match
@@ -108,7 +108,7 @@ object TypedAst:
         case Expr.LetIn(symbol, isConstant, declaredType, value, body) => body.tpe(env)
         case Expr.Meta(index, tpe) => tpe
         case Expr.UnknownType() => Sort()(SourceRange.empty)
-        case Expr.Match(scrutinee, cases) =>
+        case Expr.Match(scrutinee, motive, cases) =>
           cases.headOption.map(_.body.tpe(env)).getOrElse(UnknownType()(SourceRange.empty))
 
 
