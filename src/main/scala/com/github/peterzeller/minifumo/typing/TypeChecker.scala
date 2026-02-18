@@ -508,7 +508,7 @@ object TypeChecker:
         case TypedAst.Expr.LetIn(symbol, isConstant, declaredType, value, body) =>
           val reducedValue = reduceExpr(value, fuel - 1)
           reduceExpr(substitute(body, symbol, reducedValue), fuel - 1)
-        case TypedAst.Expr.Match(scrutinee, cases) =>
+        case TypedAst.Expr.Match(scrutinee, _, cases) =>
           val reducedScrutinee = reduceExpr(scrutinee, fuel - 1)
           reduceMatchExpr(reducedScrutinee, cases, term.source, fuel - 1)
         case TypedAst.Expr.Lambda(param, body, tpe) =>
@@ -550,7 +550,7 @@ object TypeChecker:
   /** Checks whether a body contains a match that scrutinizes the given parameter id. */
   private def hasMatchOnParam(body: TypedAst.Expr, paramId: Int): Boolean =
     body match
-      case TypedAst.Expr.Match(TypedAst.Expr.Var(local: TypedAst.LocalSymbol), _) if local.id == paramId =>
+      case TypedAst.Expr.Match(TypedAst.Expr.Var(local: TypedAst.LocalSymbol), _, _) if local.id == paramId =>
         true
       case TypedAst.Expr.Lambda(_, nestedBody, _) =>
         hasMatchOnParam(nestedBody, paramId)
@@ -582,7 +582,7 @@ object TypeChecker:
       case Some(body) => reduceExpr(body, fuel)
       case None =>
         val reducedCases = cases.map(c => TypedAst.MatchCase(c.pattern, reduceExpr(c.body, fuel))(c.source))
-        TypedAst.Expr.Match(scrutinee, reducedCases)(source)
+        TypedAst.Expr.Match(scrutinee, TypedAst.Expr.UnknownType()(source), reducedCases)(source)
 
   /** Selects and specializes the first matching branch for a reduced scrutinee. */
   private def selectMatchCase(scrutinee: TypedAst.Expr, cases: List[TypedAst.MatchCase])(using ctx: Context): Option[TypedAst.Expr] =
@@ -657,9 +657,9 @@ object TypeChecker:
         TypedAst.Expr.LetIn(symbol, isConstant, instantiate(declaredType), instantiate(value), instantiate(body))(term.source)
       case TypedAst.Expr.Pi(dom, cod, isImplicit) =>
         TypedAst.Expr.Pi(instantiateLocalSymbol(dom), instantiate(cod), isImplicit)(term.source)
-      case TypedAst.Expr.Match(scrutinee, cases) =>
+      case TypedAst.Expr.Match(scrutinee, motive, cases) =>
         val newCases = cases.map(c => TypedAst.MatchCase(c.pattern, instantiate(c.body))(c.source))
-        TypedAst.Expr.Match(instantiate(scrutinee), newCases)(term.source)
+        TypedAst.Expr.Match(instantiate(scrutinee), instantiate(motive), newCases)(term.source)
       case other => other
 
   def instantiateLocalSymbol(s: LocalSymbol)(implicit metas: MetaContext): LocalSymbol =
@@ -747,8 +747,8 @@ object TypeChecker:
         collectUnresolvedMetas(symbol.tpe) ++ collectUnresolvedMetas(declaredType) ++ collectUnresolvedMetas(value) ++ collectUnresolvedMetas(body)
       case TypedAst.Expr.Pi(dom, cod, _) =>
         collectUnresolvedMetas(dom.tpe) ++ collectUnresolvedMetas(cod)
-      case TypedAst.Expr.Match(scrutinee, cases) =>
-        collectUnresolvedMetas(scrutinee) ++ cases.flatMap(c => collectUnresolvedMetas(c.body)).toSet
+      case TypedAst.Expr.Match(scrutinee, motive, cases) =>
+        collectUnresolvedMetas(scrutinee) ++ collectUnresolvedMetas(motive) ++ cases.flatMap(c => collectUnresolvedMetas(c.body)).toSet
       case _ => Set.empty
 
   /** Substitutes a local symbol with a value in a term. */
@@ -765,9 +765,9 @@ object TypeChecker:
         TypedAst.Expr.LetIn(sym, isConstant, declaredType, substitute(valExpr, symbol, value), substitute(body, symbol, value))(term.source)
       case TypedAst.Expr.Pi(dom, cod, isImplicit) =>
         TypedAst.Expr.Pi(substituteInLocalSymbol(dom, symbol, value), substitute(cod, symbol, value), isImplicit)(term.source)
-      case TypedAst.Expr.Match(scrutinee, cases) =>
+      case TypedAst.Expr.Match(scrutinee, motive, cases) =>
         val newCases = cases.map(c => TypedAst.MatchCase(c.pattern, substitute(c.body, symbol, value))(c.source))
-        TypedAst.Expr.Match(substitute(scrutinee, symbol, value), newCases)(term.source)
+        TypedAst.Expr.Match(substitute(scrutinee, symbol, value), substitute(motive, symbol, value), newCases)(term.source)
       case TypedAst.Expr.Lit(_) | TypedAst.Expr.Var(_) | TypedAst.Expr.Sort() | TypedAst.Expr.Meta(_, _) | TypedAst.Expr.UnknownType() =>
         term
 
@@ -827,7 +827,7 @@ object TypeChecker:
       case TypedAst.Expr.AppImplicit(callee, arg, _) => s"${prettyExpr(callee)}[${prettyExpr(arg)}]"
       case TypedAst.Expr.Lambda(param, _, _) => s"(\\${param.name} => ...)"
       case TypedAst.Expr.LetIn(symbol, _, _, _, _) => s"(let ${symbol.name} = ...)"
-      case TypedAst.Expr.Match(_, _) => "match"
+      case TypedAst.Expr.Match(_, _, _) => "match"
       case m@TypedAst.Expr.Meta(index, tpe) => s"?${m.name}_$index : ${prettyExpr(tpe)}"
 
   /** Determines the type of a literal value. */
@@ -954,7 +954,7 @@ object TypeChecker:
       case TypedAst.Expr.Pi(dom, cod, _) => Set(dom.id) ++ collectParamIds(dom.tpe) ++ collectParamIds(cod)
       case TypedAst.Expr.Lambda(_, body, tpe) => collectParamIds(body) ++ collectParamIds(tpe)
       case TypedAst.Expr.LetIn(_, _, declaredType, value, body) => collectParamIds(declaredType) ++ collectParamIds(value) ++ collectParamIds(body)
-      case TypedAst.Expr.Match(scrutinee, cases) => collectParamIds(scrutinee) ++ cases.flatMap(c => collectParamIds(c.body)).toSet
+      case TypedAst.Expr.Match(scrutinee, motive, cases) => collectParamIds(scrutinee) ++ collectParamIds(motive) ++ cases.flatMap(c => collectParamIds(c.body)).toSet
       case _ => Set.empty
 
   // Derives substitutions for constructor type parameters by comparing template and expected result types.
@@ -994,9 +994,9 @@ object TypeChecker:
         TypedAst.Expr.Lambda(param, substituteTypeParams(body, subst), substituteTypeParams(tpe, subst))(expr.source)
       case TypedAst.Expr.LetIn(symbol, isConstant, declaredType, value, body) =>
         TypedAst.Expr.LetIn(symbol, isConstant, substituteTypeParams(declaredType, subst), substituteTypeParams(value, subst), substituteTypeParams(body, subst))(expr.source)
-      case TypedAst.Expr.Match(scrutinee, cases) =>
+      case TypedAst.Expr.Match(scrutinee, motive, cases) =>
         val rewrittenCases = cases.map(c => TypedAst.MatchCase(c.pattern, substituteTypeParams(c.body, subst))(c.source))
-        TypedAst.Expr.Match(substituteTypeParams(scrutinee, subst), rewrittenCases)(expr.source)
+        TypedAst.Expr.Match(substituteTypeParams(scrutinee, subst), substituteTypeParams(motive, subst), rewrittenCases)(expr.source)
       case _ => expr
 
   def substituteTypeParamsInLocalSymbol(s: LocalSymbol, subst: Map[Int, TypedAst.Expr]): LocalSymbol =

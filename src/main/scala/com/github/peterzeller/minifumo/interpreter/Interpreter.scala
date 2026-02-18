@@ -181,7 +181,7 @@ object Interpreter:
       case TypedAst.Expr.LetIn(symbol, _, _, value, body) =>
         val valueVal = evalExpr(value, locals, globals)
         evalExpr(body, locals + (symbol -> valueVal), globals)
-      case TypedAst.Expr.Match(scrutinee, cases) =>
+      case TypedAst.Expr.Match(scrutinee, _, cases) =>
         val scrutineeVal = evalExpr(scrutinee, locals, globals)
         evalMatch(scrutineeVal, cases, locals, globals)
       case TypedAst.Expr.Meta(_, _) => Value.UndefinedVal
@@ -211,7 +211,7 @@ object Interpreter:
       case TypedAst.Expr.LetIn(symbol, isConstant, declaredType, value, body) => "let " + symbol.name + ": " +  prettyPrint(symbol.tpe) + " = " + prettyPrint(value) + " in " + prettyPrint(body)
       case TypedAst.Expr.Meta(index, tpe) => s"META_$index"
       case TypedAst.Expr.UnknownType() => "???"
-      case TypedAst.Expr.Match(scrutinee, cases) => "match ..."
+      case TypedAst.Expr.Match(scrutinee, _, cases) => "match ..."
     }
 
   /** Applies a function value to an argument value. */

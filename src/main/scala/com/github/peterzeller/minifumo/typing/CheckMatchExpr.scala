@@ -3,44 +3,62 @@ package com.github.peterzeller.minifumo.typing
 import com.github.peterzeller.minifumo.ast
 import com.github.peterzeller.minifumo.typing.TypeChecker.*
 
-import scala.collection.mutable.ListBuffer
-
 /** Type-checking logic for match expressions. */
 object CheckMatchExpr:
-  /** Infers the result type of a match expression. */
+  /** Infers the result type of a match expression by delegating to check-mode with a meta expected type. */
   def infer(expr: ast.Expr.Match)(using ctx: TypeContext, metas: MetaContext, ids: IdSupply): (TypedAst.Expr, TypedAst.Expr, List[TypeError]) =
-    val ast.Expr.Match(scrutinee, cases) = expr
-    val (scrutineeExpr, scrutineeType, errs) = TypeChecker.infer(scrutinee)
-    val typedCases = cases.map { case ast.MatchCase(pattern, body) =>
-      val patternResult = checkPattern(pattern, scrutineeType, ctx, ids)
-      val caseCtx = applyTypeRefinements(ctx.copy(locals = ctx.locals ++ patternResult.bindings), patternResult.refinements)
-      val (typedBody, bodyType, bodyErrs) = TypeChecker.infer(body)(using caseCtx, metas, ids)
-      (patternResult.typedPattern, typedBody, bodyType, patternResult.errors ++ bodyErrs)
-    }
-    val errors = typedCases.flatMap(_._4)
-    val typedCasesExpr = typedCases.map { case (pat, bodyExpr, _, _) =>
-      TypedAst.MatchCase(pat, bodyExpr)(bodyExpr.source)
-    }
-    val firstType = typedCases.head._3
-    val errs3 = ListBuffer[TypeError]()
-    for (_, bodyExpr, caseType, _) <- typedCases.tail do
-      if !isDefEq(firstType, caseType, bodyExpr.source) then
-        errs3.addOne(TypeError(s"Case should have type ${prettyExpr(firstType)}, but got ${prettyExpr(caseType)}", bodyExpr.source))
-    (TypedAst.Expr.Match(scrutineeExpr, typedCasesExpr)(expr.source), firstType, errs ++ errors ++ errs3.toList)
+    val unknownType = freshMeta("matchResult", TypedAst.Expr.Sort()(expr.source), expr.source)
+    val (typedExpr, errs) = check(expr, unknownType)
+    (typedExpr, instantiate(unknownType), errs)
 
-  /** Checks a match expression against an expected type. */
+  /** Checks a match expression against an expected type using dependent branch refinement. */
   def check(expr: ast.Expr.Match, expectedType: TypedAst.Expr)(using ctx: TypeContext, metas: MetaContext, ids: IdSupply): (TypedAst.Expr, List[TypeError]) =
     val ast.Expr.Match(scrutinee, cases) = expr
-    val (scrutineeExpr, scrutineeType, errs) = TypeChecker.infer(scrutinee)
+    val (scrutineeExpr, scrutineeType, scrutineeErrs) = TypeChecker.infer(scrutinee)
+    val motiveParam = TypedAst.LocalSymbol("x_scrut", scrutineeType, ids.freshLocalId())
+    val motiveBody = replaceExpr(expectedType, scrutineeExpr, TypedAst.Expr.Var(motiveParam)(expr.source))
+    val motive = TypedAst.Expr.Lambda(motiveParam, motiveBody, TypedAst.Expr.UnknownType()(expr.source))(expr.source)
     val typedCases = cases.map { case ast.MatchCase(pattern, body) =>
       val patternResult = checkPattern(pattern, scrutineeType, ctx, ids)
       val caseCtx = applyTypeRefinements(ctx.copy(locals = ctx.locals ++ patternResult.bindings), patternResult.refinements)
-      val caseExpectedType = substituteTypeParams(expectedType, patternResult.refinements)
-      val (typedBody, bodyErrs) = TypeChecker.check(body, caseExpectedType)(using caseCtx, metas, ids)
-      (patternResult.typedPattern, typedBody, patternResult.errors ++ bodyErrs)
+      val patternTerm = patternToExpr(patternResult.typedPattern, scrutineeExpr.source)
+      val branchExpected0 = TypedAst.Expr.App(motive, patternTerm, TypedAst.Expr.UnknownType()(body.source))(body.source)
+      val branchExpectedType = whnf(substituteTypeParams(branchExpected0, patternResult.refinements))
+      val (typedBody, bodyErrs) = TypeChecker.check(body, branchExpectedType)(using caseCtx, metas, ids)
+      (TypedAst.MatchCase(patternResult.typedPattern, typedBody)(body.source), patternResult.errors ++ bodyErrs)
     }
-    val errors = typedCases.flatMap(_._3)
-    val typedCasesExpr = typedCases.map { case (pat, bodyExpr, _) =>
-      TypedAst.MatchCase(pat, bodyExpr)(bodyExpr.source)
-    }
-    (TypedAst.Expr.Match(scrutineeExpr, typedCasesExpr)(expr.source), errs ++ errors)
+    val typedMatch = TypedAst.Expr.Match(scrutineeExpr, motive, typedCases.map(_._1))(expr.source)
+    val errors = typedCases.flatMap(_._2)
+    (typedMatch, scrutineeErrs ++ errors)
+
+  /** Converts a typed pattern into a branch refinement term. */
+  private def patternToExpr(pattern: TypedAst.Pattern, source: ast.SourceRange): TypedAst.Expr =
+    pattern match
+      case TypedAst.Pattern.Wildcard() => TypedAst.Expr.UnknownType()(source)
+      case TypedAst.Pattern.Lit(value) => TypedAst.Expr.Lit(value)(source)
+      case TypedAst.Pattern.Binder(symbol) => TypedAst.Expr.Var(symbol)(source)
+      case TypedAst.Pattern.Ctor(symbol, args) =>
+        args.foldLeft[TypedAst.Expr](TypedAst.Expr.Var(symbol)(source)) { (callee, argPattern) =>
+          TypedAst.Expr.App(callee, patternToExpr(argPattern, source), TypedAst.Expr.UnknownType()(source))(source)
+        }
+
+  /** Replaces exact occurrences of a target expression with a replacement expression. */
+  private def replaceExpr(term: TypedAst.Expr, target: TypedAst.Expr, replacement: TypedAst.Expr): TypedAst.Expr =
+    if term == target then
+      replacement
+    else
+      term match
+        case TypedAst.Expr.App(callee, arg, tpe) =>
+          TypedAst.Expr.App(replaceExpr(callee, target, replacement), replaceExpr(arg, target, replacement), replaceExpr(tpe, target, replacement))(term.source)
+        case TypedAst.Expr.AppImplicit(callee, arg, tpe) =>
+          TypedAst.Expr.AppImplicit(replaceExpr(callee, target, replacement), replaceExpr(arg, target, replacement), replaceExpr(tpe, target, replacement))(term.source)
+        case TypedAst.Expr.Lambda(param, body, tpe) =>
+          TypedAst.Expr.Lambda(param, replaceExpr(body, target, replacement), replaceExpr(tpe, target, replacement))(term.source)
+        case TypedAst.Expr.LetIn(symbol, isConstant, declaredType, value, body) =>
+          TypedAst.Expr.LetIn(symbol, isConstant, replaceExpr(declaredType, target, replacement), replaceExpr(value, target, replacement), replaceExpr(body, target, replacement))(term.source)
+        case TypedAst.Expr.Pi(dom, cod, isImplicit) =>
+          TypedAst.Expr.Pi(dom, replaceExpr(cod, target, replacement), isImplicit)(term.source)
+        case TypedAst.Expr.Match(scrutinee, motive, cases) =>
+          val rewrittenCases = cases.map(c => TypedAst.MatchCase(c.pattern, replaceExpr(c.body, target, replacement))(c.source))
+          TypedAst.Expr.Match(replaceExpr(scrutinee, target, replacement), replaceExpr(motive, target, replacement), rewrittenCases)(term.source)
+        case _ => term

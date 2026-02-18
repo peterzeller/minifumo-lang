@@ -111,6 +111,7 @@ class TypeCheckerSuite extends munit.FunSuite:
     val sucResult = TypedAst.Expr.App(TypedAst.Expr.Var(sucSymbol)(source), recursiveCall, unknown)(source)
     val natAddBody = TypedAst.Expr.Match(
       TypedAst.Expr.Var(paramN)(source),
+      TypedAst.Expr.UnknownType()(source),
       List(
         TypedAst.MatchCase(TypedAst.Pattern.Ctor(zeroSymbol, Nil)(source), TypedAst.Expr.Var(paramM)(source))(source),
         TypedAst.MatchCase(TypedAst.Pattern.Ctor(sucSymbol, List(TypedAst.Pattern.Binder(caseK)(source)))(source), sucResult)(source)
