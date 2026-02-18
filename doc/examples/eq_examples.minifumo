@@ -1,27 +1,6 @@
-// Adds one to an Int.
-fun addOne(n: Int): Int
-    opPlus(n, 1)
-
-// Computes f(x, 3, 4) = x + 3 + 4.
-fun f3and4(x: Int): Int
-    opPlus(opPlus(x, 3), 4)
-
 fun main(): Unit
     let eq44: Eq[Int, 4, 4] = refl[Int][4]
-    let eqFn: Eq[Int -> Int, addOne, addOne] = refl[Int -> Int][addOne]
-
-    // congrArg: rewrites function application arguments.
-    let _proof1 = congrArg[Int][Int][4][4](addOne, eq44)
-
-    // congr: rewrites using equal functions and equal arguments.
-    let _proof2 = congr[Int][Int][addOne][addOne][4][4](eqFn, eq44)
-
-    // subst: Lean-style transport along equality with a dependent motive.
-    let _proof3: Int = subst[Int][4][4][(n) => Int](eq44, 4)
-
-    // subst-style value rewriting example: Eq(x, 4) transports f(x,3,4) to f(4,3,4).
-    let _rewrittenValue: Int = subst[Int][4][4][(n) => Int](eq44, f3and4(4))
-
+    let _proof = example(4, eq44)
     printlnString("Eq examples compiled")
 
 // Output: Eq examples compiled
