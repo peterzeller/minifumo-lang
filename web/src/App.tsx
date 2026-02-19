@@ -8,6 +8,7 @@ interface CompileError {
   message: string
   line: number
   column: number
+  endColumn?: number
 }
 
 interface CompileResult {
@@ -20,6 +21,24 @@ interface CompileResult {
 
 const starterProgram = `fun main(): Int
   let x = 21 in x + x`
+
+// Renders a compiler error with source excerpt and caret underline for the output box.
+function formatCompileError(source: string, error: CompileError): string {
+  const sourceLines = source.split('\n')
+  const lineIndex = Math.max(0, error.line - 1)
+  const sourceLine = sourceLines[lineIndex]
+  const location = `Line ${error.line}, Col ${error.column}`
+
+  if (!sourceLine) {
+    return `${location}: ${error.message}`
+  }
+
+  const startColumn = Math.max(1, error.column)
+  const endColumn = Math.max(startColumn + 1, error.endColumn ?? startColumn + 1)
+  const underline = `${' '.repeat(startColumn - 1)}${'^'.repeat(endColumn - startColumn)}`
+
+  return `${location}\n${sourceLine}\n${underline}\n${error.message}`
+}
 
 // Renders the mobile-friendly Minifumo browser playground UI.
 export function App() {
@@ -62,17 +81,20 @@ export function App() {
     }
 
     const source = editorViewRef.current.state.doc.toString()
-    const result = MinifumoCompiler.compileAndRun(source, functionName || 'main', shouldRun) as CompileResult
+    try {
+      const result = MinifumoCompiler.compileAndRun(source, functionName || 'main', shouldRun) as CompileResult
 
-    if (result.success) {
-      setOutput(result.output)
-      return
+      if (result.success) {
+        setOutput(result.output)
+        return
+      }
+
+      const formattedErrors = result.errors.map((error) => formatCompileError(source, error)).join('\n\n')
+      setOutput(formattedErrors)
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      setOutput(`Unexpected frontend error while compiling:\n${errorMessage}`)
     }
-
-    const formattedErrors = result.errors
-      .map((error) => `Line ${error.line}, Col ${error.column}: ${error.message}`)
-      .join('\n')
-    setOutput(formattedErrors)
   }
 
   return (
