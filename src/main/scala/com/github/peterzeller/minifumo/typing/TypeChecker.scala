@@ -10,7 +10,7 @@ import com.github.peterzeller.minifumo.typing.TypedAst.Expr.{Sort, UnknownType}
 
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
-import java.nio.file.Path
+import java.nio.file.{Path, Paths}
 
 object TypeChecker:
   private val throwOnError = false
@@ -28,7 +28,7 @@ object TypeChecker:
       var (symbolMap, importErrors) = GlobalSymbols.buildGlobalSymbols(path, program, globalNames, false, idSupply)
       if importStandard then
         // import the standard library symbols into the program file scope
-        val (standardLibSymbolMap, standardLibImportErrors) = GlobalSymbols.buildGlobalSymbols(Path.of("standard.minifumo"), Standard.standardProgram, globalNames, false, idSupply)
+        val (standardLibSymbolMap, standardLibImportErrors) = GlobalSymbols.buildGlobalSymbols(Paths.get("standard.minifumo"), Standard.standardProgram, globalNames, false, idSupply)
         symbolMap ++= standardLibSymbolMap
         importErrors ++= standardLibImportErrors
       errors.addAll(importErrors)
@@ -1083,7 +1083,7 @@ object TypeChecker:
       override def globalSymbols(path: String): Map[String, GlobalSymbol] = Map.empty
 
     /** Provides a no-op definition cache for contexts without unfolding support. */
-    val empty: DefinitionCache = DefinitionCache(Path.of(""), EmptySymbolCache)
+    val empty: DefinitionCache = DefinitionCache(Paths.get(""), EmptySymbolCache)
 
   /** Converts a typed function declaration into a lambda term for unfolding. */
   private def buildFunctionLambda(funDecl: TypedAst.TopLevel.FunDecl): TypedAst.Expr =

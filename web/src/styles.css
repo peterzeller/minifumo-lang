@@ -1,0 +1,85 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+}
+
+body {
+  margin: 0;
+  background: #111827;
+  color: #f9fafb;
+}
+
+.page {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.subtitle {
+  color: #cbd5e1;
+}
+
+.controls {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 0.75rem;
+  align-items: end;
+  margin-bottom: 1rem;
+}
+
+.controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.controls input[type='text'],
+.controls input:not([type='checkbox']) {
+  min-height: 2.25rem;
+  padding: 0.25rem 0.5rem;
+}
+
+.checkbox {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 0.5rem !important;
+}
+
+button {
+  min-height: 2.5rem;
+  border: none;
+  border-radius: 0.5rem;
+  font-weight: 600;
+  padding: 0 1rem;
+  background: #2563eb;
+  color: white;
+}
+
+.editorPanel {
+  border: 1px solid #334155;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  min-height: 50vh;
+}
+
+.editor {
+  min-height: 50vh;
+}
+
+.output {
+  width: 100%;
+  min-height: 10rem;
+  margin-top: 0.5rem;
+  background: #020617;
+  color: #e2e8f0;
+  border: 1px solid #334155;
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  box-sizing: border-box;
+}
+
+@media (max-width: 700px) {
+  .controls {
+    grid-template-columns: 1fr;
+  }
+}

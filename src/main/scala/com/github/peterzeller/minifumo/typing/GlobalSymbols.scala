@@ -7,7 +7,7 @@ import com.github.peterzeller.minifumo.typing.TypeChecker.{TypeError, checkProgr
 import com.github.peterzeller.minifumo.typing.TypedAst.Expr.UnknownType
 import com.github.peterzeller.minifumo.typing.TypedAst.{ErrorSymbol, Expr, GlobalNameSymbol, GlobalSymbolSymbol, LocalSymbol}
 
-import java.nio.file.Path
+import java.nio.file.{Path, Paths}
 import scala.collection.mutable.ListBuffer
 import com.github.peterzeller.minifumo.builtins.Standard
 import com.github.peterzeller.minifumo.common.MinifumoErrorWithPath
@@ -72,7 +72,7 @@ object GlobalSymbols:
   def buildGlobalSymbols(file: Path, prog: ast.ProgramFile, symbolCache: NameCache&SymbolCache, onlyExported: Boolean, ids: TypeChecker.IdSupply): (Map[String, GlobalSymbol], List[TypeError]) =
     val (imports, errors1) = resolveImports(prog, symbolCache)
     val ownNames = buildGlobalNames(file, prog, false)
-    val standardLibraryNames = buildGlobalNames(Path.of("standard.minifumo"), Standard.standardProgram, true)
+    val standardLibraryNames = buildGlobalNames(Paths.get("standard.minifumo"), Standard.standardProgram, true)
     val preEnv = PreEnv(globalNames = standardLibraryNames ++ imports ++ ownNames)
     val errors = ListBuffer[TypeError](errors1*)
     var res = Map[String, GlobalSymbol]()
@@ -285,7 +285,7 @@ class ProjectSymbolCache(projectRoot: Path, val ids: TypeChecker.IdSupply) exten
 
   def toPath(importPath: String): Path =
     if importPath.endsWith("standard.minifumo") then
-      return Path.of("standard.minifumo")
+      return Paths.get("standard.minifumo")
     projectRoot.resolve(importPath)
 
   def fromPath(p: Path): String =

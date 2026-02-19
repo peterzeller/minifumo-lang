@@ -68,6 +68,15 @@ object Interpreter:
 
 
 
+
+  /** Evaluates a function from one standalone program without external project symbols. */
+  def evalProg(prog: TypedAst.Program, funcName: String): Value =
+    val f = prog.items.collectFirst { case f@FunDecl(s, _) if s.symbol.name == funcName => f }.getOrElse(throw new RuntimeException(s"Function $funcName not found"))
+    val locals = Map[TermSymbol, Value]()
+    val globals = mutable.Map[Symbol, Value]()
+    buildGlobalTableForProg(globals, prog)
+    evalExpr(f.body, locals, globals)
+
   /** Evaluates a function from the program by name. */
   def evalProg(prog: TypedAst.Program, symbols: ProjectSymbolCache, funcName: String): Value =
     val f = prog.items.collectFirst { case f@FunDecl(s, _) if s.symbol.name == funcName => f }.getOrElse(throw new RuntimeException(s"Function $funcName not found"))
