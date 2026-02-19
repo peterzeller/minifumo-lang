@@ -4,10 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "compile:compiler": "cd .. && sbt compilerJs/compile",
+    "compile:compiler:dev": "cd .. && sbt compilerJs/fastLinkJS",
+    "compile:compiler:prod": "cd .. && sbt compilerJs/fullLinkJS",
+    "compile:compiler": "npm run compile:compiler:prod",
     "sync:compiler": "node ./scripts/sync-compiler.mjs",
-    "predev": "npm run compile:compiler && npm run sync:compiler",
-    "prebuild": "npm run compile:compiler && npm run sync:compiler",
+    "predev": "npm run compile:compiler:dev && npm run sync:compiler",
+    "prebuild": "npm run compile:compiler:prod && npm run sync:compiler",
     "dev": "vite --host 0.0.0.0 --port 4173",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 0.0.0.0 --port 4173"

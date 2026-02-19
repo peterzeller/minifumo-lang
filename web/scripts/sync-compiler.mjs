@@ -2,7 +2,16 @@ import { access, cp, mkdir, readdir } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { join } from 'node:path'
 
-// Finds the Scala.js fastLinkJS artifact and copies it into the web source tree when available.
+// Returns the best available Scala.js linker output directory, preferring fullopt over fastopt.
+function findBestLinkOutput(entries) {
+  const fullOptDir = entries.find((entry) => entry.isDirectory() && entry.name.endsWith('-opt'))
+  if (fullOptDir) {
+    return fullOptDir
+  }
+  return entries.find((entry) => entry.isDirectory() && entry.name.endsWith('-fastopt'))
+}
+
+// Finds the Scala.js linker artifact and copies it into the web source tree when available.
 async function syncCompilerArtifact() {
   const scalaVersion = 'scala-3.7.4'
   const targetRoot = join('..', 'compiler-js', 'target', scalaVersion)
@@ -17,13 +26,13 @@ async function syncCompilerArtifact() {
     return
   }
 
-  const fastOptDir = entries.find((entry) => entry.isDirectory() && entry.name.endsWith('-fastopt'))
-  if (!fastOptDir) {
-    console.warn(`No fastopt folder found in ${targetRoot}; keeping existing ${destinationFile}.`)
+  const outputDir = findBestLinkOutput(entries)
+  if (!outputDir) {
+    console.warn(`No Scala.js fastopt/fullopt folder found in ${targetRoot}; keeping existing ${destinationFile}.`)
     return
   }
 
-  const sourceFile = join(targetRoot, fastOptDir.name, 'main.js')
+  const sourceFile = join(targetRoot, outputDir.name, 'main.js')
   try {
     await access(sourceFile, constants.R_OK)
   } catch {
