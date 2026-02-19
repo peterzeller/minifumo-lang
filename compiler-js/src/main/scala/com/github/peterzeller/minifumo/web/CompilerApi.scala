@@ -4,55 +4,67 @@ import com.github.peterzeller.minifumo.interpreter.Interpreter
 import com.github.peterzeller.minifumo.parser.parseInput
 import com.github.peterzeller.minifumo.typing.{GlobalName, GlobalSymbol, NameCache, SymbolCache, TypeChecker}
 
-import java.nio.file.{Path, Paths}
+import java.nio.file.Path
 import scala.scalajs.js
 import scala.scalajs.js.JSConverters.*
 import scala.scalajs.js.annotation.{JSExport, JSExportTopLevel}
+import scala.util.control.NonFatal
 
 /** Exposes compiler and interpreter helpers for the browser frontend. */
 @JSExportTopLevel("MinifumoCompiler")
 object CompilerApi:
 
-  private val inMemoryFile = Paths.get("web-input.minifumo")
+  private val inMemoryFile: Path = null
 
   /** Compiles source code and optionally runs a named function from the resulting program. */
   @JSExport
   def compileAndRun(source: String, functionName: String = "main", runFunction: Boolean = true): js.Object =
-    val (program, syntaxErrors) = parseInput(source)
-    if syntaxErrors.nonEmpty then
-      compileResult(
-        success = false,
-        output = "",
-        errors = syntaxErrors.map(errorFromSyntax).toJSArray,
-        typed = false,
-        executed = false
-      )
-    else
-      val ids = TypeChecker.IdSupply()
-      val (typedProgram, typeErrors) = TypeChecker.checkProgram(inMemoryFile, program, EmptyCache, importStandard = true, ids)
-      if typeErrors.nonEmpty then
+    try
+      val (program, syntaxErrors) = parseInput(source)
+      if syntaxErrors.nonEmpty then
         compileResult(
           success = false,
           output = "",
-          errors = typeErrors.map(errorFromType).toJSArray,
+          errors = syntaxErrors.map(errorFromSyntax).toJSArray,
           typed = false,
           executed = false
         )
-      else if runFunction then
-        val value = Interpreter.evalProg(typedProgram, functionName)
-        compileResult(
-          success = true,
-          output = value.toString,
-          errors = js.Array(),
-          typed = true,
-          executed = true
-        )
       else
+        val ids = TypeChecker.IdSupply()
+        val (typedProgram, typeErrors) = TypeChecker.checkProgram(inMemoryFile, program, EmptyCache, importStandard = true, ids)
+        if typeErrors.nonEmpty then
+          compileResult(
+            success = false,
+            output = "",
+            errors = typeErrors.map(errorFromType).toJSArray,
+            typed = false,
+            executed = false
+          )
+        else if runFunction then
+          val value = Interpreter.evalProg(typedProgram, functionName)
+          compileResult(
+            success = true,
+            output = value.toString,
+            errors = js.Array(),
+            typed = true,
+            executed = true
+          )
+        else
+          compileResult(
+            success = true,
+            output = s"Compilation successful. Function '${functionName}' is ready.",
+            errors = js.Array(),
+            typed = true,
+            executed = false
+          )
+    catch
+      // Converts unexpected runtime/compiler exceptions into frontend-visible diagnostics.
+      case NonFatal(error) =>
         compileResult(
-          success = true,
-          output = s"Compilation successful. Function '${functionName}' is ready.",
-          errors = js.Array(),
-          typed = true,
+          success = false,
+          output = "",
+          errors = js.Array(genericError(error)),
+          typed = false,
           executed = false
         )
 
@@ -61,7 +73,8 @@ object CompilerApi:
     js.Dynamic.literal(
       message = error.message,
       line = error.pos.line,
-      column = error.pos.column
+      column = error.pos.column,
+      endColumn = error.pos.column + 1
     )
 
   // Converts type errors into structured data for frontend rendering.
@@ -69,7 +82,17 @@ object CompilerApi:
     js.Dynamic.literal(
       message = error.message,
       line = error.source.start.line,
-      column = error.source.start.column
+      column = error.source.start.column,
+      endColumn = error.source.end.column
+    )
+
+  // Converts generic thrown exceptions into a consistent frontend error object.
+  private def genericError(error: Throwable): js.Object =
+    js.Dynamic.literal(
+      message = Option(error.getMessage).getOrElse(error.toString),
+      line = 1,
+      column = 1,
+      endColumn = 1
     )
 
   // Builds a frontend-friendly compile response payload.

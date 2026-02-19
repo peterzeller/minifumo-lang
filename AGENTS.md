@@ -30,6 +30,7 @@ Builtins are defined in both Scala and Minifumo source files.
 ## Development setup (Codex)
 Always run the full test suite (`sbt test`) before finalizing changes.
 Always run `sbt scalafix` before committing changes.
+Ensure `sbt` is manually added to `PATH` before running build or test commands.
 
 
 ## Local coding rules
