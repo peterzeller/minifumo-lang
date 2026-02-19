@@ -1,6 +1,7 @@
 package com.github.peterzeller.minifumo.typing
 
 import com.github.peterzeller.minifumo.ast
+import com.github.peterzeller.minifumo.typing.TypeChecker.checkProgram
 import com.github.peterzeller.minifumo.parser.parseInput
 
 import java.nio.file.Paths
@@ -94,4 +95,20 @@ class GlobalSymbolsSuite extends munit.FunSuite:
     assert(symbols.contains("SizedNil"))
     assert(symbols.contains("SizedCons"))
     assert(symbols.contains("appendSizedList"))
+  }
+
+  test("user signatures can reference dependent Eq indices from standard library") {
+    val (program, parseErrors) = parseInput("""
+      |export fun eqExampleF(x: Int, y: Int, z: Int): Int
+      |  opPlus(opPlus(x, y), z)
+      |
+      |export fun example(x: Int, eq: Eq[Int, x, 4]): Eq[Int, eqExampleF(x, 3, 4), eqExampleF(4, 3, 4)]
+      |  congrArg[Int, Int, x, 4]((n) => eqExampleF(n, 3, 4), eq)
+    """.stripMargin)
+    assertEquals(parseErrors, List())
+
+    val dummyPath = Paths.get("eq_test.minifumo")
+    val cache = ProjectSymbolCache(Paths.get("."), ids)
+    val (_, errors) = checkProgram(dummyPath, program, cache, importStandard = true, ids)
+    assertEquals(errors, List())
   }

@@ -1,0 +1,14 @@
+// Computes f(x, y, z) = x + y + z for equality examples.
+export fun eqExampleF(x: Int, y: Int, z: Int): Int
+    opPlus(opPlus(x, y), z)
+
+// Rewrites f(x, 3, 4) to f(4, 3, 4) from Eq[Int, x, 4].
+export fun example(x: Int, eq: Eq[Int, x, 4]): Eq[Int, eqExampleF(x, 3, 4), eqExampleF(4, 3, 4)]
+    congrArg[Int, Int, x, 4]((n) => eqExampleF(n, 3, 4), eq)
+
+fun main(): Unit
+    let eq44: Eq[Int, 4, 4] = refl[Int][4]
+    let _proof = example(4, eq44)
+    printlnString("Eq examples compiled")
+
+// Output: Eq examples compiled

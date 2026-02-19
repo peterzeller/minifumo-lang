@@ -36,7 +36,10 @@ export data OpAnd[T: Type] = MakeOpAnd(opAnd: T -> T -> T)
 
 export data OpOr[T: Type] = MakeOpOr(opOr: T -> T -> T)
 
-export data Eq[T: Type] = MakeEq(eq: T -> T -> Bool)
+export data Eq[T: Type, a: T, b: T] =
+   refl: Eq[T, a, a]
+
+export data HasEq[T: Type] = MakeEq(eq: T -> T -> Bool)
 
 export data Show[T: Type] = MakeShow(show: T -> String)
 
@@ -45,6 +48,20 @@ export data Sequence[S: Type, T: Type] = MakeSequence(get: S -> Int -> Option[T]
 export data Map[M: Type, K: Type, V: Type] = MakeMap(put: M -> K -> V -> M, lookup: M -> K -> Option[V])
 
 export data Set[S: Type, T: Type] = MakeSet(contains: S -> T -> Bool, add: S -> T -> S)
+
+// Substitutes equal values into a dependent motive.
+export fun subst[T: Type, x: T, y: T, motive: T -> Type](h: Eq[T, x, y], hx: motive(x)): motive(y)
+    match h
+        case refl
+            hx
+
+// Rewrites function application arguments using equality.
+export fun congrArg[T: Type, U: Type, x: T, y: T](f: T -> U, h: Eq[T, x, y]): Eq[U, f(x), f(y)]
+    subst[T, x, y, (z) => Eq[U, f(x), f(z)]](h, refl[U][f(x)])
+
+// Rewrites function application with equal functions and equal arguments.
+export fun congr[T: Type, U: Type, f: T -> U, g: T -> U, x: T, y: T](hf: Eq[T -> U, f, g], hx: Eq[T, x, y]): Eq[U, f(x), g(y)]
+    subst[T -> U, f, g, (k) => Eq[U, k(x), g(y)]](hf, congrArg[T, U, x, y](f, hx))
 
 // Returns the negation of the Bool value.
 fun opNot(value: Bool): Bool
@@ -422,7 +439,7 @@ fun listSetNat[T: Type](values: List[T], index: Nat, value: T): List[T]
                     Cons(head, listSetNat(tail, rest, value))
 
 // Checks whether a list contains the given value.
-fun listContains[T: Type](values: List[T], value: T, eq: Eq[T]): Bool
+fun listContains[T: Type](values: List[T], value: T, eq: HasEq[T]): Bool
     match eq
         case MakeEq(eqFn)
             match values
@@ -435,7 +452,7 @@ fun listContains[T: Type](values: List[T], value: T, eq: Eq[T]): Bool
                         listContains(tail, value, eq)
 
 // Returns True when two lists are equal.
-fun listEq[T: Type](left: List[T], right: List[T], eq: Eq[T]): Bool
+fun listEq[T: Type](left: List[T], right: List[T], eq: HasEq[T]): Bool
     match eq
         case MakeEq(eqFn)
             match left
@@ -577,7 +594,7 @@ fun eqBoolFn(a: Bool, b: Bool): Bool
                     True
 
 // Builds the Bool equality dictionary.
-fun eqBool(): Eq[Bool]
+fun eqBool(): HasEq[Bool]
     MakeEq(eqBoolFn)
 
 // Compares two Nat values.
@@ -585,7 +602,7 @@ fun eqNatFn(a: Nat, b: Nat): Bool
     natEq(a, b)
 
 // Builds the Nat equality dictionary.
-fun eqNat(): Eq[Nat]
+fun eqNat(): HasEq[Nat]
     MakeEq(eqNatFn)
 
 // Compares two Int values.
@@ -593,7 +610,7 @@ fun eqIntFn(a: Int, b: Int): Bool
     intEq(a, b)
 
 // Builds the Int equality dictionary.
-fun eqInt(): Eq[Int]
+fun eqInt(): HasEq[Int]
     MakeEq(eqIntFn)
 
 // Compares two Char values.
@@ -601,7 +618,7 @@ fun eqCharFn(a: Char, b: Char): Bool
     charEq(a, b)
 
 // Builds the Char equality dictionary.
-fun eqChar(): Eq[Char]
+fun eqChar(): HasEq[Char]
     MakeEq(eqCharFn)
 
 // Compares two String values.
@@ -613,7 +630,7 @@ fun eqStringFn(a: String, b: String): Bool
                     listEq(left, right, eqChar())
 
 // Builds the String equality dictionary.
-fun eqString(): Eq[String]
+fun eqString(): HasEq[String]
     MakeEq(eqStringFn)
 
 // Converts a Bool value to a String.
@@ -783,22 +800,22 @@ fun opPlusList[T: Type](): OpPlus[List[T]]
 
 // Gets list sequence operations.
 // Gets a list element by index using an equality dictionary.
-fun listSequenceGet[T: Type](eq: Eq[T], seq: List[T], index: Int): Option[T]
+fun listSequenceGet[T: Type](eq: HasEq[T], seq: List[T], index: Int): Option[T]
     listGetNat(seq, intToNat(index))
 
 // Sets a list element by index.
-fun listSequenceSet[T: Type](eq: Eq[T], seq: List[T], index: Int, value: T): List[T]
+fun listSequenceSet[T: Type](eq: HasEq[T], seq: List[T], index: Int, value: T): List[T]
     if intIsNegative(index)
         seq
     else
         listSetNat(seq, intToNat(index), value)
 
 // Checks whether a list contains a value.
-fun listSequenceContains[T: Type](eq: Eq[T], seq: List[T], value: T): Bool
+fun listSequenceContains[T: Type](eq: HasEq[T], seq: List[T], value: T): Bool
     listContains(seq, value, eq)
 
 // Builds the list sequence dictionary.
-fun listSequence[T: Type](eq: Eq[T]): Sequence[List[T], T]
+fun listSequence[T: Type](eq: HasEq[T]): Sequence[List[T], T]
     MakeSequence(
         listSequenceGet(eq),
         listSequenceSet(eq),
@@ -807,25 +824,25 @@ fun listSequence[T: Type](eq: Eq[T]): Sequence[List[T], T]
 
 // Gets list set operations.
 // Checks whether a list-based set contains a value.
-fun listSetContains[T: Type](eq: Eq[T], set: List[T], value: T): Bool
+fun listSetContains[T: Type](eq: HasEq[T], set: List[T], value: T): Bool
     listContains(set, value, eq)
 
 // Adds a value to a list-based set.
-fun listSetAdd[T: Type](eq: Eq[T], set: List[T], value: T): List[T]
+fun listSetAdd[T: Type](eq: HasEq[T], set: List[T], value: T): List[T]
     if listContains(set, value, eq)
         set
     else
         Cons(value, set)
 
 // Builds the list set dictionary.
-fun listSet[T: Type](eq: Eq[T]): Set[List[T], T]
+fun listSet[T: Type](eq: HasEq[T]): Set[List[T], T]
     MakeSet(
         listSetContains(eq),
         listSetAdd(eq)
     )
 
 // Inserts a key/value pair into the tree.
-fun treePut[K: Type, V: Type](tree: Tree[K, V], key: K, value: V, lt: OpLt[K], eq: Eq[K]): Tree[K, V]
+fun treePut[K: Type, V: Type](tree: Tree[K, V], key: K, value: V, lt: OpLt[K], eq: HasEq[K]): Tree[K, V]
     match lt
         case MakeOpLt(ltFn)
             match eq
@@ -843,7 +860,7 @@ fun treePut[K: Type, V: Type](tree: Tree[K, V], key: K, value: V, lt: OpLt[K], e
                                     Node(k, v, left, treePut(right, key, value, lt, eq))
 
 // Looks up a key in the tree.
-fun treeLookup[K: Type, V: Type](tree: Tree[K, V], key: K, lt: OpLt[K], eq: Eq[K]): Option[V]
+fun treeLookup[K: Type, V: Type](tree: Tree[K, V], key: K, lt: OpLt[K], eq: HasEq[K]): Option[V]
     match lt
         case MakeOpLt(ltFn)
             match eq
@@ -862,15 +879,15 @@ fun treeLookup[K: Type, V: Type](tree: Tree[K, V], key: K, lt: OpLt[K], eq: Eq[K
 
 // Builds a tree map instance.
 // Inserts a key/value pair into a tree map.
-fun treeMapPut[K: Type, V: Type](lt: OpLt[K], eq: Eq[K], tree: Tree[K, V], key: K, value: V): Tree[K, V]
+fun treeMapPut[K: Type, V: Type](lt: OpLt[K], eq: HasEq[K], tree: Tree[K, V], key: K, value: V): Tree[K, V]
     treePut(tree, key, value, lt, eq)
 
 // Looks up a value in a tree map.
-fun treeMapLookup[K: Type, V: Type](lt: OpLt[K], eq: Eq[K], tree: Tree[K, V], key: K): Option[V]
+fun treeMapLookup[K: Type, V: Type](lt: OpLt[K], eq: HasEq[K], tree: Tree[K, V], key: K): Option[V]
     treeLookup(tree, key, lt, eq)
 
 // Builds the tree map dictionary.
-fun treeMap[K: Type, V: Type](lt: OpLt[K], eq: Eq[K]): Map[Tree[K, V], K, V]
+fun treeMap[K: Type, V: Type](lt: OpLt[K], eq: HasEq[K]): Map[Tree[K, V], K, V]
     MakeMap(
         treeMapPut(lt, eq),
         treeMapLookup(lt, eq)

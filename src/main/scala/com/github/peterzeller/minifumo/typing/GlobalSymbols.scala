@@ -30,7 +30,7 @@ case class GlobalSymbol(file: Path, name: String, symbolSignature: SymbolSignatu
 
 enum SymbolSignature:
   case Def(tpe: Expr)
-  case Datatype(implicitParams: List[Expr])
+  case Datatype(implicitParams: List[LocalSymbol])
 
 object GlobalSymbols:
   // Collects variable names referenced from a constructor signature expression.
@@ -165,17 +165,17 @@ object GlobalSymbols:
         var nextId = 0
         var localNames = env.localNames
         val errors = ListBuffer[TypeError]()
-        val typeParamTypes = ListBuffer[Expr]()
+        val typeParams = ListBuffer[LocalSymbol]()
         for param <- implicitParams do
           val (paramType, paramErrors) = checkSignatureExpr(param.tpe, env.copy(localNames = localNames))(using ids)
           errors.addAll(paramErrors)
           val symbol = LocalSymbol(param.name, paramType, nextId)
           nextId += 1
           localNames = localNames + (param.name -> symbol)
-          typeParamTypes.addOne(symbol.tpe)
+          typeParams.addOne(symbol)
         val symbols = ListBuffer[(String, SourceRange, GlobalSymbol)]()
         // add the type symbol
-        val symbol = GlobalSymbol(file, name, SymbolSignature.Datatype(typeParamTypes.toList))
+        val symbol = GlobalSymbol(file, name, SymbolSignature.Datatype(typeParams.toList))
         symbols.addOne((name, t.source, symbol))
 
         // build the type expression refering to this data type
