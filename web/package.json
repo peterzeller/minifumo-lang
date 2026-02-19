@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "compile:compiler": "cd .. && ./sbt/bin/sbt compilerJs/compile",
+    "compile:compiler": "cd .. && sbt compilerJs/compile",
     "sync:compiler": "node ./scripts/sync-compiler.mjs",
     "predev": "npm run compile:compiler && npm run sync:compiler",
     "prebuild": "npm run compile:compiler && npm run sync:compiler",
