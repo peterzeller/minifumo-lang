@@ -35,3 +35,10 @@ Always run `sbt scalafix` before committing changes.
 ## Local coding rules
 - Each function should have a brief comment explaining what it does.
 - Avoid hard-coded strings for value kinds; prefer enums or typed representations.
+
+
+## Web frontend map
+- React + TypeScript web playground: `web`
+- Scala.js compiler bridge sources: `compiler-js/src/main/scala/com/github/peterzeller/minifumo/web`
+- Architecture doc for browser integration: `doc/web_frontend_architecture.md`
+- Generated compiler artifact consumed by frontend: `web/src/generated/minifumo-compiler.js`
