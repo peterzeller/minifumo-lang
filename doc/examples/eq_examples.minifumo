@@ -1,6 +1,10 @@
+// Computes f(x, y, z) = x + y + z.
+fun f(x: Int, y: Int, z: Int): Int
+    opPlus(opPlus(x, y), z)
+
 fun main(): Unit
     let eq44: Eq[Int, 4, 4] = refl[Int][4]
-    let _proof = example(4, eq44)
+    let _proof = congrArg[Int, Int, 4, 4]((n) => f(n, 3, 4), eq44)
     printlnString("Eq examples compiled")
 
 // Output: Eq examples compiled

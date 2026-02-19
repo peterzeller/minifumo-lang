@@ -57,19 +57,11 @@ export fun subst[T: Type, x: T, y: T, motive: T -> Type](h: Eq[T, x, y], hx: mot
 
 // Rewrites function application arguments using equality.
 export fun congrArg[T: Type, U: Type, x: T, y: T](f: T -> U, h: Eq[T, x, y]): Eq[U, f(x), f(y)]
-    subst[T][x][y][(z) => Eq[U, f(x), f(z)]](h, refl[U][f(x)])
+    subst[T, x, y, (z) => Eq[U, f(x), f(z)]](h, refl[U][f(x)])
 
 // Rewrites function application with equal functions and equal arguments.
 export fun congr[T: Type, U: Type, f: T -> U, g: T -> U, x: T, y: T](hf: Eq[T -> U, f, g], hx: Eq[T, x, y]): Eq[U, f(x), g(y)]
-    subst[T -> U][f][g][(k) => Eq[U, k(x), g(y)]](hf, congrArg[T][U][x][y](f, hx))
-
-// Computes f(x, y, z) = x + y + z for equality examples.
-export fun eqExampleF(x: Int, y: Int, z: Int): Int
-    opPlus(opPlus(x, y), z)
-
-// Demonstrates rewriting f(x, 3, 4) to f(4, 3, 4) from Eq[Int, x, 4].
-export fun example(x: Int, eq: Eq[Int, x, 4]): Eq[Int, eqExampleF(x, 3, 4), eqExampleF(4, 3, 4)]
-    congrArg[Int][Int][x][4]((n) => eqExampleF(n, 3, 4), eq)
+    subst[T -> U, f, g, (k) => Eq[U, k(x), g(y)]](hf, congrArg[T, U, x, y](f, hx))
 
 // Returns the negation of the Bool value.
 fun opNot(value: Bool): Bool
