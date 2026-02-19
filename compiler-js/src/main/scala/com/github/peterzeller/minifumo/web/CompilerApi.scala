@@ -4,7 +4,7 @@ import com.github.peterzeller.minifumo.interpreter.Interpreter
 import com.github.peterzeller.minifumo.parser.parseInput
 import com.github.peterzeller.minifumo.typing.{GlobalName, GlobalSymbol, NameCache, SymbolCache, TypeChecker}
 
-import java.nio.file.{Path, Paths}
+import java.nio.file.Path
 import scala.scalajs.js
 import scala.scalajs.js.JSConverters.*
 import scala.scalajs.js.annotation.{JSExport, JSExportTopLevel}
@@ -14,7 +14,7 @@ import scala.util.control.NonFatal
 @JSExportTopLevel("MinifumoCompiler")
 object CompilerApi:
 
-  private val inMemoryFile = Paths.get("web-input.minifumo")
+  private val inMemoryFile: Path = null
 
   /** Compiles source code and optionally runs a named function from the resulting program. */
   @JSExport

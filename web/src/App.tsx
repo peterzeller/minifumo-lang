@@ -40,6 +40,29 @@ function formatCompileError(source: string, error: CompileError): string {
   return `${location}\n${sourceLine}\n${underline}\n${error.message}`
 }
 
+
+// Runs the compiler call while capturing browser console output produced by Scala.js println helpers.
+function runCompilerWithCapturedConsole(source: string, functionName: string, shouldRun: boolean): {
+  result: CompileResult
+  consoleLines: string[]
+} {
+  const consoleLines: string[] = []
+  const originalLog = console.log
+
+  console.log = (...args: unknown[]) => {
+    const renderedLine = args.map((arg) => (typeof arg === 'string' ? arg : String(arg))).join(' ')
+    consoleLines.push(renderedLine)
+    originalLog(...args)
+  }
+
+  try {
+    const result = MinifumoCompiler.compileAndRun(source, functionName || 'main', shouldRun) as CompileResult
+    return { result, consoleLines }
+  } finally {
+    console.log = originalLog
+  }
+}
+
 // Renders the mobile-friendly Minifumo browser playground UI.
 export function App() {
   const editorContainerRef = useRef<HTMLDivElement | null>(null)
@@ -82,15 +105,17 @@ export function App() {
 
     const source = editorViewRef.current.state.doc.toString()
     try {
-      const result = MinifumoCompiler.compileAndRun(source, functionName || 'main', shouldRun) as CompileResult
+      const { result, consoleLines } = runCompilerWithCapturedConsole(source, functionName, shouldRun)
 
       if (result.success) {
-        setOutput(result.output)
+        const outputSections = [...consoleLines, result.output].filter((section) => section.length > 0)
+        setOutput(outputSections.join('\n'))
         return
       }
 
       const formattedErrors = result.errors.map((error) => formatCompileError(source, error)).join('\n\n')
-      setOutput(formattedErrors)
+      const combinedOutput = [...consoleLines, formattedErrors].filter((section) => section.length > 0).join('\n\n')
+      setOutput(combinedOutput)
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
       setOutput(`Unexpected frontend error while compiling:\n${errorMessage}`)

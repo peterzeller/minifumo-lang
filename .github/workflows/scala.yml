@@ -56,6 +56,21 @@ jobs:
       - name: Run tests
         run: sbt test
 
+      - name: Build Scala.js compiler bridge for web tests
+        run: sbt compilerJs/fullLinkJS
+
+      - name: Sync compiler artifact for web tests
+        working-directory: web
+        run: npm run sync:compiler
+
+      - name: Install Playwright browser
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+
+      - name: Run web browser tests
+        working-directory: web
+        run: npm run test:e2e
+
       - name: Build web frontend (TypeScript + Scala.js)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         working-directory: web
