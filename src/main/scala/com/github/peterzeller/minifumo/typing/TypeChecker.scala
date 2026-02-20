@@ -296,6 +296,8 @@ object TypeChecker:
       case ast.Expr.Var(name) =>
         if name == "unit" then
           TypedAst.Expr.UnknownType()(expr.source)
+        else if name == "Type" then
+          TypedAst.Expr.Sort()(expr.source)
         else
           locals.get(name) match
             case Some(symbol) =>
@@ -316,8 +318,8 @@ object TypeChecker:
         TypedAst.Expr.AppImplicit(calleeExpr, argExpr, TypedAst.Expr.UnknownType()(expr.source))(expr.source)
       case ast.Expr.Pi(param, body) =>
         val dom = signatureExpr(param.tpe, globals, locals)
-        val cod = signatureExpr(body, globals, locals)
-        val domSym = LocalSymbol(param.name, dom, ids.freshLocalId()) // TODO create ID
+        val domSym = LocalSymbol(param.name, dom, ids.freshLocalId())
+        val cod = signatureExpr(body, globals, locals + (param.name -> domSym))
         TypedAst.Expr.Pi(domSym, cod, isImplicit = false)(expr.source)
       case ast.Expr.Hole() =>
         TypedAst.Expr.UnknownType()(expr.source)
@@ -461,7 +463,7 @@ object TypeChecker:
                                 (implicit ctx: Context, metas: MetaContext): Option[(EqualityConstraint, TypedAst.Expr, TypedAst.Expr)] =
     val reducedLeft = reduceExpr(constraint.left, fuel)
     val reducedRight = reduceExpr(constraint.right, fuel)
-    if canSolveByUnification(reducedLeft, reducedRight) || prettyExpr(reducedLeft) == prettyExpr(reducedRight) then
+    if canSolveByUnification(reducedLeft, reducedRight) then
       None
     else
       Some((constraint, reducedLeft, reducedRight))
@@ -480,9 +482,11 @@ object TypeChecker:
         case (TypedAst.Expr.AppImplicit(c1, a1, _), TypedAst.Expr.AppImplicit(c2, a2, _)) =>
           canSolveByUnification(c1, c2) && canSolveByUnification(a1, a2)
         case (TypedAst.Expr.Pi(d1, c1, i1), TypedAst.Expr.Pi(d2, c2, i2)) if i1 == i2 =>
-          canSolveByUnification(d1.tpe, d2.tpe) && canSolveByUnification(c1, c2)
+          val alignedCodomain = substitute(c2, d2, TypedAst.Expr.Var(d1)(c2.source))
+          canSolveByUnification(d1.tpe, d2.tpe) && canSolveByUnification(c1, alignedCodomain)
         case (TypedAst.Expr.Lambda(p1, b1, _), TypedAst.Expr.Lambda(p2, b2, _)) =>
-          canSolveByUnification(p1.tpe, p2.tpe) && canSolveByUnification(b1, b2)
+          val alignedBody = substitute(b2, p2, TypedAst.Expr.Var(p1)(b2.source))
+          canSolveByUnification(p1.tpe, p2.tpe) && canSolveByUnification(b1, alignedBody)
         case _ => false
 
   /** Fully reduces a term with a fuel budget to keep normalization bounded. */
