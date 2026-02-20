@@ -31,6 +31,8 @@ Builtins are defined in both Scala and Minifumo source files.
 Always run the full test suite (`sbt test`) before finalizing changes.
 Always run `sbt scalafix` before committing changes.
 Ensure `sbt` is manually added to `PATH` before running build or test commands.
+Use `export PATH=/workspace/minifumo-lang/sbt/bin:$PATH` before running `sbt` commands.
+You can run a single example file with `sbt run run <filename>`.
 
 
 ## Local coding rules
