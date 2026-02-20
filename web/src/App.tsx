@@ -98,12 +98,17 @@ export function App() {
   }, [editorExtensions])
 
   // Compiles the current editor content and optionally executes the configured function.
-  const compileCode = () => {
+  const compileCode = async () => {
     if (!editorViewRef.current) {
       return
     }
 
     const source = editorViewRef.current.state.doc.toString()
+    setOutput('Compiling...')
+
+    // Yields to the browser so the compile status text renders before heavy work starts.
+    await new Promise((resolve) => window.setTimeout(resolve, 0))
+
     try {
       const { result, consoleLines } = runCompilerWithCapturedConsole(source, functionName, shouldRun)
 
