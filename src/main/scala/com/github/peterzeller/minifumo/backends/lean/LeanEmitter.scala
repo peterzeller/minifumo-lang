@@ -31,6 +31,8 @@ object LeanEmitter:
         case TypedAst.TopLevel.FunDecl(sig, _) =>
           typeEnv += sig.symbol.name -> sig.symbol.tpe
 
+    val externalRefs = collectExternalRefs(declarations, typeEnv.toMap)
+
     val depGraph = buildDeclDependencyGraph(declarations)
     val orderedGroups = LeanDependencyPlanner.topologicalSccs(depGraph)
     val declarationByKey = declarations.map((f, d) => declKey(f, d) -> (f, d)).toMap
@@ -47,7 +49,9 @@ object LeanEmitter:
       else
         importLines ++ Vector("", s"namespace ${moduleName}", "", "set_option autoImplicit true", "")
     val footer = Vector("", s"end ${moduleName}")
-    val bodyLines = chunks.flatMap(_.lines).toVector
+    val axiomLines = externalRefs.toList.sortBy(_._1).map: (name, tpe) =>
+      s"axiom ${emitGlobalRef(name, mangle)} : ${emitExpr(tpe, mangle, Map.empty, typeEnv.toMap)}"
+    val bodyLines = (if axiomLines.isEmpty then Vector.empty else axiomLines.toVector :+ "") ++ chunks.flatMap(_.lines).toVector
     val contentLines = header ++ bodyLines ++ footer
 
     val lineMap = mutable.ListBuffer[SourceMapEntry]()
@@ -133,7 +137,7 @@ object LeanEmitter:
           s"(${n} : ${emitExpr(p.tpe, mangle, localScope.toMap, typeEnv)})"
         val returnType = emitExpr(sig.returnType, mangle, localScope.toMap, typeEnv)
         val bodyText = emitExpr(body, mangle, localScope.toMap, typeEnv)
-        val recursion = emitRecursionClause(funName, sig, body, mangle, localScope.toMap)
+        val recursion = emitRecursionClause(sig, body, mangle, localScope.toMap)
         val lines = Vector(
           s"def ${funName} ${(typeParams ++ params).mkString(" ")} : ${returnType} :=",
           s"  ${bodyText}"
@@ -153,26 +157,12 @@ object LeanEmitter:
 
   // Emits a conservative termination clause for recursive functions.
   private def emitRecursionClause(
-      leanFunName: String,
       sig: TypedAst.FunSig,
       body: TypedAst.Expr,
       mangle: LeanNameMangler.Context,
       localScope: Map[Int, String]
     ): Vector[String] =
-    val selfName = sig.symbol.name
-    val isRecursive = collectGlobalNames(body).contains(selfName)
-    if !isRecursive then
-      Vector.empty
-    else
-      sig.params.headOption match
-        case Some(firstParam) =>
-          val paramName = localScope.getOrElse(firstParam.id, mangle.mangle(LeanNameMangler.NameKind.LocalName, firstParam.name))
-          Vector(
-            s"termination_by ${leanFunName} ${paramName} => ${paramName}",
-            "decreasing_by simp_wf"
-          )
-        case None =>
-          Vector("-- recursive function without explicit parameter is currently unsupported")
+    Vector.empty
 
   // Emits one typed expression into Lean syntax.
   private def emitExpr(
@@ -201,7 +191,7 @@ object LeanEmitter:
       case TypedAst.Expr.App(callee, arg, _) =>
         s"(${emitExpr(callee, mangle, localScope, typeEnv)} ${emitExpr(arg, mangle, localScope, typeEnv)})"
       case TypedAst.Expr.AppImplicit(callee, arg, _) =>
-        s"(${emitExpr(callee, mangle, localScope, typeEnv)} ({${emitExpr(arg, mangle, localScope, typeEnv)}}))"
+        s"(${emitExpr(callee, mangle, localScope, typeEnv)} ${emitExpr(arg, mangle, localScope, typeEnv)})"
       case TypedAst.Expr.Pi(dom, cod, _) =>
         val domName = mangle.mangle(LeanNameMangler.NameKind.LocalName, dom.name)
         val scope2 = localScope + (dom.id -> domName)
@@ -245,6 +235,62 @@ object LeanEmitter:
       case "True" => "true"
       case "False" => "false"
       case other => mangle.mangle(LeanNameMangler.NameKind.GlobalName, other)
+
+  // Collects externally referenced globals and their types for axiom generation.
+  private def collectExternalRefs(
+      declarations: List[(String, TypedAst.TopLevel)],
+      localTypes: Map[String, TypedAst.Expr]
+    ): Map[String, TypedAst.Expr] =
+    val refs = mutable.Map[String, TypedAst.Expr]()
+    declarations.foreach: (_, decl) =>
+      def addRefs(expr: TypedAst.Expr): Unit =
+        collectGlobalRefs(expr).foreach: (name, tpe) =>
+          if !localTypes.contains(name) && !isBuiltinGlobal(name) then
+            { refs.getOrElseUpdate(name, tpe); () }
+      decl match
+        case TypedAst.TopLevel.DataDecl(symbol, typeParams, ctors) =>
+          addRefs(symbol.tpe)
+          typeParams.foreach(p => addRefs(p.tpe))
+          ctors.foreach: ctor =>
+            addRefs(ctor.symbol.tpe)
+            ctor.fields.foreach(f => addRefs(f.tpe))
+        case TypedAst.TopLevel.FunDecl(sig, body) =>
+          addRefs(sig.symbol.tpe)
+          sig.typeParams.foreach(p => addRefs(p.tpe))
+          sig.params.foreach(p => addRefs(p.tpe))
+          addRefs(sig.returnType)
+          addRefs(body)
+    refs.toMap
+
+  // Checks whether a global name is provided by Lean directly.
+  private def isBuiltinGlobal(name: String): Boolean =
+    Set("Int", "Bool", "String", "Unit", "Nat", "Type", "True", "False").contains(name)
+
+  // Collects globally referenced names and their types from an expression tree.
+  private def collectGlobalRefs(expr: TypedAst.Expr): Map[String, TypedAst.Expr] =
+    expr match
+      case TypedAst.Expr.Lit(_) => Map.empty
+      case TypedAst.Expr.Var(symbol) =>
+        symbol match
+          case g: GlobalSymbolSymbol => Map(g.name -> g.tpe) ++ collectGlobalRefs(g.tpe)
+          case f: TypedAst.FunctionSymbol => Map(f.name -> f.tpe) ++ collectGlobalRefs(f.tpe)
+          case c: TypedAst.CtorSymbol => Map(c.name -> c.tpe) ++ collectGlobalRefs(c.tpe)
+          case d: TypedAst.DatatypeSymbol => Map(d.name -> d.tpe) ++ collectGlobalRefs(d.tpe)
+          case g: TypedAst.GlobalNameSymbol =>
+            val typeParam = TypedAst.LocalSymbol("A", TypedAst.Expr.Sort()(SourceRange.empty), -1)
+            val kind = TypedAst.Expr.Pi(typeParam, TypedAst.Expr.Sort()(SourceRange.empty), isImplicit = false)(SourceRange.empty)
+            Map(g.name -> kind)
+          case _ => Map.empty
+      case TypedAst.Expr.App(callee, arg, tpe) => collectGlobalRefs(callee) ++ collectGlobalRefs(arg) ++ collectGlobalRefs(tpe)
+      case TypedAst.Expr.AppImplicit(callee, arg, tpe) => collectGlobalRefs(callee) ++ collectGlobalRefs(arg) ++ collectGlobalRefs(tpe)
+      case TypedAst.Expr.Pi(dom, cod, _) => collectGlobalRefs(dom.tpe) ++ collectGlobalRefs(cod)
+      case TypedAst.Expr.Sort() => Map.empty
+      case TypedAst.Expr.Lambda(param, body, tpe) => collectGlobalRefs(param.tpe) ++ collectGlobalRefs(body) ++ collectGlobalRefs(tpe)
+      case TypedAst.Expr.LetIn(_, _, declaredType, value, body) => collectGlobalRefs(declaredType) ++ collectGlobalRefs(value) ++ collectGlobalRefs(body)
+      case TypedAst.Expr.Meta(_, tpe) => collectGlobalRefs(tpe)
+      case TypedAst.Expr.UnknownType() => Map.empty
+      case TypedAst.Expr.Match(scrutinee, motive, cases) =>
+        collectGlobalRefs(scrutinee) ++ collectGlobalRefs(motive) ++ cases.flatMap(c => collectGlobalRefs(c.body)).toMap
 
   // Collects globally referenced names from an expression tree.
   private def collectGlobalNames(expr: TypedAst.Expr): Set[String] =
