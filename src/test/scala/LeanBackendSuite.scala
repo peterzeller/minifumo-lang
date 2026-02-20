@@ -34,14 +34,14 @@ class LeanBackendSuite extends FunSuite:
       root,
       "main.minifumo",
       """
-        |data Nat = Zero | Suc(pred: Nat)
+        |data MyNat = MyZero | MySuc(pred: MyNat)
         |
-        |fun plus(a: Nat, b: Nat): Nat
+        |fun plus(a: MyNat, b: MyNat): MyNat
         |    match a
-        |        case Zero
+        |        case MyZero
         |            b
-        |        case Suc(k)
-        |            Suc(plus(k, b))
+        |        case MySuc(k)
+        |            MySuc(plus(k, b))
       """.stripMargin
     )
     val outputDir = root.resolve("out")
@@ -57,7 +57,7 @@ class LeanBackendSuite extends FunSuite:
       root,
       "lib/math.minifumo",
       """
-        |fun id(x: Int): Int
+        |export fun id(x: Int): Int
         |    x
       """.stripMargin
     )

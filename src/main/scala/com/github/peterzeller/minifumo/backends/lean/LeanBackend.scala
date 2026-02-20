@@ -41,18 +41,35 @@ object LeanBackend:
 
   // Emits Lean files for the reachable project files grouped by SCC of file imports.
   private def emitProject(projectFiles: Set[String], cache: ProjectSymbolCache, outputDir: Path): CompilationResult =
-    val graph = buildFileDependencyGraph(projectFiles, cache)
-    val groups = LeanDependencyPlanner.topologicalSccs(graph)
-    Files.createDirectories(outputDir)
+    val depGraph = buildFileDependencyGraph(projectFiles, cache)
+    val groups = LeanDependencyPlanner.topologicalSccs(depGraph)
+    val groupByFile = groups.zipWithIndex.flatMap((set, index) => set.map(_ -> index)).toMap
 
+    val groupModuleName = groups.zipWithIndex.map: (group, groupIndex) =>
+      val files = group.toList.sorted
+      val moduleName = if files.size == 1 then LeanNameMangler.moduleNameForPath(files.head) else s"CycleGroup${groupIndex + 1}"
+      groupIndex -> moduleName
+    .toMap
+
+    val groupImports = mutable.Map[Int, Set[String]]().withDefaultValue(Set.empty)
+    depGraph.foreach: (dep, dependents) =>
+      val depGroup = groupByFile(dep)
+      dependents.foreach: dependent =>
+        val dependentGroup = groupByFile(dependent)
+        if depGroup != dependentGroup then
+          val current = groupImports(dependentGroup)
+          groupImports.update(dependentGroup, current + groupModuleName(depGroup))
+
+    Files.createDirectories(outputDir)
     val emitted = mutable.ListBuffer[GeneratedLeanFile]()
     var manifest = Map[String, List[String]]()
 
     groups.zipWithIndex.foreach: (group, groupIndex) =>
       val files = group.toList.sorted
-      val moduleName = if files.size == 1 then LeanNameMangler.moduleNameForPath(files.head) else s"CycleGroup${groupIndex + 1}"
+      val moduleName = groupModuleName(groupIndex)
       val outputPath = outputDir.resolve(s"${moduleName}.lean")
-      val generated = LeanEmitter.emitModule(moduleName, files, cache)
+      val imports = groupImports(groupIndex).toList.sorted
+      val generated = LeanEmitter.emitModule(moduleName, imports, files, cache)
       Files.writeString(outputPath, generated.content)
       val generatedFile = generated.copy(path = outputPath)
       emitted += generatedFile
@@ -76,11 +93,14 @@ object LeanBackend:
             queue.enqueue(importPath)
     visited.toSet
 
-  // Builds a file-level dependency graph based on declared import statements.
+  // Builds a file-level dependency graph as edges dependency -> dependent.
   private def buildFileDependencyGraph(projectFiles: Set[String], cache: ProjectSymbolCache): Map[String, Set[String]] =
-    projectFiles.map: file =>
+    val outgoing = mutable.Map[String, Set[String]]().withDefaultValue(Set.empty)
+    projectFiles.foreach(file => outgoing.update(file, Set.empty))
+    projectFiles.foreach: file =>
       val (ast, _) = cache.getAst(file)
       val deps = ast.imports.flatMap(_.from).filter(projectFiles.contains).toSet
-      file -> deps
-    .toMap
+      deps.foreach: dep =>
+        outgoing.update(dep, outgoing(dep) + file)
+    outgoing.toMap
 

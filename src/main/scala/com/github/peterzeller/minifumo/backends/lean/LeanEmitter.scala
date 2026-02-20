@@ -2,9 +2,9 @@ package com.github.peterzeller.minifumo.backends.lean
 
 import com.github.peterzeller.minifumo.ast.{Literal, SourceRange}
 import com.github.peterzeller.minifumo.backends.lean.LeanBackend.{GeneratedLeanFile, SourceMapEntry}
+import com.github.peterzeller.minifumo.typing.ProjectSymbolCache
 import com.github.peterzeller.minifumo.typing.TypedAst
 import com.github.peterzeller.minifumo.typing.TypedAst.{GlobalSymbolSymbol, LocalSymbol}
-import com.github.peterzeller.minifumo.typing.ProjectSymbolCache
 
 import java.nio.file.Path
 import scala.collection.mutable
@@ -14,7 +14,7 @@ object LeanEmitter:
   private final case class DeclChunk(lines: Vector[String], sourceFile: Path, sourceRange: SourceRange)
 
   // Emits one Lean module for a group of Minifumo files.
-  def emitModule(moduleName: String, files: List[String], cache: ProjectSymbolCache): GeneratedLeanFile =
+  def emitModule(moduleName: String, imports: List[String], files: List[String], cache: ProjectSymbolCache): GeneratedLeanFile =
     val mangle = new LeanNameMangler.Context()
     val chunks = mutable.ListBuffer[DeclChunk]()
     val typeEnv = mutable.Map[String, TypedAst.Expr]()
@@ -40,12 +40,12 @@ object LeanEmitter:
         declarationByKey.get(key).foreach: (file, decl) =>
           emitDecl(file, decl, mangle, typeEnv.toMap).foreach(chunks += _)
 
-    val header = Vector(
-      s"namespace ${moduleName}",
-      "",
-      "set_option autoImplicit true",
-      ""
-    )
+    val importLines = imports.map(i => s"import ${i}").toVector
+    val header =
+      if importLines.isEmpty then
+        Vector(s"namespace ${moduleName}", "", "set_option autoImplicit true", "")
+      else
+        importLines ++ Vector("", s"namespace ${moduleName}", "", "set_option autoImplicit true", "")
     val footer = Vector("", s"end ${moduleName}")
     val bodyLines = chunks.flatMap(_.lines).toVector
     val contentLines = header ++ bodyLines ++ footer
@@ -66,22 +66,24 @@ object LeanEmitter:
       case TypedAst.TopLevel.DataDecl(symbol, _, _) => s"${file}::${symbol.name}"
       case TypedAst.TopLevel.FunDecl(sig, _) => s"${file}::${sig.symbol.name}"
 
-  // Builds a dependency graph between top-level declarations in the current output module.
-  private def buildDeclDependencyGraph(
-      declarations: List[(String, TypedAst.TopLevel)]
-    ): Map[String, Set[String]] =
+  // Builds a dependency graph between top-level declarations as dependency -> dependent edges.
+  private def buildDeclDependencyGraph(declarations: List[(String, TypedAst.TopLevel)]): Map[String, Set[String]] =
     val keyByName = declarations.map((file, decl) =>
       decl match
         case TypedAst.TopLevel.DataDecl(symbol, _, _) => symbol.name -> s"${file}::${symbol.name}"
         case TypedAst.TopLevel.FunDecl(sig, _) => sig.symbol.name -> s"${file}::${sig.symbol.name}"
     ).toMap
-    declarations.map: (file, decl) =>
-      val key = declKey(file, decl)
-      val deps = mutable.Set[String]()
+
+    val outgoing = mutable.Map[String, Set[String]]().withDefaultValue(Set.empty)
+    declarations.foreach((file, decl) => outgoing.update(declKey(file, decl), Set.empty))
+
+    declarations.foreach: (file, decl) =>
+      val currentKey = declKey(file, decl)
       def addExprDeps(expr: TypedAst.Expr): Unit =
         collectGlobalNames(expr).foreach: name =>
           keyByName.get(name).foreach: depKey =>
-            if depKey != key then deps += depKey
+            if depKey != currentKey then
+              outgoing.update(depKey, outgoing(depKey) + currentKey)
       decl match
         case TypedAst.TopLevel.DataDecl(symbol, typeParams, ctors) =>
           typeParams.foreach(param => addExprDeps(param.tpe))
@@ -95,8 +97,7 @@ object LeanEmitter:
           sig.params.foreach(param => addExprDeps(param.tpe))
           addExprDeps(sig.returnType)
           addExprDeps(body)
-      key -> deps.toSet
-    .toMap
+    outgoing.toMap
 
   // Emits one data or function declaration to Lean code.
   private def emitDecl(
@@ -132,13 +133,12 @@ object LeanEmitter:
           s"(${n} : ${emitExpr(p.tpe, mangle, localScope.toMap, typeEnv)})"
         val returnType = emitExpr(sig.returnType, mangle, localScope.toMap, typeEnv)
         val bodyText = emitExpr(body, mangle, localScope.toMap, typeEnv)
-        val recursion = emitRecursionClause(sig, body, mangle, localScope.toMap)
+        val recursion = emitRecursionClause(funName, sig, body, mangle, localScope.toMap)
         val lines = Vector(
-          s"def ${funName} ${ (typeParams ++ params).mkString(" ") } : ${returnType} :=",
+          s"def ${funName} ${(typeParams ++ params).mkString(" ")} : ${returnType} :=",
           s"  ${bodyText}"
         ) ++ recursion ++ Vector("")
         Some(DeclChunk(lines, Path.of(file), declSource(decl)))
-
 
   // Extracts the source range from a typed top-level declaration.
   private def declSource(decl: TypedAst.TopLevel): SourceRange =
@@ -153,6 +153,7 @@ object LeanEmitter:
 
   // Emits a conservative termination clause for recursive functions.
   private def emitRecursionClause(
+      leanFunName: String,
       sig: TypedAst.FunSig,
       body: TypedAst.Expr,
       mangle: LeanNameMangler.Context,
@@ -165,10 +166,9 @@ object LeanEmitter:
     else
       sig.params.headOption match
         case Some(firstParam) =>
-          val fnName = mangle.mangle(LeanNameMangler.NameKind.GlobalName, sig.symbol.name)
           val paramName = localScope.getOrElse(firstParam.id, mangle.mangle(LeanNameMangler.NameKind.LocalName, firstParam.name))
           Vector(
-            s"termination_by ${fnName} ${paramName} => ${paramName}",
+            s"termination_by ${leanFunName} ${paramName} => ${paramName}",
             "decreasing_by simp_wf"
           )
         case None =>
@@ -236,7 +236,7 @@ object LeanEmitter:
         localScope.getOrElse(symbol.id, mangle.mangle(LeanNameMangler.NameKind.LocalName, symbol.name))
       case TypedAst.Pattern.Ctor(symbol, args) =>
         val ctorName = emitGlobalRef(symbol.name, mangle)
-        if args.isEmpty then ctorName else s"(${ctorName} ${args.map(a => emitPattern(a, mangle, localScope)).mkString(" ")})"
+        if args.isEmpty then s".${ctorName}" else s"(.${ctorName} ${args.map(a => emitPattern(a, mangle, localScope)).mkString(" ")})"
 
   // Emits a global identifier while preserving Lean built-in names.
   private def emitGlobalRef(name: String, mangle: LeanNameMangler.Context): String =
