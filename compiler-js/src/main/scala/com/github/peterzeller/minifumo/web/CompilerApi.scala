@@ -14,7 +14,7 @@ import scala.util.control.NonFatal
 @JSExportTopLevel("MinifumoCompiler")
 object CompilerApi:
 
-  private val inMemoryFile: Path = null
+  private val inMemoryFile: Path = Path.of("/playground/input.minifumo")
 
   /** Compiles source code and optionally runs a named function from the resulting program. */
   @JSExport
