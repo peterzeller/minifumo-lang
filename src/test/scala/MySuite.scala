@@ -1,6 +1,7 @@
 // For more information on writing tests, see
 import com.github.peterzeller.minifumo.parser.parseInput
 import com.github.peterzeller.minifumo.interpreter.Interpreter
+import com.github.peterzeller.minifumo.builtins.Standard
 import com.github.peterzeller.minifumo.typing.{ProjectSymbolCache, TypeChecker}
 
 import java.nio.file.Path
@@ -116,6 +117,20 @@ class MySuite extends munit.FunSuite {
       |            value
     """.stripMargin)
     val (_, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
+    assertEquals(errors, List())
+  }
+
+  test("standard library compiles without type errors") {
+    // Type-checks the bundled standard library in isolation.
+    val standardPath = Path.of("standard.minifumo")
+    val standardCache = new ProjectSymbolCache(Path.of("."), TypeChecker.IdSupply())
+    val (_, errors) = TypeChecker.checkProgram(
+      standardPath,
+      Standard.standardProgram,
+      standardCache,
+      importStandard = false,
+      standardCache.ids
+    )
     assertEquals(errors, List())
   }
 

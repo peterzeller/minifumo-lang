@@ -386,8 +386,12 @@ object TypeChecker:
       case (TypedAst.Expr.Sort(), TypedAst.Expr.Sort()) => true
       case (TypedAst.Expr.App(c1, a1, _), TypedAst.Expr.App(c2, a2, _)) => syntacticallyEquivalent(c1, c2) && syntacticallyEquivalent(a1, a2)
       case (TypedAst.Expr.AppImplicit(c1, a1, _), TypedAst.Expr.AppImplicit(c2, a2, _)) => syntacticallyEquivalent(c1, c2) && syntacticallyEquivalent(a1, a2)
-      case (TypedAst.Expr.Lambda(p1, b1, _), TypedAst.Expr.Lambda(p2, b2, _)) => syntacticallyEquivalent(p1.tpe, p2.tpe) && syntacticallyEquivalent(b1, b2)
-      case (TypedAst.Expr.Pi(d1, c1, i1), TypedAst.Expr.Pi(d2, c2, i2)) if i1 == i2 => syntacticallyEquivalent(d1.tpe, d2.tpe) && syntacticallyEquivalent(c1, c2)
+      case (TypedAst.Expr.Lambda(p1, b1, _), TypedAst.Expr.Lambda(p2, b2, _)) =>
+        val alignedBody = substitute(b2, p2, TypedAst.Expr.Var(p1)(b2.source))
+        syntacticallyEquivalent(p1.tpe, p2.tpe) && syntacticallyEquivalent(b1, alignedBody)
+      case (TypedAst.Expr.Pi(d1, c1, i1), TypedAst.Expr.Pi(d2, c2, i2)) if i1 == i2 =>
+        val alignedCodomain = substitute(c2, d2, TypedAst.Expr.Var(d1)(c2.source))
+        syntacticallyEquivalent(d1.tpe, d2.tpe) && syntacticallyEquivalent(c1, alignedCodomain)
       case (TypedAst.Expr.Meta(i1, _), TypedAst.Expr.Meta(i2, _)) => i1 == i2
       case _ => false
 
@@ -457,7 +461,7 @@ object TypeChecker:
                                 (implicit ctx: Context, metas: MetaContext): Option[(EqualityConstraint, TypedAst.Expr, TypedAst.Expr)] =
     val reducedLeft = reduceExpr(constraint.left, fuel)
     val reducedRight = reduceExpr(constraint.right, fuel)
-    if canSolveByUnification(reducedLeft, reducedRight) then
+    if canSolveByUnification(reducedLeft, reducedRight) || prettyExpr(reducedLeft) == prettyExpr(reducedRight) then
       None
     else
       Some((constraint, reducedLeft, reducedRight))
