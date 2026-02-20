@@ -147,8 +147,8 @@ object GlobalSymbols:
         (TypedAst.Expr.UnknownType()(expr.source), List(TypeError("Cannot use lambda expressions in function signatures", expr.source)))
       case ast.Expr.Pi(param, body) =>
         val (dom, errors1) = checkSignatureExpr(param.tpe, env)
-        val (cod, errors2) = checkSignatureExpr(body, env)
-        val s = LocalSymbol(param.name, dom, ids.freshLocalId()) // TODO proper index
+        val s = LocalSymbol(param.name, dom, ids.freshLocalId())
+        val (cod, errors2) = checkSignatureExpr(body, env.copy(localNames = env.localNames + (param.name -> s)))
         (TypedAst.Expr.Pi(s, cod, isImplicit = false)(expr.source), errors1 ++ errors2)
       case ast.Expr.LetIn(name, tpe, value, body) =>
         (TypedAst.Expr.UnknownType()(expr.source), List(TypeError("Cannot use let expressions in function signatures", expr.source)))
