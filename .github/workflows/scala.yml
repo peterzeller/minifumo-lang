@@ -53,6 +53,12 @@ jobs:
       - name: Run scalafix checks
         run: sbt "scalafixAll --check"
 
+      - name: Install Lean 4
+        run: |
+          curl https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -sSf | sh -s -- -y
+          echo "$HOME/.elan/bin" >> $GITHUB_PATH
+          $HOME/.elan/bin/lean --version
+
       - name: Run tests
         run: sbt test
 

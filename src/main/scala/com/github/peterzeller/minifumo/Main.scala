@@ -1,6 +1,7 @@
 package com.github.peterzeller.minifumo
 
 import com.github.peterzeller.minifumo.ast.{ProgramFile, SourcePos, SourceRange}
+import com.github.peterzeller.minifumo.backends.lean.LeanBackend
 import com.github.peterzeller.minifumo.builtins.Standard
 import com.github.peterzeller.minifumo.common.{MinifumoError, MinifumoErrorWithPath}
 import com.github.peterzeller.minifumo.interpreter.Interpreter
@@ -36,6 +37,14 @@ object Main:
         if failures.nonEmpty then
           failures.foreach(Console.err.println)
           System.exit(1)
+      case "compileToLean" :: filename :: Nil =>
+        val path = Paths.get(filename)
+        val outputDir =
+          if Files.isDirectory(path) then path.resolve(".minifumo-lean")
+          else Option(path.getParent).getOrElse(Paths.get(".")).resolve(".minifumo-lean")
+        compileToLean(path, outputDir)
+      case "compileToLean" :: filename :: outputDir :: Nil =>
+        compileToLean(Paths.get(filename), Paths.get(outputDir))
       case _ =>
         println(s"Unknown command ${args.mkString(" ")}")
         printUsage()
@@ -46,8 +55,18 @@ object Main:
     Console.err.println(
       """Usage:
         |  minifumo run <filename>
-        |  minifumo check <filename-or-directory>""".stripMargin
+        |  minifumo check <filename-or-directory>
+        |  minifumo compileToLean <filename-or-directory> [output-directory]""".stripMargin
     )
+
+  // Compiles a Minifumo project to Lean and verifies generated files with Lean.
+  private def compileToLean(path: Path, outputDir: Path): Unit =
+    LeanBackend.compileAndCheck(path, outputDir) match
+      case Left(errors) =>
+        Console.err.println(renderTypeErrors(errors).mkString("\n\n"))
+        System.exit(1)
+      case Right(result) =>
+        println(s"Generated ${result.files.length} Lean files in ${outputDir}")
 
   // Runs a program file and returns either error messages or the evaluated value.
   def runFile(path: Path): Either[List[MinifumoErrorWithPath], Interpreter.Value] =
