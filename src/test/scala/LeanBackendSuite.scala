@@ -96,13 +96,8 @@ class LeanBackendSuite extends FunSuite:
   // Lists examples that are currently unsupported by Lean translation.
   private def ignoredLeanExamples: Set[String] =
     Set(
-      "eq_examples.minifumo",
-      "expr_for.minifumo",
-      "expr_match.minifumo",
       "fib.minifumo",
-      "imperative_for_print.minifumo",
       "implicit_type_args.minifumo",
-      "imports/use_imports.minifumo",
       "list_append.minifumo",
       "sized_list.minifumo",
       "sized_list_explicit.minifumo",

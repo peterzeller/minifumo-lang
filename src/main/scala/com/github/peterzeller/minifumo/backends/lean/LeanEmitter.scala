@@ -26,8 +26,11 @@ object LeanEmitter:
 
     declarations.foreach: (_, decl) =>
       decl match
-        case TypedAst.TopLevel.DataDecl(symbol, _, _) =>
+        case TypedAst.TopLevel.DataDecl(symbol, _, ctors) =>
           typeEnv += symbol.name -> symbol.tpe
+          // Registers constructor symbols so they are not emitted as external axioms.
+          ctors.foreach: ctor =>
+            typeEnv += ctor.symbol.name -> ctor.symbol.tpe
         case TypedAst.TopLevel.FunDecl(sig, _) =>
           typeEnv += sig.symbol.name -> sig.symbol.tpe
 
@@ -139,10 +142,19 @@ object LeanEmitter:
         val bodyText = emitExpr(body, mangle, localScope.toMap, typeEnv)
         val recursion = emitRecursionClause(sig, body, mangle, localScope.toMap)
         val lines = Vector(
-          s"def ${funName} ${(typeParams ++ params).mkString(" ")} : ${returnType} :=",
+          s"${emitFunKeyword(sig, body, typeEnv)} ${funName} ${(typeParams ++ params).mkString(" ")} : ${returnType} :=",
           s"  ${bodyText}"
         ) ++ recursion ++ Vector("")
         Some(DeclChunk(lines, Path.of(file), declSource(decl)))
+
+  // Chooses def/noncomputable def depending on whether external axioms are referenced.
+  private def emitFunKeyword(sig: TypedAst.FunSig, body: TypedAst.Expr, typeEnv: Map[String, TypedAst.Expr]): String =
+    val localTypes = typeEnv + (sig.symbol.name -> sig.symbol.tpe)
+    val externalRefs = collectExternalRefs(
+      List("<fun>" -> TypedAst.TopLevel.FunDecl(sig, body)(SourceRange.empty)),
+      localTypes
+    )
+    if externalRefs.nonEmpty then "noncomputable def" else "def"
 
   // Extracts the source range from a typed top-level declaration.
   private def declSource(decl: TypedAst.TopLevel): SourceRange =
@@ -320,4 +332,3 @@ object LeanEmitter:
       .replace("\\", "\\\\")
       .replace("\"", "\\\"")
       .replace("\n", "\\n")
-
