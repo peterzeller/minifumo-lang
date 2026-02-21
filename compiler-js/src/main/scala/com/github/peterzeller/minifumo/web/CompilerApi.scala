@@ -1,5 +1,6 @@
 package com.github.peterzeller.minifumo.web
 
+import com.github.peterzeller.minifumo.builtins.Standard
 import com.github.peterzeller.minifumo.interpreter.Interpreter
 import com.github.peterzeller.minifumo.parser.parseInput
 import com.github.peterzeller.minifumo.typing.{GlobalName, GlobalSymbol, NameCache, SymbolCache, TypeChecker}
@@ -41,7 +42,7 @@ object CompilerApi:
             executed = false
           )
         else if runFunction then
-          val value = Interpreter.evalProg(typedProgram, functionName)
+          val value = Interpreter.evalProg(typedProgram, List(typedStandardProgram), functionName)
           compileResult(
             success = true,
             output = value.toString,
@@ -67,6 +68,15 @@ object CompilerApi:
           typed = false,
           executed = false
         )
+
+  // Type-checks the bundled standard library once for runtime evaluation support.
+  private lazy val typedStandardProgram =
+    val ids = TypeChecker.IdSupply()
+    val (typedStandard, errors) = TypeChecker.checkProgram(Path.of("standard.minifumo"), Standard.standardProgram, EmptyCache, importStandard = false, ids)
+    if errors.nonEmpty then
+      val errorMessage = errors.map(_.message).mkString("\n")
+      throw new IllegalStateException(s"Failed to type-check standard library:\n$errorMessage")
+    typedStandard
 
   // Converts syntax errors into structured data for frontend rendering.
   private def errorFromSyntax(error: com.github.peterzeller.minifumo.parser.SyntaxError): js.Object =
