@@ -51,6 +51,10 @@ object LeanBackend:
       groupIndex -> moduleName
     .toMap
 
+    // Maps each source file to the Lean module generated for its SCC.
+    val moduleNameByFile = groupByFile.map: (file, groupIndex) =>
+      file -> groupModuleName(groupIndex)
+
     val groupImports = mutable.Map[Int, Set[String]]().withDefaultValue(Set.empty)
     depGraph.foreach: (dep, dependents) =>
       val depGroup = groupByFile(dep)
@@ -69,7 +73,7 @@ object LeanBackend:
       val moduleName = groupModuleName(groupIndex)
       val outputPath = outputDir.resolve(s"${moduleName}.lean")
       val imports = groupImports(groupIndex).toList.sorted
-      val generated = LeanEmitter.emitModule(moduleName, imports, files, cache)
+      val generated = LeanEmitter.emitModule(moduleName, imports, files, cache, moduleNameByFile)
       Files.writeString(outputPath, generated.content)
       val generatedFile = generated.copy(path = outputPath)
       emitted += generatedFile
@@ -103,4 +107,3 @@ object LeanBackend:
       deps.foreach: dep =>
         outgoing.update(dep, outgoing(dep) + file)
     outgoing.toMap
-
