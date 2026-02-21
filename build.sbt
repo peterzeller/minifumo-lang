@@ -39,7 +39,11 @@ lazy val compilerJs = project
     Compile / unmanagedSourceDirectories += (coreJvm / Compile / scalaSource).value,
     Compile / unmanagedSources := {
       val coreStandard = (coreJvm / baseDirectory).value.getAbsolutePath + "/src/main/scala/com/github/peterzeller/minifumo/builtins/Standard.scala"
-      (Compile / unmanagedSources).value.filterNot(_.getAbsolutePath == coreStandard)
+      val coreMain = (coreJvm / baseDirectory).value.getAbsolutePath + "/src/main/scala/com/github/peterzeller/minifumo/Main.scala"
+      (Compile / unmanagedSources).value.filterNot { source =>
+        val path = source.getAbsolutePath
+        path == coreStandard || path == coreMain || path.contains("/backends/lean/")
+      }
     },
     Compile / sourceGenerators += Def.task {
       val sourceFile = (coreJvm / baseDirectory).value / "src/main/scala/com/github/peterzeller/minifumo/builtins/standard.minifumo"
