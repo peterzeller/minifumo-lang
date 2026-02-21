@@ -69,14 +69,6 @@ jobs:
         working-directory: web
         run: npm run sync:compiler
 
-      - name: Install Playwright browser
-        working-directory: web
-        run: npx playwright install --with-deps chromium
-
-      - name: Run web browser tests
-        working-directory: web
-        run: npm run test:e2e
-
       - name: Build web frontend for pull requests (TypeScript + Scala.js)
         if: github.event_name == 'pull_request'
         working-directory: web
@@ -88,6 +80,20 @@ jobs:
         env:
           VITE_BASE_PATH: /minifumo-lang/
         run: npm run build
+
+      - name: Cache Playwright browser binaries
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('web/package-lock.json') }}
+
+      - name: Install Playwright browser
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+
+      - name: Run web browser tests
+        working-directory: web
+        run: npm run test:e2e
 
       - name: Configure Pages
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
