@@ -77,21 +77,20 @@ object Interpreter:
     buildGlobalTableForProg(globals, prog)
     evalExpr(f.body, locals, globals)
 
-  /** Evaluates a function from the program by name. */
-  def evalProg(prog: TypedAst.Program, symbols: ProjectSymbolCache, funcName: String): Value =
+  /** Evaluates a function from a program with additional dependency programs loaded into globals. */
+  def evalProg(prog: TypedAst.Program, dependencyPrograms: List[TypedAst.Program], funcName: String): Value =
     val f = prog.items.collectFirst { case f@FunDecl(s, _) if s.symbol.name == funcName => f }.getOrElse(throw new RuntimeException(s"Function $funcName not found"))
     val locals = Map[TermSymbol, Value]()
-    val globals = buildGlobalTable(prog, symbols)
+    val globals = mutable.Map[Symbol, Value]()
+    for dependency <- dependencyPrograms do
+      buildGlobalTableForProg(globals, dependency)
+    buildGlobalTableForProg(globals, prog)
     evalExpr(f.body, locals, globals)
 
-  private def buildGlobalTable(program: Program, symbols: ProjectSymbolCache): mutable.Map[Symbol, Value] =
-    val res = mutable.Map[Symbol, Value]()
-
-    for path <- symbols.allPaths do
-      val (t, _) = symbols.typedAst(path)
-      buildGlobalTableForProg(res, t)
-    buildGlobalTableForProg(res, program)
-    res
+  /** Evaluates a function from the program by name. */
+  def evalProg(prog: TypedAst.Program, symbols: ProjectSymbolCache, funcName: String): Value =
+    val dependencyPrograms = symbols.allPaths.toList.map(path => symbols.typedAst(path)._1)
+    evalProg(prog, dependencyPrograms, funcName)
 
   private def buildGlobalTableForProg(res: mutable.Map[Symbol, Value], t: Program): Unit = {
     for p <- t.items do
