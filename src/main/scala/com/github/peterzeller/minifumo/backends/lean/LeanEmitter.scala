@@ -113,7 +113,7 @@ object LeanEmitter:
     decl match
       case TypedAst.TopLevel.DataDecl(symbol, typeParams, ctors) =>
         val dataName = mangle.mangle(LeanNameMangler.NameKind.GlobalName, symbol.name)
-        val params = typeParams.map(param => s"({${mangle.mangle(LeanNameMangler.NameKind.LocalName, param.name)} : ${emitExpr(param.tpe, mangle, Map.empty, typeEnv)}})").mkString(" ")
+        val params = typeParams.map(param => s"(${mangle.mangle(LeanNameMangler.NameKind.LocalName, param.name)} : ${emitExpr(param.tpe, mangle, Map.empty, typeEnv)})").mkString(" ")
         val ctorLines = ctors.map: ctor =>
           val ctorName = mangle.mangle(LeanNameMangler.NameKind.GlobalName, ctor.symbol.name)
           if ctor.fields.isEmpty then
@@ -130,7 +130,7 @@ object LeanEmitter:
         val typeParams = sig.typeParams.map: p =>
           val n = mangle.mangle(LeanNameMangler.NameKind.LocalName, p.name)
           localScope += p.id -> n
-          s"({${n} : ${emitExpr(p.tpe, mangle, localScope.toMap, typeEnv)}})"
+          s"(${n} : ${emitExpr(p.tpe, mangle, localScope.toMap, typeEnv)})"
         val params = sig.params.map: p =>
           val n = mangle.mangle(LeanNameMangler.NameKind.LocalName, p.name)
           localScope += p.id -> n
