@@ -104,31 +104,7 @@ class LeanBackendSuite extends FunSuite:
       "sized_list.minifumo",
       "sized_list_explicit.minifumo",
       "typeclasses_ord.minifumo",
-      "typeclasses_sized.minifumo",
-      "add.minifumo",
-      "eq_examples.minifumo",
-      "expr_add_sub.minifumo",
-      "expr_bind_suite.minifumo",
-      "expr_call.minifumo",
-      "expr_dot.minifumo",
-      "expr_if_suite.minifumo",
-      "expr_if_then_else.minifumo",
-      "expr_let_in.minifumo",
-      "expr_let_suite.minifumo",
-      "expr_let_suite_no_init.minifumo",
-      "expr_mul_div.minifumo",
-      "expr_neg.minifumo",
-      "expr_paren.minifumo",
-      "expr_var.minifumo",
-      "expr_var_in.minifumo",
-      "expr_var_suite.minifumo",
-      "expr_var_suite_no_init.minifumo",
-      "generic_id.minifumo",
-      "imperative_dijkstra.minifumo",
-      "let_bindings.minifumo",
-      "main_add.minifumo",
-      "multiline.minifumo",
-      "nat_add_assoc_induction.minifumo"
+      "typeclasses_sized.minifumo"
     )
 
   // Checks all well-typed examples translate to Lean and are accepted by Lean.

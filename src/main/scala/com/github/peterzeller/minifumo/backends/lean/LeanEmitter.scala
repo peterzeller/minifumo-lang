@@ -203,7 +203,7 @@ object LeanEmitter:
       case TypedAst.Expr.App(callee, arg, _) =>
         s"(${emitExpr(callee, mangle, localScope, currentModule, localDefinitions, moduleNameByFile)} ${emitExpr(arg, mangle, localScope, currentModule, localDefinitions, moduleNameByFile)})"
       case TypedAst.Expr.AppImplicit(callee, arg, _) =>
-        s"(${emitExpr(callee, mangle, localScope, currentModule, localDefinitions, moduleNameByFile)} ${emitExpr(arg, mangle, localScope, currentModule, localDefinitions, moduleNameByFile)})"
+        s"((@${emitExpr(callee, mangle, localScope, currentModule, localDefinitions, moduleNameByFile)}) ${emitExpr(arg, mangle, localScope, currentModule, localDefinitions, moduleNameByFile)})"
       case TypedAst.Expr.Pi(dom, cod, _) =>
         val domName = mangle.mangle(LeanNameMangler.NameKind.LocalName, dom.name)
         val scope2 = localScope + (dom.id -> domName)
@@ -264,18 +264,6 @@ object LeanEmitter:
       case "Int" | "Bool" | "String" | "Unit" | "Nat" => name
       case "True" => "true"
       case "False" => "false"
-      case "opNeg" => "Int.neg"
-      case "opPlus" => "Int.add"
-      case "opMinus" => "Int.sub"
-      case "opTimes" => "Int.mul"
-      case "opDiv" => "Int.ediv"
-      case "opMod" => "Int.emod"
-      case "opLt" => "Int.lt"
-      case "opLe" => "Int.le"
-      case "opAnd" => "Bool.and"
-      case "opOr" => "Bool.or"
-      case "println" => "(fun _ _ _ => ())"
-      case "showInt" => "toString"
       case other =>
         val rendered = mangle.mangle(LeanNameMangler.NameKind.GlobalName, other)
         if localDefinitions.contains(other) then
