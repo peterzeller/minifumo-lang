@@ -1,4 +1,4 @@
-import * as generatedCompiler from './generated/minifumo-compiler.js'
+import * as generatedCompiler from './generated/minifumo-compiler'
 
 interface CompilerModule {
   compileAndRun(source: string, functionName?: string, runFunction?: boolean): unknown

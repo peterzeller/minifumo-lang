@@ -77,7 +77,12 @@ jobs:
         working-directory: web
         run: npm run test:e2e
 
-      - name: Build web frontend (TypeScript + Scala.js)
+      - name: Build web frontend for pull requests (TypeScript + Scala.js)
+        if: github.event_name == 'pull_request'
+        working-directory: web
+        run: npm run build
+
+      - name: Build web frontend for deployment (TypeScript + Scala.js)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         working-directory: web
         env:
