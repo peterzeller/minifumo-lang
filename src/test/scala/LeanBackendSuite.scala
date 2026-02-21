@@ -3,12 +3,15 @@ package com.github.peterzeller.minifumo
 import com.github.peterzeller.minifumo.backends.lean.LeanBackend
 import munit.FunSuite
 
-import java.nio.file.{Files, Path}
+import java.nio.file.{Files, Path, Paths}
 import scala.jdk.CollectionConverters.*
 import scala.sys.process.Process
 import scala.util.Try
+import scala.concurrent.duration.*
 
 class LeanBackendSuite extends FunSuite:
+  override val munitTimeout: Duration = 2.minutes
+
   // Checks whether Lean is available in the current execution environment.
   private def leanAvailable: Boolean =
     Try(Process(Seq("lean", "--version")).! == 0).getOrElse(false)
@@ -77,3 +80,30 @@ class LeanBackendSuite extends FunSuite:
     val generatedLeanFiles = Files.list(outputDir).iterator().asScala.toList
     assert(generatedLeanFiles.exists(_.toString.endsWith(".lean")))
 
+  // Lists all Minifumo example files under doc/examples recursively.
+  private def listExampleFiles(examplesDir: Path): List[Path] =
+    val stream = Files.walk(examplesDir)
+    try
+      stream.iterator().asScala
+        .filter(Files.isRegularFile(_))
+        .filter(_.toString.endsWith(".minifumo"))
+        .toList
+        .sortBy(_.toString)
+    finally
+      stream.close()
+
+  // Checks all well-typed examples translate to Lean and are accepted by Lean.
+  test("compileToLean accepts all well-typed doc/examples files"):
+    assume(leanAvailable, "Lean is not installed in this environment")
+    val examplesDir = Paths.get("doc/examples")
+    assert(Files.exists(examplesDir), s"Missing examples directory: ${examplesDir}")
+    val outputRoot = Files.createTempDirectory("mf-lean-all-examples")
+    val allExamples = listExampleFiles(examplesDir)
+    val wellTypedExamples = allExamples.filter(file => Main.checkFile(file).isEmpty)
+    assert(wellTypedExamples.nonEmpty, "Expected at least one well-typed example")
+    val failures = wellTypedExamples.flatMap: file =>
+      val relativeName = examplesDir.relativize(file).toString.replace('/', '_').replace('\\', '_').stripSuffix(".minifumo")
+      val outputDir = outputRoot.resolve(relativeName)
+      LeanBackend.compileAndCheck(file, outputDir).left.toOption.map: errors =>
+        s"Failed ${file}:\n${Main.renderTypeErrors(errors).mkString("\n")}"
+    assertEquals(failures, Nil)
