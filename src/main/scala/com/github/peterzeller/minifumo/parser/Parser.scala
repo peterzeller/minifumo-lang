@@ -205,7 +205,7 @@ private class HandwrittenParser(tokens: Vector[Token]):
       consume(TokenKind.COLONCOLON, "Expected '::' in quantifier expression.")
       val result = parseExpr()
       desugarQuantifier(isForall, params, result)
-    else parseOr()
+    else parseMetaImplies()
 
   /** Parses one or more quantifier binders separated by commas. */
   private def parseQuantifierParams(): List[PiParam] =
@@ -238,6 +238,30 @@ private class HandwrittenParser(tokens: Vector[Token]):
     val existsBase = Expr.Var("Exists")(merge(param.source, body.source))
     curriedCall(existsBase, List(param.tpe, predicate), Nil)
 
+  /** Parses right-associative meta implication expressions. */
+  private def parseMetaImplies(): Expr =
+    val left = parseMetaOr()
+    if matchKind(TokenKind.IMPLIES) then
+      val right = parseMetaImplies()
+      makeMetaImplies(left, right, merge(left.source, right.source))
+    else left
+
+  /** Parses left-associative meta OR expressions. */
+  private def parseMetaOr(): Expr =
+    var left = parseMetaAnd()
+    while matchKind(TokenKind.META_OR) do
+      val right = parseMetaAnd()
+      left = makeMetaOr(left, right, merge(left.source, right.source))
+    left
+
+  /** Parses left-associative meta AND expressions. */
+  private def parseMetaAnd(): Expr =
+    var left = parseOr()
+    while matchKind(TokenKind.META_AND) do
+      val right = parseOr()
+      left = makeMetaAnd(left, right, merge(left.source, right.source))
+    left
+
   /** Parses left-associative boolean OR expressions. */
   private def parseOr(): Expr = parseBinaryLeft(parseAnd, Set(TokenKind.OR))
 
@@ -262,6 +286,10 @@ private class HandwrittenParser(tokens: Vector[Token]):
       val start = previous
       val expr = parseUnary()
       opCall("opNeg", List(expr), merge(start, expr.source))
+    else if matchKind(TokenKind.META_NOT) then
+      val start = previous
+      val expr = parseUnary()
+      makeMetaNot(expr, merge(start, expr.source))
     else parseArrow()
 
   /** Parses right-associative function type arrows. */
@@ -397,9 +425,24 @@ private class HandwrittenParser(tokens: Vector[Token]):
         makeCall(Expr.Var("opNot")(src), List(eqExpr), src)
       case TokenKind.GT => opCall("opLt", List(right, left), src)
       case TokenKind.GE => opCall("opLe", List(right, left), src)
-      case TokenKind.AND if op.text == "AND" => curriedCall(Expr.Var("And")(src), List(left, right), Nil)
-      case TokenKind.OR if op.text == "OR" => curriedCall(Expr.Var("Or")(src), List(left, right), Nil)
       case _ => opCall(binaryOpName(op.text), List(left, right), src)
+
+  /** Desugars a meta AND expression into the And constructor. */
+  private def makeMetaAnd(left: Expr, right: Expr, source: SourceRange): Expr =
+    makeCall(Expr.Var("MakeAnd")(source), List(left, right), source)
+
+  /** Desugars a meta OR expression into the Or constructor pair value. */
+  private def makeMetaOr(left: Expr, right: Expr, source: SourceRange): Expr =
+    makeCall(Expr.Var("MakeOr")(source), List(left, right), source)
+
+  /** Desugars a meta NOT expression into implication to FalseProp. */
+  private def makeMetaNot(expr: Expr, source: SourceRange): Expr =
+    makeMetaImplies(expr, Expr.Var("FalseProp")(source), source)
+
+  /** Desugars a meta implication into a non-dependent function type. */
+  private def makeMetaImplies(left: Expr, right: Expr, source: SourceRange): Expr =
+    val param = PiParam("_", left)(left.source)
+    Expr.Pi(param, right)(source)
 
   /** Builds nested call/call-implicit nodes from type and value arguments. */
   private def curriedCall(callee: Expr, tArgs: List[Expr], args: List[Expr]): Expr =
@@ -449,8 +492,6 @@ private class HandwrittenParser(tokens: Vector[Token]):
       case "==" => "eq"
       case "and" => "opAnd"
       case "or" => "opOr"
-      case "AND" => "And"
-      case "OR" => "Or"
       case other => other
 
   /** Parses comma-separated lists until a closing token is encountered. */

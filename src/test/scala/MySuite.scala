@@ -134,13 +134,16 @@ class MySuite extends munit.FunSuite {
     assertEquals(errors, List())
   }
 
-  test("logical proposition datatypes support AND/OR type syntax") {
+    test("meta logical operators are distinct from boolean operators") {
     val (ast, _) = parseInput("""
-      |fun andIntro(p: TrueProp, q: TrueProp): TrueProp AND TrueProp
-      |    MakeAnd(p, q)
+      |fun boolAnd(a: Bool, b: Bool): Bool
+      |    a and b
       |
-      |fun orIntroLeft(p: TrueProp): TrueProp OR FalseProp
-      |    OrLeft(p)
+      |fun metaAnd(p: Type, q: Type): And
+      |    p AND q
+      |
+      |fun metaOr(p: Type, q: Type): Or
+      |    p OR q
       |""".stripMargin)
     val (_, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
     assertEquals(errors, List())
