@@ -129,7 +129,7 @@ object TypeChecker:
   private[typing] final case class TypeContext(globals: GlobalEnv, locals: Map[String, LocalBinding], definitionCache: DefinitionCache = DefinitionCache.empty) extends Context:
     override def lookupSymbol(name: String): Option[TypedAst.Symbol] =
       locals.get(name).map(_.symbol)
-        .orElse(globals.names.get(name).map(g => TypedAst.GlobalSymbolSymbol(g.name, g.file, g)))
+        .orElse(globals.names.get(name).map(g => g))
 
     override def lookupValue(symbol: TypedAst.TermSymbol): Option[TypedAst.Expr] =
       locals.values.find(_.symbol == symbol).flatMap(_.value)
@@ -305,7 +305,7 @@ object TypeChecker:
             case None =>
               globals.names.get(name) match
                 case Some(symbol) =>
-                  TypedAst.Expr.Var(symbol.toSymbol)(expr.source)
+                  TypedAst.Expr.Var(symbol)(expr.source)
                 case None =>
                   TypedAst.Expr.Var(TypedAst.ErrorSymbol(name, TypedAst.Expr.UnknownType()(expr.source)))(expr.source)
       case ast.Expr.Call(callee, arg) =>
@@ -358,18 +358,18 @@ object TypeChecker:
       true
     else
       (a,b) match
-        case (GlobalSymbolSymbol(an, af, _), GlobalNameSymbol(bn, bf)) =>
-          an == bn && af == bf
-        case (GlobalNameSymbol(an, af), GlobalSymbolSymbol(bn, bf, _)) =>
-          an == bn && af == bf
+        case (ga: GlobalSymbol, GlobalNameSymbol(bn, bf)) =>
+          ga.name == bn && ga.file == bf
+        case (GlobalNameSymbol(an, af), gb: GlobalSymbol) =>
+          an == gb.name && af == gb.file
         case (ctor: CtorSymbol, TypedAst.GlobalNameSymbol(name, _)) =>
           ctor.name == name
         case (TypedAst.GlobalNameSymbol(name, _), ctor: CtorSymbol) =>
           name == ctor.name
-        case (ctor: CtorSymbol, TypedAst.GlobalSymbolSymbol(name, _, _)) =>
-          ctor.name == name
-        case (TypedAst.GlobalSymbolSymbol(name, _, _), ctor: CtorSymbol) =>
-          name == ctor.name
+        case (ctor: CtorSymbol, g: GlobalSymbol) =>
+          ctor.name == g.name
+        case (g: GlobalSymbol, ctor: CtorSymbol) =>
+          g.name == ctor.name
         case _ =>
           false
 
@@ -419,7 +419,7 @@ object TypeChecker:
   private def classifyHead(symbol: TypedAst.Symbol)(using ctx: Context): Option[DefEqHeadKind] =
     symbol match
       case _: TypedAst.CtorSymbol => Some(DefEqHeadKind.Constructor)
-      case TypedAst.GlobalSymbolSymbol(_, _, g) =>
+      case g: GlobalSymbol =>
         g.symbolSignature match
           case SymbolSignature.Datatype(_) => Some(DefEqHeadKind.TypeConstructor)
           case SymbolSignature.Def(tpe) if hasDatatypeResultType(tpe) => Some(DefEqHeadKind.Constructor)
@@ -434,7 +434,7 @@ object TypeChecker:
         case TypedAst.Expr.Pi(_, cod, _) => codomain(cod)
         case other => other
     decomposeApplication(codomain(expr))._1 match
-      case TypedAst.Expr.Var(TypedAst.GlobalSymbolSymbol(_, _, g)) =>
+      case TypedAst.Expr.Var(g: GlobalSymbol) =>
         g.symbolSignature match
           case SymbolSignature.Datatype(_) => true
           case _ => false
@@ -857,7 +857,7 @@ object TypeChecker:
       case ast.Literal.StringLit(_) => "String"
       case ast.Literal.UnitLit() => "Unit"
     ctx.globals.names.get(typeName)
-      .map(sym => TypedAst.Expr.Var(GlobalSymbolSymbol(sym.name, sym.file, sym))(value.source))
+      .map(sym => TypedAst.Expr.Var(sym)(value.source))
       .getOrElse(TypedAst.Expr.UnknownType()(value.source))
 
   /** Checks a pattern against the expected scrutinee type. */
@@ -1045,8 +1045,8 @@ object TypeChecker:
     /** Returns an unfoldable expression for a symbol if available. */
     def definitionFor(symbol: TypedAst.Symbol): Option[TypedAst.Expr] =
       symbol match
-        case TypedAst.GlobalSymbolSymbol(name, file, _) =>
-          definitionForName(name, file)
+        case g: GlobalSymbol =>
+          definitionForName(g.name, g.file)
         case TypedAst.GlobalNameSymbol(name, file) =>
           definitionForName(name, file)
         case _ =>

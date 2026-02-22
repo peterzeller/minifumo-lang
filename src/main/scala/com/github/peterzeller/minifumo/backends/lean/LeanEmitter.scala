@@ -2,9 +2,10 @@ package com.github.peterzeller.minifumo.backends.lean
 
 import com.github.peterzeller.minifumo.ast.{Literal, SourceRange}
 import com.github.peterzeller.minifumo.backends.lean.LeanBackend.{GeneratedLeanFile, SourceMapEntry}
+import com.github.peterzeller.minifumo.typing.GlobalSymbol
 import com.github.peterzeller.minifumo.typing.ProjectSymbolCache
 import com.github.peterzeller.minifumo.typing.TypedAst
-import com.github.peterzeller.minifumo.typing.TypedAst.{GlobalSymbolSymbol, LocalSymbol}
+import com.github.peterzeller.minifumo.typing.TypedAst.LocalSymbol
 
 import java.nio.file.Path
 import scala.collection.mutable
@@ -216,7 +217,7 @@ object LeanEmitter:
       case TypedAst.Expr.Var(symbol) =>
         symbol match
           case local: TypedAst.LocalSymbol => localScope.getOrElse(local.id, mangle.mangle(LeanNameMangler.NameKind.LocalName, local.name))
-          case global: GlobalSymbolSymbol => emitGlobalRef(global.name, Some(global.file), mangle, currentModule, localDefinitions, moduleNameByFile)
+          case global: GlobalSymbol => emitGlobalRef(global.name, Some(global.file), mangle, currentModule, localDefinitions, moduleNameByFile)
           case fun: TypedAst.FunctionSymbol => emitGlobalRef(fun.name, None, mangle, currentModule, localDefinitions, moduleNameByFile)
           case ctor: TypedAst.CtorSymbol => emitGlobalRef(ctor.name, None, mangle, currentModule, localDefinitions, moduleNameByFile)
           case dt: TypedAst.DatatypeSymbol => emitGlobalRef(dt.name, Some(dt.file), mangle, currentModule, localDefinitions, moduleNameByFile)
@@ -309,7 +310,7 @@ object LeanEmitter:
       case TypedAst.Expr.Lit(_) => Set.empty
       case TypedAst.Expr.Var(symbol) =>
         symbol match
-          case g: GlobalSymbolSymbol => Set(g.name)
+          case g: GlobalSymbol => Set(g.name)
           case f: TypedAst.FunctionSymbol => Set(f.name)
           case c: TypedAst.CtorSymbol => Set(c.name)
           case d: TypedAst.DatatypeSymbol => Set(d.name)

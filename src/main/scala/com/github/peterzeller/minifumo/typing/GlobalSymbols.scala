@@ -5,7 +5,7 @@ import com.github.peterzeller.minifumo.ast.{FunParam, FunSig, SourceRange}
 import com.github.peterzeller.minifumo.parser.{SyntaxError, parseFile}
 import com.github.peterzeller.minifumo.typing.TypeChecker.{TypeError, checkProgram}
 import com.github.peterzeller.minifumo.typing.TypedAst.Expr.UnknownType
-import com.github.peterzeller.minifumo.typing.TypedAst.{ErrorSymbol, Expr, GlobalNameSymbol, GlobalSymbolSymbol, LocalSymbol}
+import com.github.peterzeller.minifumo.typing.TypedAst.{ErrorSymbol, Expr, GlobalNameSymbol, LocalSymbol, Symbol}
 
 import java.nio.file.{Path, Paths}
 import scala.collection.mutable.ListBuffer
@@ -24,9 +24,38 @@ case class GlobalSymbols(
 
 case class GlobalName(file: Path, name: String)
 
-case class GlobalSymbol(file: Path, name: String, symbolSignature: SymbolSignature):
-  def toSymbol: GlobalSymbolSymbol =
-    GlobalSymbolSymbol(name, file, this)
+case class GlobalSymbol(file: Path, name: String, symbolSignature: SymbolSignature) extends Symbol:
+  override def tpe: Expr =
+    symbolSignature.match
+      case SymbolSignature.Def(tpe) => tpe
+      case SymbolSignature.Datatype(implicitParams) =>
+        // Rebuilds a dependent Pi type for imported datatype parameters.
+        def replaceLocals(expr: Expr, subst: Map[Int, Expr]): Expr =
+          expr match
+            case Expr.Var(sym: LocalSymbol) => subst.getOrElse(sym.id, Expr.Var(sym)(SourceRange.empty))
+            case Expr.App(callee, arg, tpe) => Expr.App(replaceLocals(callee, subst), replaceLocals(arg, subst), replaceLocals(tpe, subst))(SourceRange.empty)
+            case Expr.AppImplicit(callee, arg, tpe) => Expr.AppImplicit(replaceLocals(callee, subst), replaceLocals(arg, subst), replaceLocals(tpe, subst))(SourceRange.empty)
+            case Expr.Pi(dom, cod, isImplicit) =>
+              val newDomType = replaceLocals(dom.tpe, subst)
+              val newDom = LocalSymbol(dom.name, newDomType, dom.id)
+              Expr.Pi(newDom, replaceLocals(cod, subst), isImplicit)(SourceRange.empty)
+            case Expr.Lambda(param, body, tpe) => Expr.Lambda(param, replaceLocals(body, subst), replaceLocals(tpe, subst))(SourceRange.empty)
+            case Expr.LetIn(symbol, isConstant, declaredType, value, body) =>
+              Expr.LetIn(symbol, isConstant, replaceLocals(declaredType, subst), replaceLocals(value, subst), replaceLocals(body, subst))(SourceRange.empty)
+            case Expr.Match(scrutinee, motive, cases) =>
+              Expr.Match(replaceLocals(scrutinee, subst), replaceLocals(motive, subst), cases.map(c => TypedAst.MatchCase(c.pattern, replaceLocals(c.body, subst))(c.source)))(SourceRange.empty)
+            case other => other
+
+        def buildPi(params: List[LocalSymbol], subst: Map[Int, Expr], nextId: Int): Expr =
+          params match
+            case Nil => Expr.Sort()(SourceRange.empty)
+            case p :: tail =>
+              val domType = replaceLocals(p.tpe, subst)
+              val dom = LocalSymbol(p.name, domType, nextId)
+              val cod = buildPi(tail, subst + (p.id -> Expr.Var(dom)(SourceRange.empty)), nextId - 1)
+              Expr.Pi(dom, cod, isImplicit = true)(SourceRange.empty)
+
+        buildPi(implicitParams, Map.empty, -1)
 
 enum SymbolSignature:
   case Def(tpe: Expr)
