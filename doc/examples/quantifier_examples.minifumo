@@ -1,0 +1,15 @@
+// Quantifier syntax examples requested:
+// forall x: Nat :: 0 <= x
+// forall x :: 0 <= x
+// forall x: Nat, y: Nat :: x+
+// y = y+x
+// forall x: Nat :: exists y: Nat :: y > x
+
+fun forallTyped(): Type
+  forall x: Int :: 0 <= x
+
+fun forallMultipleBinders(): Type
+  forall x: Int, y: Int :: x + y == y + x
+
+fun forallExistsNested(): Type
+  forall x: Int :: exists y: Int :: y > x

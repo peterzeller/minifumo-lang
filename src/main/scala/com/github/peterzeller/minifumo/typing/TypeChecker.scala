@@ -696,10 +696,21 @@ object TypeChecker:
                                (implicit ctx: TypeContext, metas: MetaContext, ids: IdSupply): (TypedAst.Expr, List[TypeError]) =
     val expectedNorm = whnf(expectedType)
     val (inferredExpr, inferredType, errs) = inferAndElaborate(expr)
+    val (adaptedExpr, adaptedType, adaptedErrs) =
+      if expectedNorm.isInstanceOf[TypedAst.Expr.Sort] && hasDatatypeHead(inferredType, "Bool") then
+        inferAndElaborate(wrapBoolAsEqTrue(expr))
+      else
+        (inferredExpr, inferredType, errs)
     val errs2 =
-      if isDefEq(inferredType, expectedNorm, expr.source) then errs
-      else TypeError(s"Expected ${prettyExpr(expectedNorm)} but got ${prettyExpr(inferredType)}\nIn expression ${prettyExpr(inferredExpr)}", expr.source) :: errs
-    (inferredExpr, errs2)
+      if isDefEq(adaptedType, expectedNorm, expr.source) then adaptedErrs
+      else TypeError(s"Expected ${prettyExpr(expectedNorm)} but got ${prettyExpr(adaptedType)}\nIn expression ${prettyExpr(adaptedExpr)}", expr.source) :: adaptedErrs
+    (adaptedExpr, errs2)
+
+  /** Rewrites a proposition `p` into the type expression `Eq(p, True)`. */
+  private def wrapBoolAsEqTrue(expr: ast.Expr): ast.Expr =
+    val eqRef = ast.Expr.Var("Eq")(expr.source)
+    val trueRef = ast.Expr.Var("True")(expr.source)
+    ast.Expr.Call(ast.Expr.Call(eqRef, expr)(expr.source), trueRef)(expr.source)
 
   /** Inserts synthetic implicit arguments and placeholder metas before explicit arguments. */
   private def insertImplicitArgs(
