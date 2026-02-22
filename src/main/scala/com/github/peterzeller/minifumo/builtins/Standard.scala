@@ -10,7 +10,7 @@ import scala.util.Using
 object Standard:
   private val standardResourcePath = "/com/github/peterzeller/minifumo/builtins/standard.minifumo"
   private val standardLibraryPath =
-    Paths.get("src/main/scala/com/github/peterzeller/minifumo/builtins/standard.minifumo")
+    Paths.get("src/main/resources/com/github/peterzeller/minifumo/builtins/standard.minifumo")
 
   // Loads the standard library source from classpath resources or disk fallback.
   def loadStandardSource(): String =
