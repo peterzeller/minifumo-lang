@@ -227,20 +227,14 @@ private class HandwrittenParser(tokens: Vector[Token]):
   private def desugarQuantifier(isForall: Boolean, params: List[PiParam], body: Expr): Expr =
     params.foldRight(body) { (param, acc) =>
       if isForall then
-        val typeBody = boolToType(acc)
-        Expr.Pi(param, typeBody)(merge(param.source, typeBody.source))
+        Expr.Pi(param, acc)(merge(param.source, acc.source))
       else
         makeExistsExpr(param, acc)
     }
 
-  /** Wraps boolean propositions into Eq(prop, True) so they can be used as types. */
-  private def boolToType(expr: Expr): Expr =
-    makeCall(Expr.Var("Eq")(expr.source), List(expr, Expr.Var("True")(expr.source)), expr.source)
-
   /** Builds the dependent-pair encoding Exists[T, (x: T) => body]. */
   private def makeExistsExpr(param: PiParam, body: Expr): Expr =
-    val lambdaBody = boolToType(body)
-    val predicate = Expr.Lambda(LambdaParam(param.name, Some(param.tpe))(param.source), lambdaBody)(merge(param.source, lambdaBody.source))
+    val predicate = Expr.Lambda(LambdaParam(param.name, Some(param.tpe))(param.source), body)(merge(param.source, body.source))
     val existsBase = Expr.Var("Exists")(merge(param.source, body.source))
     curriedCall(existsBase, List(param.tpe, predicate), Nil)
 
