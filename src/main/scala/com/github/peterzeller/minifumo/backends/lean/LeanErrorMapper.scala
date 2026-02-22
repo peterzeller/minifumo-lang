@@ -8,6 +8,10 @@ import com.github.peterzeller.minifumo.common.MinifumoErrorWithPath
 import java.nio.file.Path
 
 object LeanErrorMapper:
+  // Formats one Lean diagnostic with generated-file location details.
+  private def leanMessage(diag: LeanDiagnostic, generatedPath: Path): String =
+    s"Lean ${generatedPath}:${diag.line}:${diag.column} ${diag.message}"
+
   // Maps Lean diagnostics in generated files back to original Minifumo file locations.
   def mapLeanErrors(diagnostics: List[LeanDiagnostic], generatedFiles: List[GeneratedLeanFile]): List[MinifumoErrorWithPath] =
     val generatedByPath = generatedFiles.map(file => file.path.toAbsolutePath.normalize() -> file).toMap
@@ -27,11 +31,10 @@ object LeanErrorMapper:
         case Some(generated) =>
           generated.lineMap.find(entry => diag.line >= entry.startLine && diag.line <= entry.endLine) match
             case Some(entry) =>
-              MinifumoErrorWithPath(entry.sourcePath, BackendError(s"Lean ${diag.message}", entry.sourceRange))
+              MinifumoErrorWithPath(entry.sourcePath, BackendError(leanMessage(diag, generated.path), entry.sourceRange))
             case None =>
               val fallbackRange = SourceRange(SourcePos(1, 1), SourcePos(1, 1))
-              MinifumoErrorWithPath(diagPath, BackendError(s"Lean ${diag.message}", fallbackRange))
+              MinifumoErrorWithPath(diagPath, BackendError(leanMessage(diag, generated.path), fallbackRange))
         case None =>
           val fallbackRange = SourceRange(SourcePos(1, 1), SourcePos(1, 1))
-          MinifumoErrorWithPath(diagPath, BackendError(s"Lean ${diag.message}", fallbackRange))
-
+          MinifumoErrorWithPath(diagPath, BackendError(leanMessage(diag, diagPath), fallbackRange))

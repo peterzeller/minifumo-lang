@@ -10,6 +10,29 @@ import java.nio.file.Path
 import scala.collection.mutable
 
 object LeanEmitter:
+  // Enumerates special Minifumo globals that map directly to Lean primitives.
+  private enum LeanPrimitiveGlobal(val minifumoName: String, val leanName: String):
+    case EqType extends LeanPrimitiveGlobal("Eq", "(fun (T : Type) (a : T) (b : T) => Eq a b)")
+    case Refl extends LeanPrimitiveGlobal("refl", "(fun (T : Type) (x : T) => Eq.refl x)")
+    case CongrArg extends LeanPrimitiveGlobal("congrArg", "(fun (T : Type) (U : Type) (x : T) (y : T) (f : T -> U) (h : Eq x y) => congrArg f h)")
+    case IntNeg extends LeanPrimitiveGlobal("opNeg", "Int.neg")
+    case IntAdd extends LeanPrimitiveGlobal("opPlus", "Int.add")
+    case IntSub extends LeanPrimitiveGlobal("opMinus", "Int.sub")
+    case IntMul extends LeanPrimitiveGlobal("opTimes", "Int.mul")
+    case IntDiv extends LeanPrimitiveGlobal("opDiv", "Int.ediv")
+    case IntMod extends LeanPrimitiveGlobal("opMod", "Int.emod")
+    case IntLt extends LeanPrimitiveGlobal("opLt", "Int.lt")
+    case IntLe extends LeanPrimitiveGlobal("opLe", "Int.le")
+    case NatAdd extends LeanPrimitiveGlobal("natAdd", "Nat.add")
+    case BoolAnd extends LeanPrimitiveGlobal("opAnd", "Bool.and")
+    case BoolOr extends LeanPrimitiveGlobal("opOr", "Bool.or")
+    case Println extends LeanPrimitiveGlobal("println", "(fun _ _ _ => ())")
+    case ShowInt extends LeanPrimitiveGlobal("showInt", "(fun (x : Int) => toString x)")
+
+  // Looks up direct Lean primitive mappings for selected globals.
+  private def leanPrimitiveName(name: String): Option[String] =
+    LeanPrimitiveGlobal.values.find(_.minifumoName == name).map(_.leanName)
+
   // Represents one emitted declaration snippet with source span info.
   private final case class DeclChunk(lines: Vector[String], sourceFile: Path, sourceRange: SourceRange)
 
@@ -203,7 +226,11 @@ object LeanEmitter:
       case TypedAst.Expr.App(callee, arg, _) =>
         s"(${emitExpr(callee, mangle, localScope, currentModule, localDefinitions, moduleNameByFile)} ${emitExpr(arg, mangle, localScope, currentModule, localDefinitions, moduleNameByFile)})"
       case TypedAst.Expr.AppImplicit(callee, arg, _) =>
-        s"((@${emitExpr(callee, mangle, localScope, currentModule, localDefinitions, moduleNameByFile)}) ${emitExpr(arg, mangle, localScope, currentModule, localDefinitions, moduleNameByFile)})"
+        val calleeText = emitExpr(callee, mangle, localScope, currentModule, localDefinitions, moduleNameByFile)
+        val explicitCallee =
+          if calleeText.startsWith("(") || calleeText.startsWith("fun ") || calleeText.startsWith("@") then calleeText
+          else s"@${calleeText}"
+        s"(${explicitCallee} ${emitExpr(arg, mangle, localScope, currentModule, localDefinitions, moduleNameByFile)})"
       case TypedAst.Expr.Pi(dom, cod, _) =>
         val domName = mangle.mangle(LeanNameMangler.NameKind.LocalName, dom.name)
         val scope2 = localScope + (dom.id -> domName)
@@ -265,15 +292,16 @@ object LeanEmitter:
       case "True" => "true"
       case "False" => "false"
       case other =>
-        val rendered = mangle.mangle(LeanNameMangler.NameKind.GlobalName, other)
-        if localDefinitions.contains(other) then
-          rendered
-        else
-          sourceFile
-            .flatMap(path => moduleNameByFile.get(path.toString.replace('\\', '/')))
-            .filter(_ != currentModule)
-            .map(module => s"${module}.${rendered}")
-            .getOrElse(rendered)
+        leanPrimitiveName(other).getOrElse:
+          val rendered = mangle.mangle(LeanNameMangler.NameKind.GlobalName, other)
+          if localDefinitions.contains(other) then
+            rendered
+          else
+            sourceFile
+              .flatMap(path => moduleNameByFile.get(path.toString.replace('\\', '/')))
+              .filter(_ != currentModule)
+              .map(module => s"${module}.${rendered}")
+              .getOrElse(rendered)
 
   // Collects globally referenced names from an expression tree.
   private def collectGlobalNames(expr: TypedAst.Expr): Set[String] =
