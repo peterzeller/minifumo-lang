@@ -397,6 +397,8 @@ private class HandwrittenParser(tokens: Vector[Token]):
         makeCall(Expr.Var("opNot")(src), List(eqExpr), src)
       case TokenKind.GT => opCall("opLt", List(right, left), src)
       case TokenKind.GE => opCall("opLe", List(right, left), src)
+      case TokenKind.AND if op.text == "AND" => curriedCall(Expr.Var("And")(src), List(left, right), Nil)
+      case TokenKind.OR if op.text == "OR" => curriedCall(Expr.Var("Or")(src), List(left, right), Nil)
       case _ => opCall(binaryOpName(op.text), List(left, right), src)
 
   /** Builds nested call/call-implicit nodes from type and value arguments. */
@@ -447,6 +449,8 @@ private class HandwrittenParser(tokens: Vector[Token]):
       case "==" => "eq"
       case "and" => "opAnd"
       case "or" => "opOr"
+      case "AND" => "And"
+      case "OR" => "Or"
       case other => other
 
   /** Parses comma-separated lists until a closing token is encountered. */

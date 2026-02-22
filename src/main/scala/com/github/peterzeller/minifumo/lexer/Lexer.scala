@@ -239,8 +239,8 @@ object Lexer:
       case "let" => TokenKind.LET
       case "forall" => TokenKind.FORALL
       case "exists" => TokenKind.EXISTS
-      case "and" => TokenKind.AND
-      case "or" => TokenKind.OR
+      case "and" | "AND" => TokenKind.AND
+      case "or" | "OR" => TokenKind.OR
       case "not" => TokenKind.NOT
       case "div" => TokenKind.DIV
       case "mod" => TokenKind.MOD

@@ -134,6 +134,19 @@ class MySuite extends munit.FunSuite {
     assertEquals(errors, List())
   }
 
+  test("logical proposition datatypes support AND/OR type syntax") {
+    val (ast, _) = parseInput("""
+      |fun andIntro(p: TrueProp, q: TrueProp): TrueProp AND TrueProp
+      |    MakeAnd(p, q)
+      |
+      |fun orIntroLeft(p: TrueProp): TrueProp OR FalseProp
+      |    OrLeft(p)
+      |""".stripMargin)
+    val (_, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
+    assertEquals(errors, List())
+  }
+
+
 
   // test("type checker can work with simple data types") {
   //   val (ast, _) = parseInput("""
