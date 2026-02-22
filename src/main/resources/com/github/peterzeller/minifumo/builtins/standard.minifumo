@@ -39,6 +39,8 @@ export data OpOr[T: Type] = MakeOpOr(opOr: T -> T -> T)
 export data Eq[T: Type, a: T, b: T] =
    refl: Eq[T, a, a]
 
+export data Exists[T: Type, P: T -> Type] = MakeExists(x: T, p: P(x))
+
 export data HasEq[T: Type] = MakeEq(eq: T -> T -> Bool)
 
 export data Show[T: Type] = MakeShow(show: T -> String)

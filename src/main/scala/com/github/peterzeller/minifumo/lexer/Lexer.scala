@@ -238,6 +238,7 @@ object Lexer:
       case "else" => TokenKind.ELSE
       case "let" => TokenKind.LET
       case "forall" => TokenKind.FORALL
+      case "exists" => TokenKind.EXISTS
       case "and" => TokenKind.AND
       case "or" => TokenKind.OR
       case "not" => TokenKind.NOT

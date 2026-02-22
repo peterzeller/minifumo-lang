@@ -104,7 +104,8 @@ class LeanBackendSuite extends FunSuite:
       "sized_list.minifumo",
       "sized_list_explicit.minifumo",
       "typeclasses_ord.minifumo",
-      "typeclasses_sized.minifumo"
+      "typeclasses_sized.minifumo",
+      "quantifier_examples.minifumo"
     )
 
   // Checks all well-typed examples translate to Lean and are accepted by Lean.

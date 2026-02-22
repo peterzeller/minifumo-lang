@@ -195,17 +195,54 @@ private class HandwrittenParser(tokens: Vector[Token]):
     consume(TokenKind.END, "Expected end of match block.")
     Expr.Match(scrutinee, cases.toList)(merge(start, previous.source))
 
-  /** Parses forall / function type precedence layer. */
+  /** Parses forall / exists quantifiers and desugars them into core expressions. */
   private def parseForall(): Expr =
-    if matchKind(TokenKind.FORALL) then
-      val start = previous
-      val name = consume(TokenKind.ID, "Expected identifier after forall.")
-      consume(TokenKind.COLON, "Expected ':' in forall.")
-      val base = parseExpr()
-      consume(TokenKind.DOT, "Expected '.' in forall.")
+    if check(TokenKind.FORALL) || check(TokenKind.EXISTS) then
+      val isForall = matchKind(TokenKind.FORALL)
+      if !isForall then
+        val _ = consume(TokenKind.EXISTS, "Expected 'exists'.")
+      val params = parseQuantifierParams()
+      consume(TokenKind.COLONCOLON, "Expected '::' in quantifier expression.")
       val result = parseExpr()
-      Expr.Pi(PiParam(name.text, base)(merge(name, base.source)), result)(merge(start, result.source))
+      desugarQuantifier(isForall, params, result)
     else parseOr()
+
+  /** Parses one or more quantifier binders separated by commas. */
+  private def parseQuantifierParams(): List[PiParam] =
+    val params = scala.collection.mutable.ListBuffer.empty[PiParam]
+    params += parseQuantifierParam()
+    while matchKind(TokenKind.COMMA) do
+      params += parseQuantifierParam()
+    params.toList
+
+  /** Parses a single quantifier binder with an optional type annotation. */
+  private def parseQuantifierParam(): PiParam =
+    val name = consume(TokenKind.ID, "Expected identifier in quantifier.")
+    val tpe =
+      if matchKind(TokenKind.COLON) then parseArrow()
+      else Expr.Hole()(name.source)
+    PiParam(name.text, tpe)(merge(name, tpe.source))
+
+  /** Desugars quantifier syntax into nested Pi or Exists applications. */
+  private def desugarQuantifier(isForall: Boolean, params: List[PiParam], body: Expr): Expr =
+    params.foldRight(body) { (param, acc) =>
+      if isForall then
+        val typeBody = boolToType(acc)
+        Expr.Pi(param, typeBody)(merge(param.source, typeBody.source))
+      else
+        makeExistsExpr(param, acc)
+    }
+
+  /** Wraps boolean propositions into Eq(prop, True) so they can be used as types. */
+  private def boolToType(expr: Expr): Expr =
+    makeCall(Expr.Var("Eq")(expr.source), List(expr, Expr.Var("True")(expr.source)), expr.source)
+
+  /** Builds the dependent-pair encoding Exists[T, (x: T) => body]. */
+  private def makeExistsExpr(param: PiParam, body: Expr): Expr =
+    val lambdaBody = boolToType(body)
+    val predicate = Expr.Lambda(LambdaParam(param.name, Some(param.tpe))(param.source), lambdaBody)(merge(param.source, lambdaBody.source))
+    val existsBase = Expr.Var("Exists")(merge(param.source, body.source))
+    curriedCall(existsBase, List(param.tpe, predicate), Nil)
 
   /** Parses left-associative boolean OR expressions. */
   private def parseOr(): Expr = parseBinaryLeft(parseAnd, Set(TokenKind.OR))
