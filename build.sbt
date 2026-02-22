@@ -46,7 +46,7 @@ lazy val compilerJs = project
       }
     },
     Compile / sourceGenerators += Def.task {
-      val sourceFile = (coreJvm / baseDirectory).value / "src/main/scala/com/github/peterzeller/minifumo/builtins/standard.minifumo"
+      val sourceFile = (coreJvm / baseDirectory).value / "src/main/resources/com/github/peterzeller/minifumo/builtins/standard.minifumo"
       val managedDir = (Compile / sourceManaged).value / "com/github/peterzeller/minifumo/builtins"
       val outputFile = managedDir / "StandardSource.scala"
       val standardText = IO.read(sourceFile).replace("\"\"\"", "\"\"\" + \"\"\"\" + \"\"\"")

@@ -134,6 +134,22 @@ class MySuite extends munit.FunSuite {
     assertEquals(errors, List())
   }
 
+    test("meta logical operators are distinct from boolean operators") {
+    val (ast, _) = parseInput("""
+      |fun boolAnd(a: Bool, b: Bool): Bool
+      |    a and b
+      |
+      |fun metaAnd(p: Type, q: Type): And
+      |    p AND q
+      |
+      |fun metaOr(p: Type, q: Type): Or
+      |    p OR q
+      |""".stripMargin)
+    val (_, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
+    assertEquals(errors, List())
+  }
+
+
 
   // test("type checker can work with simple data types") {
   //   val (ast, _) = parseInput("""

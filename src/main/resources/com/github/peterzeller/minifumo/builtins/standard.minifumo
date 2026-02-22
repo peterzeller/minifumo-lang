@@ -39,6 +39,18 @@ export data OpOr[T: Type] = MakeOpOr(opOr: T -> T -> T)
 export data Eq[T: Type, a: T, b: T] =
    refl: Eq[T, a, a]
 
+export data TrueProp = TrueIntro
+
+export data FalseProp =
+
+export data And = MakeAnd(left: Type, right: Type)
+
+export data Or = OrLeft(left: Type) | OrRight(right: Type)
+
+// Builds an Or proposition from two proposition types.
+fun MakeOr(left: Type, right: Type): Or
+    OrLeft(left)
+
 export data Exists[T: Type, P: T -> Type] = MakeExists(x: T, p: P(x))
 
 export data HasEq[T: Type] = MakeEq(eq: T -> T -> Bool)

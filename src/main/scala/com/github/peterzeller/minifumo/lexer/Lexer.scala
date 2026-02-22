@@ -151,11 +151,11 @@ object Lexer:
     var lastCharWasWrap = false
 
     def isWrap(kind: TokenKind): Boolean = Set(TokenKind.COMMA, TokenKind.PLUS, TokenKind.MULT, TokenKind.MINUS, TokenKind.DIV,
-      TokenKind.MOD, TokenKind.AND, TokenKind.OR, TokenKind.COLON, TokenKind.COLONCOLON, TokenKind.EQ, TokenKind.EQEQ,
+      TokenKind.MOD, TokenKind.AND, TokenKind.OR, TokenKind.META_AND, TokenKind.META_OR, TokenKind.COLON, TokenKind.COLONCOLON, TokenKind.EQ, TokenKind.EQEQ,
       TokenKind.NOTEQ, TokenKind.BAR, TokenKind.IMPLIES, TokenKind.IFF).contains(kind)
 
     def isWrapEndLine(kind: TokenKind): Boolean = Set(TokenKind.PAREN_LEFT, TokenKind.BRACKET_LEFT, TokenKind.BRACE_LEFT).contains(kind) || isWrap(kind)
-    def isWrapBeginLine(kind: TokenKind): Boolean = Set(TokenKind.PAREN_RIGHT, TokenKind.BRACKET_RIGHT, TokenKind.BRACE_RIGHT, TokenKind.NOT, TokenKind.DOT).contains(kind) || isWrap(kind)
+    def isWrapBeginLine(kind: TokenKind): Boolean = Set(TokenKind.PAREN_RIGHT, TokenKind.BRACKET_RIGHT, TokenKind.BRACE_RIGHT, TokenKind.NOT, TokenKind.META_NOT, TokenKind.DOT).contains(kind) || isWrap(kind)
 
     def handleIndent(n: Int, token: Token): Unit =
       if n > indentStack.top then
@@ -242,6 +242,9 @@ object Lexer:
       case "and" => TokenKind.AND
       case "or" => TokenKind.OR
       case "not" => TokenKind.NOT
+      case "AND" => TokenKind.META_AND
+      case "OR" => TokenKind.META_OR
+      case "NOT" => TokenKind.META_NOT
       case "div" => TokenKind.DIV
       case "mod" => TokenKind.MOD
       case "true" | "false" => TokenKind.BOOL
