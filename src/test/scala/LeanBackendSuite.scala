@@ -79,6 +79,8 @@ class LeanBackendSuite extends FunSuite:
     assert(result.isRight, s"Failed ${file}:\n${result.left.toOption.map(Main.renderTypeErrors).getOrElse(Nil).mkString("\n")}")
     val generatedLeanFiles = Files.list(outputDir).iterator().asScala.toList
     assert(generatedLeanFiles.exists(_.toString.endsWith(".lean")))
+    val generatedSources = generatedLeanFiles.filter(_.toString.endsWith(".lean")).map(Files.readString)
+    assert(generatedSources.forall(source => !source.contains("\naxiom ") && !source.startsWith("axiom ")))
 
   // Lists all Minifumo example files under doc/examples recursively.
   private def listExampleFiles(examplesDir: Path): List[Path] =
