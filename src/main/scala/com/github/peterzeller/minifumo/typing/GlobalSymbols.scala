@@ -70,7 +70,7 @@ case class GlobalSymbol(
     31 * file.hashCode() + name.hashCode()
 
   override def tpe: Expr =
-    symbolSignature.match
+    evaluateSignature().getOrElse(symbolSignature).match
       case SymbolSignature.Def(tpe) => tpe
       case SymbolSignature.Datatype(implicitParams) =>
         // Rebuilds a dependent Pi type for imported datatype parameters.
