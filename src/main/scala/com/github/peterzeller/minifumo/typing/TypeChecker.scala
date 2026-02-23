@@ -44,7 +44,8 @@ object TypeChecker:
             buildDataDecl(path, decl, globals, idSupply)(using idSupply)
           case decl: ast.TopLevel.FunDecl =>
             val context1 = TypeContext(globals, Map(), definitionCache)
-            val (typedSig, context2, errs) = checkFunSig(decl.sig)(using context1, itemMetaStore, idSupply)
+            val sym = symbolMap(decl.sig.name)
+            val (typedSig, context2, errs) = checkFunSig(sym, decl.sig)(using context1, itemMetaStore, idSupply)
             errors.addAll(errs)
 
             val typedBody = checkFunctionBody(decl.body, typedSig.returnType, context2, itemMetaStore, idSupply, errors)
@@ -60,7 +61,7 @@ object TypeChecker:
         throw new RuntimeException(s"error checking $path", e)
 
 
-  private def checkFunSig(sig: ast.FunSig)(implicit ctx: TypeContext, metas: MetaContext, ids: IdSupply): (TypedAst.FunSig, TypeContext,  List[TypeError]) = {
+  private def checkFunSig(sym: GlobalSymbol, sig: ast.FunSig)(implicit ctx: TypeContext, metas: MetaContext, ids: IdSupply): (TypedAst.FunSig, TypeContext,  List[TypeError]) = {
 //    throw new RuntimeException(s"Checking of fun sig $sig is not yet implemented")
     var mEnv = ctx
     val errors = mutable.ListBuffer[TypeError]()
@@ -92,8 +93,8 @@ object TypeChecker:
     for p <- typedImplicitParams.reverseIterator do
       fnType = TypedAst.Expr.Pi(p, fnType, true)(p.tpe.source.merge(fnType.source))
 
-    val sym = FunctionSymbol(sig.name, fnType)
-    (TypedAst.FunSig(sym, typedImplicitParams.toList, typedParams.toList, returnType), mEnv, errors.toList)
+    val fSym = FunctionSymbol(sym, fnType)
+    (TypedAst.FunSig(fSym, typedImplicitParams.toList, typedParams.toList, returnType), mEnv, errors.toList)
   }
 
   /** Provides a lookup interface for local and global symbols during type checking. */
@@ -129,7 +130,7 @@ object TypeChecker:
   private[typing] final case class TypeContext(globals: GlobalEnv, locals: Map[String, LocalBinding], definitionCache: DefinitionCache = DefinitionCache.empty) extends Context:
     override def lookupSymbol(name: String): Option[TypedAst.Symbol] =
       locals.get(name).map(_.symbol)
-        .orElse(globals.names.get(name).map(g => TypedAst.GlobalSymbolSymbol(g.name, g.file, g)))
+        .orElse(globals.names.get(name).map(g => g.toSymbol))
 
     override def lookupValue(symbol: TypedAst.TermSymbol): Option[TypedAst.Expr] =
       locals.values.find(_.symbol == symbol).flatMap(_.value)
@@ -209,11 +210,13 @@ object TypeChecker:
             val (s, _) = globalSymbolToCtorSymbol(symbol, ctor.source)
             s
           case None =>
-            TypedAst.CtorSymbol(ctor.name, TypedAst.Expr.UnknownType()(ctor.source))
+            val cSym = globals.names(ctor.name)
+            TypedAst.CtorSymbol(cSym, TypedAst.Expr.UnknownType()(ctor.source))
         }
       TypedAst.CtorDecl(symbol, fields)(ctor.source)
     }
-    TypedAst.TopLevel.DataDecl(DatatypeSymbol(decl.name, buildDatatypeType(typeParams), file), typeParams, ctorDecls)(decl.source)
+    val dSym = globals.names(decl.name)
+    TypedAst.TopLevel.DataDecl(DatatypeSymbol(dSym, buildDatatypeType(typeParams), file), typeParams, ctorDecls)(decl.source)
 
   private def buildDatatypeType(typeParams: List[LocalSymbol]): TypedAst.Expr =
     typeParams match
@@ -353,25 +356,8 @@ object TypeChecker:
             metas.addEqualityConstraint(EqualityConstraint(t1, t2, source))
             true
 
-  def symbolsEqual(a: Symbol, b: Symbol): Boolean =
-    if a == b then
-      true
-    else
-      (a,b) match
-        case (GlobalSymbolSymbol(an, af, _), GlobalNameSymbol(bn, bf)) =>
-          an == bn && af == bf
-        case (GlobalNameSymbol(an, af), GlobalSymbolSymbol(bn, bf, _)) =>
-          an == bn && af == bf
-        case (ctor: CtorSymbol, TypedAst.GlobalNameSymbol(name, _)) =>
-          ctor.name == name
-        case (TypedAst.GlobalNameSymbol(name, _), ctor: CtorSymbol) =>
-          name == ctor.name
-        case (ctor: CtorSymbol, TypedAst.GlobalSymbolSymbol(name, _, _)) =>
-          ctor.name == name
-        case (TypedAst.GlobalSymbolSymbol(name, _, _), ctor: CtorSymbol) =>
-          name == ctor.name
-        case _ =>
-          false
+  private def symbolsEqual(a: Symbol, b: Symbol): Boolean =
+    a == b
 
   /** Renders a deferred equality constraint as an Eq(a, b) datatype application. */
   private def prettyEqConstraint(left: TypedAst.Expr, right: TypedAst.Expr): String =
@@ -1039,18 +1025,24 @@ object TypeChecker:
     def recordTopLevel(item: TypedAst.TopLevel): Unit =
       item match
         case funDecl: TypedAst.TopLevel.FunDecl =>
-          localDefinitions.update(funDecl.sig.symbol.name, buildFunctionLambda(funDecl))
+          localDefinitions.update(funDecl.sig.symbol.name.name, buildFunctionLambda(funDecl))
         case _ => ()
 
     /** Returns an unfoldable expression for a symbol if available. */
-    def definitionFor(symbol: TypedAst.Symbol): Option[TypedAst.Expr] =
-      symbol match
-        case TypedAst.GlobalSymbolSymbol(name, file, _) =>
-          definitionForName(name, file)
-        case TypedAst.GlobalNameSymbol(name, file) =>
-          definitionForName(name, file)
-        case _ =>
+    def definitionFor(symbol: TypedAst.Symbol): Option[TypedAst.Expr] = {
+      symbol match {
+        case symbol: TermSymbol =>
           None
+        case ErrorSymbol(name, tpe) =>
+          None
+        case DatatypeSymbol(name, tpe, file) =>
+          None
+        case fs: FunctionSymbol =>
+          fs.name.typedBody
+        case CtorSymbol(name, tpe) =>
+          None
+      }
+    }
 
     /** Resolves a definition by global name and owning file. */
     private def definitionForName(name: String, file: Path): Option[TypedAst.Expr] =
@@ -1088,7 +1080,7 @@ object TypeChecker:
               val (typedProgram, _) = projectCache.typedAst(fileKey)
               typedProgram.items.collect {
                 case funDecl: TypedAst.TopLevel.FunDecl =>
-                  funDecl.sig.symbol.name -> buildFunctionLambda(funDecl)
+                  funDecl.sig.symbol.name.name -> buildFunctionLambda(funDecl)
               }.toMap
             finally
               loadingFiles.remove(fileKey): Unit
