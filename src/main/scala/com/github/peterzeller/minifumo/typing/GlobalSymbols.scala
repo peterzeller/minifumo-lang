@@ -28,7 +28,6 @@ case class GlobalSymbol(
   file: Path,
   name: String,
   source: SourceRange,
-  symbolSignature: SymbolSignature,
   signatureCont: Set[String] => Either[TypeError, SymbolSignature],
   bodyCont: Set[String] => Either[TypeError, Expr],
 ) extends Symbol:
@@ -69,8 +68,14 @@ case class GlobalSymbol(
   override def hashCode(): Int =
     31 * file.hashCode() + name.hashCode()
 
+  /** Resolves a global symbol signature to a concrete shape for type computation. */
+  private def resolvedSignature: SymbolSignature =
+    evaluateSignature() match
+      case Right(signature) => signature
+      case Left(_) => SymbolSignature.Def(UnknownType()(SourceRange.empty))
+
   override def tpe: Expr =
-    evaluateSignature().getOrElse(symbolSignature).match
+    resolvedSignature.match
       case SymbolSignature.Def(tpe) => tpe
       case SymbolSignature.Datatype(implicitParams) =>
         // Rebuilds a dependent Pi type for imported datatype parameters.
@@ -249,7 +254,7 @@ object GlobalSymbols:
         val symbols = ListBuffer[(String, SourceRange, GlobalSymbol)]()
         // add the type symbol
         val datatypeSignature = SymbolSignature.Datatype(typeParams.toList)
-        val symbol = GlobalSymbol(file, name, t.source, datatypeSignature, _ => Right(datatypeSignature), _ => Right(UnknownType()(t.source)))
+        val symbol = GlobalSymbol(file, name, t.source, _ => Right(datatypeSignature), _ => Right(UnknownType()(t.source)))
         symbols.addOne((name, t.source, symbol))
 
         // build the type expression refering to this data type
@@ -309,7 +314,7 @@ object GlobalSymbols:
         }
         implicitPis
     val functionSignature = SymbolSignature.Def(funType)
-    val symbol = GlobalSymbol(file, sig.name, sig.source, functionSignature, _ => Right(functionSignature), _ => Right(UnknownType()(decl.body.source)))
+    val symbol = GlobalSymbol(file, sig.name, sig.source, _ => Right(functionSignature), _ => Right(UnknownType()(decl.body.source)))
     (List((sig.name, sig.source, symbol)), errors.toList)
 
   def resolveImports(prog: ast.ProgramFile, symbolCache: NameCache): (Map[String, GlobalName], List[TypeError]) =
