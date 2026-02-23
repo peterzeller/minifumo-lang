@@ -24,7 +24,51 @@ case class GlobalSymbols(
 
 case class GlobalName(file: Path, name: String)
 
-case class GlobalSymbol(file: Path, name: String, symbolSignature: SymbolSignature) extends Symbol:
+case class GlobalSymbol(
+  file: Path,
+  name: String,
+  source: SourceRange,
+  symbolSignature: SymbolSignature,
+  signatureCont: Set[String] => Either[TypeError, SymbolSignature],
+  bodyCont: Set[String] => Either[TypeError, Expr],
+) extends Symbol:
+  private var cachedSignature: Option[Either[TypeError, SymbolSignature]] = None
+  private var cachedBody: Option[Either[TypeError, Expr]] = None
+
+  /** Evaluates and caches the symbol signature continuation. */
+  def evaluateSignature(checking: Set[String] = Set.empty): Either[TypeError, SymbolSignature] =
+    if checking.contains(name) then
+      Left(TypeError(s"Cyclic dependency while checking $name", source))
+    else
+      cachedSignature match
+        case Some(value) => value
+        case None =>
+          val result = signatureCont(checking + name)
+          cachedSignature = Some(result)
+          result
+
+  /** Evaluates and caches the symbol body continuation. */
+  def evaluateBody(checking: Set[String] = Set.empty): Either[TypeError, Expr] =
+    if checking.contains(name) then
+      Left(TypeError(s"Cyclic dependency while checking body of $name", source))
+    else
+      cachedBody match
+        case Some(value) => value
+        case None =>
+          val result = bodyCont(checking + name)
+          cachedBody = Some(result)
+          result
+
+  /** Compares symbols by stable identity fields instead of continuation function instances. */
+  override def equals(other: Any): Boolean =
+    other match
+      case that: GlobalSymbol => this.name == that.name && this.file == that.file
+      case _ => false
+
+  /** Computes a stable hash code matching the custom equality implementation. */
+  override def hashCode(): Int =
+    31 * file.hashCode() + name.hashCode()
+
   override def tpe: Expr =
     symbolSignature.match
       case SymbolSignature.Def(tpe) => tpe
@@ -204,7 +248,8 @@ object GlobalSymbols:
           typeParams.addOne(symbol)
         val symbols = ListBuffer[(String, SourceRange, GlobalSymbol)]()
         // add the type symbol
-        val symbol = GlobalSymbol(file, name, SymbolSignature.Datatype(typeParams.toList))
+        val datatypeSignature = SymbolSignature.Datatype(typeParams.toList)
+        val symbol = GlobalSymbol(file, name, t.source, datatypeSignature, _ => Right(datatypeSignature), _ => Right(UnknownType()(t.source)))
         symbols.addOne((name, t.source, symbol))
 
         // build the type expression refering to this data type
@@ -263,7 +308,8 @@ object GlobalSymbols:
           TypedAst.Expr.Pi(dom, cod, isImplicit = true)(sig.source)
         }
         implicitPis
-    val symbol = GlobalSymbol(file, sig.name, SymbolSignature.Def(funType))
+    val functionSignature = SymbolSignature.Def(funType)
+    val symbol = GlobalSymbol(file, sig.name, sig.source, functionSignature, _ => Right(functionSignature), _ => Right(UnknownType()(decl.body.source)))
     (List((sig.name, sig.source, symbol)), errors.toList)
 
   def resolveImports(prog: ast.ProgramFile, symbolCache: NameCache): (Map[String, GlobalName], List[TypeError]) =
