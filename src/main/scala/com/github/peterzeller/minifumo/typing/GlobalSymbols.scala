@@ -240,22 +240,38 @@ object GlobalSymbols:
     t match
       case ast.TopLevel.DataDecl(name, implicitParams, ctors, exported) if exported || !onlyExported =>
         // TODO add symbols for datatypes
-        var nextId = 0
         var localNames = env.localNames
         val errors = ListBuffer[TypeError]()
-        val typeParams = ListBuffer[LocalSymbol]()
-        for param <- implicitParams do
-          val (paramType, paramErrors) = checkSignatureExpr(param.tpe, env.copy(localNames = localNames))(using ids)
-          errors.addAll(paramErrors)
-          val symbol = LocalSymbol(param.name, paramType, nextId)
-          nextId += 1
-          localNames = localNames + (param.name -> symbol)
-          typeParams.addOne(symbol)
         val symbols = ListBuffer[(String, SourceRange, GlobalSymbol)]()
-        // add the type symbol
-        val datatypeSignature = SymbolSignature.Datatype(typeParams.toList)
-        val symbol = GlobalSymbol(file, name, t.source, _ => Right(datatypeSignature), _ => Right(UnknownType()(t.source)))
+        // add the type symbol via continuation and force it once to keep eager validation behavior.
+        val symbol = GlobalSymbol(file, name, t.source,
+          _ =>
+            var nextId = 0
+            var sigLocals = env.localNames
+            val signatureErrors = ListBuffer[TypeError]()
+            val typeParams = ListBuffer[LocalSymbol]()
+            for param <- implicitParams do
+              val (paramType, paramErrors) = checkSignatureExpr(param.tpe, env.copy(localNames = sigLocals))(using ids)
+              signatureErrors.addAll(paramErrors)
+              val localSymbol = LocalSymbol(param.name, paramType, nextId)
+              nextId += 1
+              sigLocals = sigLocals + (param.name -> localSymbol)
+              typeParams.addOne(localSymbol)
+            signatureErrors.headOption match
+              case Some(e) => Left(e)
+              case None => Right(SymbolSignature.Datatype(typeParams.toList)),
+          _ => Right(UnknownType()(t.source))
+        )
+        symbol.evaluateSignature().left.foreach(errors.addOne)
         symbols.addOne((name, t.source, symbol))
+
+        // Rebuild local names for constructor signature checks.
+        var nextId = 0
+        for param <- implicitParams do
+          val (paramType, _) = checkSignatureExpr(param.tpe, env.copy(localNames = localNames))(using ids)
+          val localSymbol = LocalSymbol(param.name, paramType, nextId)
+          nextId += 1
+          localNames = localNames + (param.name -> localSymbol)
 
         // build the type expression refering to this data type
         var dt: ast.Expr = ast.Expr.Var(name)(t.source)
@@ -282,39 +298,48 @@ object GlobalSymbols:
 
   def symbolsForFunDef(decl: ast.TopLevel.FunDecl, file: Path, env: PreEnv, ids: TypeChecker.IdSupply): (Iterable[(String, SourceRange, GlobalSymbol)], Iterable[TypeError]) =
     val sig = decl.sig
-    var nextId = 0
-    var localNames = env.localNames
     val errors = ListBuffer[TypeError]()
-    val implicitParamTypes = ListBuffer[LocalSymbol]()
-    val paramTypes = ListBuffer[LocalSymbol]()
-    for param <- sig.implicitParams do
-      val (paramType, paramErrors) = checkSignatureExpr(param.tpe, env.copy(localNames = localNames))(using ids)
-      errors.addAll(paramErrors)
-      val symbol = LocalSymbol(param.name, paramType, nextId)
-      nextId += 1
-      localNames = localNames + (param.name -> symbol)
-      implicitParamTypes.addOne(symbol)
-    for param <- sig.params do
-      val (paramType, paramErrors) = checkSignatureExpr(param.tpe, env.copy(localNames = localNames))(using ids)
-      errors.addAll(paramErrors)
-      val symbol = LocalSymbol(param.name, paramType, nextId)
-      nextId += 1
-      localNames = localNames + (param.name -> symbol)
-      paramTypes.addOne(symbol)
-    val (returnType, returnErrors) = checkSignatureExpr(sig.returnType, env.copy(localNames = localNames))(using ids)
-    errors.addAll(returnErrors)
-    val funType = (implicitParamTypes.toList, paramTypes.toList).match
-      case (Nil, Nil) => returnType
-      case _ =>
-        val explicitPis = paramTypes.foldRight(returnType) { (dom, cod) =>
-          TypedAst.Expr.Pi(dom, cod, isImplicit = false)(sig.source)
-        }
-        val implicitPis = implicitParamTypes.foldRight(explicitPis) { (dom, cod) =>
-          TypedAst.Expr.Pi(dom, cod, isImplicit = true)(sig.source)
-        }
-        implicitPis
-    val functionSignature = SymbolSignature.Def(funType)
-    val symbol = GlobalSymbol(file, sig.name, sig.source, _ => Right(functionSignature), _ => Right(UnknownType()(decl.body.source)))
+    // Build function signature via continuation and force it once to keep eager validation behavior.
+    val symbol = GlobalSymbol(file, sig.name, sig.source,
+      _ =>
+        var nextId = 0
+        var localNames = env.localNames
+        val signatureErrors = ListBuffer[TypeError]()
+        val implicitParamTypes = ListBuffer[LocalSymbol]()
+        val paramTypes = ListBuffer[LocalSymbol]()
+        for param <- sig.implicitParams do
+          val (paramType, paramErrors) = checkSignatureExpr(param.tpe, env.copy(localNames = localNames))(using ids)
+          signatureErrors.addAll(paramErrors)
+          val localSymbol = LocalSymbol(param.name, paramType, nextId)
+          nextId += 1
+          localNames = localNames + (param.name -> localSymbol)
+          implicitParamTypes.addOne(localSymbol)
+        for param <- sig.params do
+          val (paramType, paramErrors) = checkSignatureExpr(param.tpe, env.copy(localNames = localNames))(using ids)
+          signatureErrors.addAll(paramErrors)
+          val localSymbol = LocalSymbol(param.name, paramType, nextId)
+          nextId += 1
+          localNames = localNames + (param.name -> localSymbol)
+          paramTypes.addOne(localSymbol)
+        val (returnType, returnErrors) = checkSignatureExpr(sig.returnType, env.copy(localNames = localNames))(using ids)
+        signatureErrors.addAll(returnErrors)
+        signatureErrors.headOption match
+          case Some(e) => Left(e)
+          case None =>
+            val funType = (implicitParamTypes.toList, paramTypes.toList).match
+              case (Nil, Nil) => returnType
+              case _ =>
+                val explicitPis = paramTypes.foldRight(returnType) { (dom, cod) =>
+                  TypedAst.Expr.Pi(dom, cod, isImplicit = false)(sig.source)
+                }
+                val implicitPis = implicitParamTypes.foldRight(explicitPis) { (dom, cod) =>
+                  TypedAst.Expr.Pi(dom, cod, isImplicit = true)(sig.source)
+                }
+                implicitPis
+            Right(SymbolSignature.Def(funType)),
+      _ => Right(UnknownType()(decl.body.source))
+    )
+    symbol.evaluateSignature().left.foreach(errors.addOne)
     (List((sig.name, sig.source, symbol)), errors.toList)
 
   def resolveImports(prog: ast.ProgramFile, symbolCache: NameCache): (Map[String, GlobalName], List[TypeError]) =
