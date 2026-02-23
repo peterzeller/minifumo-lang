@@ -122,8 +122,12 @@ object TypeChecker:
 
   /** Stores global symbols for type checking. */
   private[typing] final case class GlobalEnv(
-      names: Map[String, GlobalSymbol]
-    )
+      names: Map[String, GlobalSymbol],
+      checkingSignatures: Set[String] = Set.empty,
+    ):
+    /** Extends the signature-checking set with one additional symbol name. */
+    def withCheckingSignature(name: String): GlobalEnv =
+      copy(checkingSignatures = checkingSignatures + name)
 
   /** Implements a context with local bindings and global symbols. */
   private[typing] final case class TypeContext(globals: GlobalEnv, locals: Map[String, LocalBinding], definitionCache: DefinitionCache = DefinitionCache.empty) extends Context:
@@ -206,7 +210,7 @@ object TypeChecker:
       val symbol: CtorSymbol =
         globals.names.get(ctor.name) match {
           case Some(symbol) =>
-            val (s, _) = globalSymbolToCtorSymbol(symbol, ctor.source)
+            val (s, _) = globalSymbolToCtorSymbol(symbol, ctor.source, globals.checkingSignatures)
             s
           case None =>
             TypedAst.CtorSymbol(ctor.name, TypedAst.Expr.UnknownType()(ctor.source))
@@ -420,7 +424,7 @@ object TypeChecker:
     symbol match
       case _: TypedAst.CtorSymbol => Some(DefEqHeadKind.Constructor)
       case g: GlobalSymbol =>
-        g.evaluateSignature() match
+        g.evaluateSignature(signatureCheckingSet) match
           case Right(SymbolSignature.Datatype(_)) => Some(DefEqHeadKind.TypeConstructor)
           case Right(SymbolSignature.Def(tpe)) if hasDatatypeResultType(tpe) => Some(DefEqHeadKind.Constructor)
           case _ => None
@@ -440,6 +444,12 @@ object TypeChecker:
           case _ => false
         }
       case _ => false
+
+  /** Reads the current signature-checking stack from the type context when available. */
+  private def signatureCheckingSet(using ctx: Context): Set[String] =
+    ctx match
+      case typeCtx: TypeContext => typeCtx.globals.checkingSignatures
+      case _ => Set.empty
 
   /** Tries to solve deferred equality constraints by normalizing both sides. */
   private def solveOpenConstraints(fuel: Int)(implicit ctx: Context, metas: MetaContext): List[(EqualityConstraint, TypedAst.Expr, TypedAst.Expr)] =
@@ -881,7 +891,7 @@ object TypeChecker:
         ctx.globals.names.get(name) match
           case Some(symbol) =>
             // Uses constructor matching if a global constructor of this name exists.
-            val (ctorSymbol, ctorErrors) = globalSymbolToCtorSymbol(symbol, pattern.source)
+            val (ctorSymbol, ctorErrors) = globalSymbolToCtorSymbol(symbol, pattern.source, ctx.globals.checkingSignatures)
             val typed = TypedAst.Pattern.Ctor(ctorSymbol, Nil)(pattern.source)
             val refinement = extractPatternRefinement(ctorSymbol.tpe, expectedType)
             PatternCheckResult(typed, Map(), refinement, ctorErrors)
@@ -893,7 +903,7 @@ object TypeChecker:
       case ast.Pattern.Ctor(name, args) =>
         ctx.globals.names.get(name) match
           case Some(symbol) =>
-            val (ctorSymbol, ctorErrors) = globalSymbolToCtorSymbol(symbol, pattern.source)
+            val (ctorSymbol, ctorErrors) = globalSymbolToCtorSymbol(symbol, pattern.source, ctx.globals.checkingSignatures)
             val fieldTypes = extractCtorFieldTypes(ctorSymbol.tpe, expectedType)
             val paddedFieldTypes = fieldTypes.padTo(args.length, TypedAst.Expr.UnknownType()(pattern.source))
             val argResults = args.zip(paddedFieldTypes).map { (arg, fieldType) =>
@@ -945,8 +955,8 @@ object TypeChecker:
       }
       ctx.copy(locals = rewrittenLocals)
 
-  private def globalSymbolToCtorSymbol(s: GlobalSymbol, source: SourceRange): (CtorSymbol, List[TypeError]) =
-    s.evaluateSignature() match
+  private def globalSymbolToCtorSymbol(s: GlobalSymbol, source: SourceRange, checkingSignatures: Set[String] = Set.empty): (CtorSymbol, List[TypeError]) =
+    s.evaluateSignature(checkingSignatures) match
       case Right(minifumo.typing.SymbolSignature.Def(tpe)) =>
         (CtorSymbol(s.name, tpe), List())
       case Right(minifumo.typing.SymbolSignature.Datatype(_)) =>
