@@ -420,9 +420,9 @@ object TypeChecker:
     symbol match
       case _: TypedAst.CtorSymbol => Some(DefEqHeadKind.Constructor)
       case g: GlobalSymbol =>
-        g.symbolSignature match
-          case SymbolSignature.Datatype(_) => Some(DefEqHeadKind.TypeConstructor)
-          case SymbolSignature.Def(tpe) if hasDatatypeResultType(tpe) => Some(DefEqHeadKind.Constructor)
+        g.evaluateSignature() match
+          case Right(SymbolSignature.Datatype(_)) => Some(DefEqHeadKind.TypeConstructor)
+          case Right(SymbolSignature.Def(tpe)) if hasDatatypeResultType(tpe) => Some(DefEqHeadKind.Constructor)
           case _ => None
       case _: TypedAst.GlobalNameSymbol => Some(DefEqHeadKind.TypeConstructor)
       case _ => None
@@ -435,9 +435,10 @@ object TypeChecker:
         case other => other
     decomposeApplication(codomain(expr))._1 match
       case TypedAst.Expr.Var(g: GlobalSymbol) =>
-        g.symbolSignature match
+        g.evaluateSignature().exists {
           case SymbolSignature.Datatype(_) => true
           case _ => false
+        }
       case _ => false
 
   /** Tries to solve deferred equality constraints by normalizing both sides. */
@@ -945,11 +946,13 @@ object TypeChecker:
       ctx.copy(locals = rewrittenLocals)
 
   private def globalSymbolToCtorSymbol(s: GlobalSymbol, source: SourceRange): (CtorSymbol, List[TypeError]) =
-    s.symbolSignature match
-      case minifumo.typing.SymbolSignature.Def(tpe) =>
+    s.evaluateSignature() match
+      case Right(minifumo.typing.SymbolSignature.Def(tpe)) =>
         (CtorSymbol(s.name, tpe), List())
-      case minifumo.typing.SymbolSignature.Datatype(implicitParams) =>
+      case Right(minifumo.typing.SymbolSignature.Datatype(_)) =>
         val e = TypeError(s"expected a constructor symbol, but found data type ${s.name}", source)
+        (CtorSymbol(s.name, Expr.UnknownType()(SourceRange.empty)), List(e))
+      case Left(e) =>
         (CtorSymbol(s.name, Expr.UnknownType()(SourceRange.empty)), List(e))
 
   // Collects explicit field types and result type from a constructor signature.
@@ -1046,11 +1049,18 @@ object TypeChecker:
     def definitionFor(symbol: TypedAst.Symbol): Option[TypedAst.Expr] =
       symbol match
         case g: GlobalSymbol =>
-          definitionForName(g.name, g.file)
+          continuationBodyIfAvailable(g).orElse(definitionForName(g.name, g.file))
         case TypedAst.GlobalNameSymbol(name, file) =>
           definitionForName(name, file)
         case _ =>
           None
+
+    /** Uses continuation-provided bodies only when they are concrete unfoldable expressions. */
+    private def continuationBodyIfAvailable(symbol: GlobalSymbol): Option[TypedAst.Expr] =
+      symbol.evaluateBody().toOption.filter {
+        case TypedAst.Expr.UnknownType() => false
+        case _ => true
+      }
 
     /** Resolves a definition by global name and owning file. */
     private def definitionForName(name: String, file: Path): Option[TypedAst.Expr] =
