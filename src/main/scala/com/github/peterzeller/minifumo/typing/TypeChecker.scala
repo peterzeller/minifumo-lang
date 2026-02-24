@@ -405,12 +405,12 @@ object TypeChecker:
   private def classifyHead(symbol: TypedAst.Symbol)(using ctx: Context): Option[DefEqHeadKind] =
     symbol match
       case _: TypedAst.CtorSymbol => Some(DefEqHeadKind.Constructor)
-      case TypedAst.GlobalSymbolSymbol(_, _, g) =>
+      case TypedAst.FunctionSymbol(g, _) =>
         g.symbolSignature match
           case SymbolSignature.Datatype(_) => Some(DefEqHeadKind.TypeConstructor)
           case SymbolSignature.Def(tpe) if hasDatatypeResultType(tpe) => Some(DefEqHeadKind.Constructor)
           case _ => None
-      case _: TypedAst.GlobalNameSymbol => Some(DefEqHeadKind.TypeConstructor)
+      case _: TypedAst.DatatypeSymbol => Some(DefEqHeadKind.TypeConstructor)
       case _ => None
 
   /** Checks whether a function type eventually returns a datatype head. */
@@ -420,10 +420,11 @@ object TypeChecker:
         case TypedAst.Expr.Pi(_, cod, _) => codomain(cod)
         case other => other
     decomposeApplication(codomain(expr))._1 match
-      case TypedAst.Expr.Var(TypedAst.GlobalSymbolSymbol(_, _, g)) =>
+      case TypedAst.Expr.Var(TypedAst.FunctionSymbol(g, _)) =>
         g.symbolSignature match
           case SymbolSignature.Datatype(_) => true
           case _ => false
+      case TypedAst.Expr.Var(TypedAst.DatatypeSymbol(_, _, _)) => true
       case _ => false
 
   /** Tries to solve deferred equality constraints by normalizing both sides. */
@@ -564,8 +565,10 @@ object TypeChecker:
   /** Approximates constructor symbols for unresolved global-name variants. */
   private def symbolLooksLikeCtor(symbol: TypedAst.Symbol): Boolean =
     symbol match
-      case TypedAst.GlobalNameSymbol(name, _) =>
-        name.headOption.exists(_.isUpper)
+      case TypedAst.CtorSymbol(global, _) =>
+        global.name.headOption.exists(_.isUpper)
+      case TypedAst.FunctionSymbol(global, _) =>
+        global.name.headOption.exists(_.isUpper)
       case _ =>
         false
 
@@ -843,7 +846,7 @@ object TypeChecker:
       case ast.Literal.StringLit(_) => "String"
       case ast.Literal.UnitLit() => "Unit"
     ctx.globals.names.get(typeName)
-      .map(sym => TypedAst.Expr.Var(GlobalSymbolSymbol(sym.name, sym.file, sym))(value.source))
+      .map(sym => TypedAst.Expr.Var(sym.toSymbol)(value.source))
       .getOrElse(TypedAst.Expr.UnknownType()(value.source))
 
   /** Checks a pattern against the expected scrutinee type. */
@@ -898,7 +901,8 @@ object TypeChecker:
               errors ++ ctorErrors
             )
           case None =>
-            val symbol = TypedAst.CtorSymbol(name, TypedAst.Expr.UnknownType()(pattern.source))
+            val global = GlobalSymbol(Paths.get(""), name)(ast.TopLevel.FunDecl(ast.FunSig(name, Nil, Nil, ast.Expr.Hole()(pattern.source))(pattern.source), ast.Expr.Hole()(pattern.source), false)(pattern.source))
+            val symbol = TypedAst.CtorSymbol(global, TypedAst.Expr.UnknownType()(pattern.source))
             PatternCheckResult(
               TypedAst.Pattern.Ctor(symbol, Nil)(pattern.source),
               Map(),
@@ -933,10 +937,10 @@ object TypeChecker:
   private def globalSymbolToCtorSymbol(s: GlobalSymbol, source: SourceRange): (CtorSymbol, List[TypeError]) =
     s.symbolSignature match
       case minifumo.typing.SymbolSignature.Def(tpe) =>
-        (CtorSymbol(s.name, tpe), List())
+        (CtorSymbol(s, tpe), List())
       case minifumo.typing.SymbolSignature.Datatype(implicitParams) =>
         val e = TypeError(s"expected a constructor symbol, but found data type ${s.name}", source)
-        (CtorSymbol(s.name, Expr.UnknownType()(SourceRange.empty)), List(e))
+        (CtorSymbol(s, Expr.UnknownType()(SourceRange.empty)), List(e))
 
   // Collects explicit field types and result type from a constructor signature.
   private def decomposeCtorType(ctorType: TypedAst.Expr): (List[TypedAst.Expr], TypedAst.Expr) =
@@ -1025,7 +1029,7 @@ object TypeChecker:
     def recordTopLevel(item: TypedAst.TopLevel): Unit =
       item match
         case funDecl: TypedAst.TopLevel.FunDecl =>
-          localDefinitions.update(funDecl.sig.symbol.name.name, buildFunctionLambda(funDecl))
+          localDefinitions.update(funDecl.sig.symbol.name, buildFunctionLambda(funDecl))
         case _ => ()
 
     /** Returns an unfoldable expression for a symbol if available. */
@@ -1035,23 +1039,17 @@ object TypeChecker:
           None
         case ErrorSymbol(name, tpe) =>
           None
-        case DatatypeSymbol(name, tpe, file) =>
+        case DatatypeSymbol(_, tpe, file) =>
           None
         case fs: FunctionSymbol =>
-          fs.name.typedBody
-        case CtorSymbol(name, tpe) =>
+          fs.global.typedBody
+        case CtorSymbol(_, tpe) =>
           None
       }
     }
 
     /** Resolves a definition by global name and owning file. */
-    private def definitionForName(name: String, file: Path): Option[TypedAst.Expr] =
-      if sameFile(file, currentFile) then
-        localDefinitions.get(name)
-      else
-        val fileKey = normalizeFileKey(file)
-        val fileDefs = externalDefinitions.getOrElseUpdate(fileKey, loadFileDefinitions(fileKey))
-        fileDefs.get(name)
+    
 
     /** Checks whether two file paths refer to the same source file. */
     private def sameFile(left: Path, right: Path): Boolean =
@@ -1080,7 +1078,7 @@ object TypeChecker:
               val (typedProgram, _) = projectCache.typedAst(fileKey)
               typedProgram.items.collect {
                 case funDecl: TypedAst.TopLevel.FunDecl =>
-                  funDecl.sig.symbol.name.name -> buildFunctionLambda(funDecl)
+                  funDecl.sig.symbol.name -> buildFunctionLambda(funDecl)
               }.toMap
             finally
               loadingFiles.remove(fileKey): Unit

@@ -4,7 +4,7 @@ import com.github.peterzeller.minifumo.ast.{Literal, SourceRange}
 import com.github.peterzeller.minifumo.backends.lean.LeanBackend.{GeneratedLeanFile, SourceMapEntry}
 import com.github.peterzeller.minifumo.typing.ProjectSymbolCache
 import com.github.peterzeller.minifumo.typing.TypedAst
-import com.github.peterzeller.minifumo.typing.TypedAst.{GlobalSymbolSymbol, LocalSymbol}
+import com.github.peterzeller.minifumo.typing.TypedAst.LocalSymbol
 
 import java.nio.file.Path
 import scala.collection.mutable
@@ -216,13 +216,11 @@ object LeanEmitter:
       case TypedAst.Expr.Var(symbol) =>
         symbol match
           case local: TypedAst.LocalSymbol => localScope.getOrElse(local.id, mangle.mangle(LeanNameMangler.NameKind.LocalName, local.name))
-          case global: GlobalSymbolSymbol => emitGlobalRef(global.name, Some(global.file), mangle, currentModule, localDefinitions, moduleNameByFile)
-          case fun: TypedAst.FunctionSymbol => emitGlobalRef(fun.name, None, mangle, currentModule, localDefinitions, moduleNameByFile)
-          case ctor: TypedAst.CtorSymbol => emitGlobalRef(ctor.name, None, mangle, currentModule, localDefinitions, moduleNameByFile)
+          case fun: TypedAst.FunctionSymbol => emitGlobalRef(fun.name, Some(fun.global.file), mangle, currentModule, localDefinitions, moduleNameByFile)
+          case ctor: TypedAst.CtorSymbol => emitGlobalRef(ctor.name, Some(ctor.global.file), mangle, currentModule, localDefinitions, moduleNameByFile)
           case dt: TypedAst.DatatypeSymbol => emitGlobalRef(dt.name, Some(dt.file), mangle, currentModule, localDefinitions, moduleNameByFile)
           case err: TypedAst.ErrorSymbol => emitGlobalRef(err.name, None, mangle, currentModule, localDefinitions, moduleNameByFile)
           case builtin: TypedAst.BuiltinValueSymbol => emitGlobalRef(builtin.name, None, mangle, currentModule, localDefinitions, moduleNameByFile)
-          case g: TypedAst.GlobalNameSymbol => emitGlobalRef(g.name, Some(g.file), mangle, currentModule, localDefinitions, moduleNameByFile)
       case TypedAst.Expr.App(callee, arg, _) =>
         s"(${emitExpr(callee, mangle, localScope, currentModule, localDefinitions, moduleNameByFile)} ${emitExpr(arg, mangle, localScope, currentModule, localDefinitions, moduleNameByFile)})"
       case TypedAst.Expr.AppImplicit(callee, arg, _) =>
@@ -309,7 +307,6 @@ object LeanEmitter:
       case TypedAst.Expr.Lit(_) => Set.empty
       case TypedAst.Expr.Var(symbol) =>
         symbol match
-          case g: GlobalSymbolSymbol => Set(g.name)
           case f: TypedAst.FunctionSymbol => Set(f.name)
           case c: TypedAst.CtorSymbol => Set(c.name)
           case d: TypedAst.DatatypeSymbol => Set(d.name)
