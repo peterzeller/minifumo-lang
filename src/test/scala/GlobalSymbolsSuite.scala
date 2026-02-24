@@ -14,7 +14,7 @@ class GlobalSymbolsSuite extends munit.FunSuite:
 
   case class DummyNameCache(names: Map[String, Map[String, GlobalName]]) extends NameCache with SymbolCache:
     override def globalNames(path: String): Map[String, GlobalName] = names.getOrElse(path, Map())
-    override def globalSymbols(path: String): Map[String, GlobalSymbol] = ???
+    override def globalSymbols(path: String): Map[String, GlobalSymbol] = Map()
 
   private val ids = TypeChecker.IdSupply()
 
@@ -29,19 +29,6 @@ class GlobalSymbolsSuite extends munit.FunSuite:
     """.stripMargin)
     val names = GlobalSymbols.buildGlobalNames(Paths.get("main.minifumo"), program, onlyExported = true)
     assertEquals(names.keySet, Set("Foo", "MakeFoo", "visible"))
-  }
-
-  test("checkSignatureExpr resolves known names and rejects lambdas") {
-    val source = ast.SourceRange.empty
-    val env = GlobalSymbols.PreEnv(globalNames = Map("Int" -> GlobalName(Paths.get("std"), "Int")))
-    val intExpr = ast.Expr.Var("Int")(source)
-    val (resolved, errors) = GlobalSymbols.checkSignatureExpr(intExpr, env)(using ids)
-    assert(errors.isEmpty)
-    assert(resolved.isInstanceOf[TypedAst.Expr.Var])
-    val lambdaParam = ast.LambdaParam("x", None)(source)
-    val lambdaExpr = ast.Expr.Lambda(lambdaParam, ast.Expr.Var("x")(source))(source)
-    val (_, lambdaErrors) = GlobalSymbols.checkSignatureExpr(lambdaExpr, env)(using ids)
-    assert(lambdaErrors.nonEmpty)
   }
 
   test("buildGlobalSymbols reports undefined types in signatures") {

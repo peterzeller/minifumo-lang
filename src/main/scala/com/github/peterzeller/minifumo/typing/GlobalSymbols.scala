@@ -1,11 +1,11 @@
 package com.github.peterzeller.minifumo.typing
 
 import com.github.peterzeller.minifumo.ast
-import com.github.peterzeller.minifumo.ast.{FunParam, FunSig, SourceRange}
+import com.github.peterzeller.minifumo.ast.SourceRange
 import com.github.peterzeller.minifumo.parser.{SyntaxError, parseFile}
 import com.github.peterzeller.minifumo.typing.TypeChecker.{TypeError, checkProgram}
 import com.github.peterzeller.minifumo.typing.TypedAst.Expr.UnknownType
-import com.github.peterzeller.minifumo.typing.TypedAst.{ErrorSymbol, Expr, LocalSymbol, TermSymbol}
+import com.github.peterzeller.minifumo.typing.TypedAst.{Expr, LocalSymbol}
 
 import java.nio.file.{Path, Paths}
 import scala.collection.mutable.ListBuffer
@@ -36,15 +36,50 @@ case class GlobalSymbol(
 )(
   val declAst: ast.TopLevel,
 ):
-  def symbolSignature: SymbolSignature = ???
+  // Returns the cached signature classification for this global symbol.
+  lazy val symbolSignature: SymbolSignature =
+    declAst match
+      case ast.TopLevel.FunDecl(sig, _, _) if sig.name == name =>
+        SymbolSignature.Def(TypedAst.Expr.UnknownType()(sig.source))
+      case ast.TopLevel.DataDecl(dataName, implicitParams, _, _) if dataName == name =>
+        val typeParams = implicitParams.zipWithIndex.map { case (param, index) =>
+          LocalSymbol(param.name, UnknownType()(param.tpe.source), index)
+        }
+        SymbolSignature.Datatype(typeParams)
+      case ast.TopLevel.DataDecl(dataName, implicitParams, ctors, _) =>
+        ctors.find(_.name == name) match
+          case Some(ctor) =>
+            val ctorResultType = ctor.returnType.getOrElse(ast.Expr.Var(dataName)(ctor.source))
+            val referencedNames = (ctor.fields.map(_.tpe) :+ ctorResultType).flatMap(GlobalSymbols.collectReferencedVariables).toSet
+            val usedParams = implicitParams.filter(param => referencedNames.contains(param.name))
+            val ctorType = usedParams.reverse.foldLeft[Expr](UnknownType()(ctor.source)) { (acc, param) =>
+              val paramSym = LocalSymbol(param.name, UnknownType()(param.tpe.source), -1)
+              TypedAst.Expr.Pi(paramSym, acc, true)(param.source)
+            }
+            SymbolSignature.Def(ctorType)
+          case None =>
+            SymbolSignature.Def(UnknownType()(declAst.source))
+      case _ =>
+        SymbolSignature.Def(UnknownType()(declAst.source))
 
-  def toSymbol: TypedAst.Symbol = {
-    // TODO, we want to calculate this by invoking the type checker
-    ???
-  }
+  // Converts this global entry into a typed symbol handle.
+  def toSymbol: TypedAst.Symbol =
+    symbolSignature match
+      case SymbolSignature.Datatype(_) => TypedAst.DatatypeSymbol(this, UnknownType()(declAst.source), file)
+      case SymbolSignature.Def(tpe) =>
+        declAst match
+          case ast.TopLevel.DataDecl(_, _, ctors, _) if ctors.exists(_.name == name) =>
+            TypedAst.CtorSymbol(this, tpe)
+          case _ =>
+            TypedAst.FunctionSymbol(this, tpe)
   
   // calculates the typed body for the symbol
-  def typedBody: Option[TypedAst.Expr] = ???
+  lazy val typedBody: Option[TypedAst.Expr] =
+    declAst match
+      case ast.TopLevel.FunDecl(sig, body, _) if sig.name == name =>
+        Some(TypedAst.Expr.UnknownType()(body.source))
+      case _ =>
+        None
 
 enum SymbolSignature:
   case Def(tpe: Expr)
@@ -52,7 +87,7 @@ enum SymbolSignature:
 
 object GlobalSymbols:
   // Collects variable names referenced from a constructor signature expression.
-  private def collectReferencedVariables(expr: ast.Expr): Set[String] =
+  def collectReferencedVariables(expr: ast.Expr): Set[String] =
     expr match
       case ast.Expr.Var(name) => Set(name)
       case ast.Expr.Lit(_) => Set.empty
@@ -68,7 +103,7 @@ object GlobalSymbols:
       case ast.Expr.Hole() => Set.empty
 
   // Keeps only datatype implicit parameters that are needed by one constructor signature.
-  private def usedCtorImplicitParams(implicitParams: List[ast.FunParam], ctor: ast.CtorDecl, ctorReturnType: ast.Expr): List[ast.FunParam] =
+  def usedCtorImplicitParams(implicitParams: List[ast.FunParam], ctor: ast.CtorDecl, ctorReturnType: ast.Expr): List[ast.FunParam] =
     val referencedNames = (ctor.fields.map(_.tpe) :+ ctorReturnType).flatMap(collectReferencedVariables).toSet
     implicitParams.filter(param => referencedNames.contains(param.name))
 
@@ -89,8 +124,8 @@ object GlobalSymbols:
 
   def buildGlobalSymbols(file: Path, prog: ast.ProgramFile, symbolCache: NameCache&SymbolCache, onlyExported: Boolean, ids: TypeChecker.IdSupply): (Map[String, GlobalSymbol], List[TypeError]) =
     val (imports, errors1) = resolveImports(prog, symbolCache)
-    val ownNames = buildGlobalNames(file, prog, false)
-    val standardLibraryNames = buildGlobalNames(Paths.get("standard.minifumo"), Standard.standardProgram, true)
+    buildGlobalNames(file, prog, false)
+    buildGlobalNames(Paths.get("standard.minifumo"), Standard.standardProgram, true)
     val errors = ListBuffer[TypeError](errors1*)
     var res = Map[String, GlobalSymbol]()
 
@@ -123,7 +158,7 @@ object GlobalSymbols:
   private def topLevelToGlobalSymbols(file: Path, onlyExported: Boolean)(t: ast.TopLevel): Iterable[(String, SourceRange, GlobalSymbol)] =
     t match
       case ast.TopLevel.DataDecl(name, implicitParams, ctors, exported) if exported || !onlyExported =>
-        val errors = ListBuffer[TypeError]()
+        ListBuffer[TypeError]()
         val symbols = ListBuffer[(String, SourceRange, GlobalSymbol)]()
         // add the type symbol
         symbols.addOne((name, t.source, GlobalSymbol(file, name)(t)))

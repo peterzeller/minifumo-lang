@@ -1,10 +1,20 @@
 import com.github.peterzeller.minifumo.ast
-import com.github.peterzeller.minifumo.typing.{TypeChecker, TypedAst}
+import com.github.peterzeller.minifumo.typing.{GlobalSymbol, TypeChecker, TypedAst}
 
 import java.nio.file.Path
 import scala.collection.mutable
 
 class TypeCheckerSuite extends munit.FunSuite:
+
+  // Creates a dummy global symbol for unit tests that only need identity/equality.
+  private def dummyGlobal(name: String): GlobalSymbol =
+    GlobalSymbol(Path.of("test.minifumo"), name)(
+      ast.TopLevel.FunDecl(
+        ast.FunSig(name, Nil, Nil, ast.Expr.Hole()(ast.SourceRange.empty))(ast.SourceRange.empty),
+        ast.Expr.Hole()(ast.SourceRange.empty),
+        exported = false
+      )(ast.SourceRange.empty)
+    )
 
   // Builds an empty typing context for normalization tests.
   private def emptyContext: TypeChecker.Context =
@@ -94,9 +104,9 @@ class TypeCheckerSuite extends munit.FunSuite:
   test("constraint reduction unfolds natAdd(Suc(N))(M) to Suc(natAdd(N)(M))") {
     val source = ast.SourceRange.empty
     val unknown = TypedAst.Expr.UnknownType()(source)
-    val natAddSymbol = TypedAst.GlobalNameSymbol("natAdd", Path.of("test.minifumo"))
-    val sucSymbol = TypedAst.CtorSymbol("Suc", unknown)
-    val zeroSymbol = TypedAst.CtorSymbol("Zero", unknown)
+    val natAddSymbol = TypedAst.FunctionSymbol(dummyGlobal("natAdd"), unknown)
+    val sucSymbol = TypedAst.CtorSymbol(dummyGlobal("Suc"), unknown)
+    val zeroSymbol = TypedAst.CtorSymbol(dummyGlobal("Zero"), unknown)
     val paramN = TypedAst.LocalSymbol("n", unknown, 1)
     val paramM = TypedAst.LocalSymbol("m", unknown, 2)
     val caseK = TypedAst.LocalSymbol("k", unknown, 3)
