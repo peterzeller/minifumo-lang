@@ -1,0 +1,32 @@
+// Computes the sum 0 + 1 + ... + n using Nat addition.
+fun natSumTo(n: Nat): Nat
+    match n
+        case Zero
+            Zero
+        case Suc(k)
+            natAdd(Suc(k), natSumTo(k))
+
+// Computes n * (n + 1) / 2 and unfolds recursively for the induction proof.
+fun natGaussClosedForm(n: Nat): Nat
+    match n
+        case Zero
+            let _baseAsProductOverTwo = natDiv(natMul(Zero, Suc(Zero)), Suc(Suc(Zero)))
+            Zero
+        case Suc(k)
+            let _stepAsDiffOverTwo = natDiv(
+                natSub(natMul(Suc(k), Suc(Suc(k))), natMul(k, Suc(k))),
+                Suc(Suc(Zero))
+            )
+            natAdd(Suc(k), natGaussClosedForm(k))
+
+// Proves by induction that natSumTo(n) equals the closed form n * (n + 1) / 2.
+export fun nat_sum_equals_gauss(n: Nat): Eq[Nat, natSumTo(n), natGaussClosedForm(n)]
+    match n
+        case Zero
+            refl
+        case Suc(k)
+            let ih: Eq[Nat, natSumTo(k), natGaussClosedForm(k)] = nat_sum_equals_gauss(k)
+            congrArg[Nat, Nat, natSumTo(k), natGaussClosedForm(k)](
+                (acc) => natAdd(Suc(k), acc),
+                ih
+            )
