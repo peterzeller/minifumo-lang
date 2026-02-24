@@ -5,14 +5,13 @@ import com.github.peterzeller.minifumo.ast.{FunParam, FunSig, SourceRange}
 import com.github.peterzeller.minifumo.parser.{SyntaxError, parseFile}
 import com.github.peterzeller.minifumo.typing.TypeChecker.{TypeError, checkProgram}
 import com.github.peterzeller.minifumo.typing.TypedAst.Expr.UnknownType
-import com.github.peterzeller.minifumo.typing.TypedAst.{ErrorSymbol, Expr, GlobalNameSymbol, GlobalSymbolSymbol, LocalSymbol}
+import com.github.peterzeller.minifumo.typing.TypedAst.{ErrorSymbol, Expr, LocalSymbol, TermSymbol}
 
 import java.nio.file.{Path, Paths}
 import scala.collection.mutable.ListBuffer
 import com.github.peterzeller.minifumo.builtins.Standard
 import com.github.peterzeller.minifumo.common.MinifumoErrorWithPath
 import com.github.peterzeller.minifumo.parser.parseInput
-import com.github.peterzeller.minifumo.typing.SymbolSignature.Def
 
 import scala.annotation.tailrec
 
@@ -24,9 +23,32 @@ case class GlobalSymbols(
 
 case class GlobalName(file: Path, name: String)
 
-case class GlobalSymbol(file: Path, name: String, symbolSignature: SymbolSignature):
-  def toSymbol: GlobalSymbolSymbol =
-    GlobalSymbolSymbol(name, file, this)
+enum GlobalSymbolState:
+  case Init
+  case ComputingSignature
+  case SignatureComputed
+  case ComputingBody
+  case BodyComputed
+
+case class GlobalSymbol(
+  file: Path,
+  name: String,
+)(
+  val declAst: Option[ast.TopLevel],
+):
+  def symbolSignature: SymbolSignature = ???
+
+  def toSymbol: TypedAst.Symbol = {
+    // TODO, we want to calculate this by invoking the type checker
+    ???
+  }
+  
+  // calculates the typed body for the symbol
+  def typedBody: Option[TypedAst.Expr] = ???
+
+object GlobalSymbol:
+  def error(name: String): GlobalSymbol =
+    GlobalSymbol(Path.of(""), name)(None)
 
 enum SymbolSignature:
   case Def(tpe: Expr)
@@ -73,7 +95,6 @@ object GlobalSymbols:
     val (imports, errors1) = resolveImports(prog, symbolCache)
     val ownNames = buildGlobalNames(file, prog, false)
     val standardLibraryNames = buildGlobalNames(Paths.get("standard.minifumo"), Standard.standardProgram, true)
-    val preEnv = PreEnv(globalNames = standardLibraryNames ++ imports ++ ownNames)
     val errors = ListBuffer[TypeError](errors1*)
     var res = Map[String, GlobalSymbol]()
 
@@ -93,8 +114,7 @@ object GlobalSymbols:
           case None =>
             errors.addOne(TypeError(s"Import without from clause not supported", i.source))
 
-    for (symbols, es) <- prog.items.map(topLevelToGlobalSymbols(file, onlyExported, preEnv, ids)) do
-      errors.addAll(es)
+    for symbols <- prog.items.map(topLevelToGlobalSymbols(file, onlyExported)) do
       for (name, source, sym) <- symbols do
         if res.contains(name) then
           errors.addOne(TypeError(s"Name ${name} is already defined", source))
@@ -103,139 +123,29 @@ object GlobalSymbols:
 
     (res, errors.toList)
 
-  // environment for type checking signatures.
-  // Has only limited information compared to real type checking
-  case class PreEnv(
-    globalNames: Map[String, GlobalName],
-    localNames: Map[String, LocalSymbol] = Map(),
-  )
 
-  // performs basic checks (like name resolution) on an expression appearing in a signature.
-  // Only basic language constructs are allowed in signatures, like Pi expressions, names, constants, literals, and function applications.
-  // This means, that we don't need to do complex type checking in function signatures.
-  // We also don't check function application, only translate the terms to the typed AST.
-  def checkSignatureExpr(expr: ast.Expr, env: PreEnv)(implicit ids: TypeChecker.IdSupply): (Expr, List[TypeError]) =
-    expr match
-      case ast.Expr.Lit(value) =>
-        (Expr.Lit(value)(expr.source), List())
-      case ast.Expr.Var("Type") =>
-        (Expr.Sort()(expr.source), List())
-      case ast.Expr.Var(name) =>
-        // first lookup in local env
-        env.localNames.get(name) match
-          case Some(s) =>
-            (Expr.Var(s)(expr.source), List())
-          case None =>
-            // then lookup in global env
-            env.globalNames.get(name) match
-              case Some(n) =>
-                val s = GlobalNameSymbol(n.name, n.file)
-                (Expr.Var(s)(expr.source), List())
-              case None =>
-                (Expr.Var(ErrorSymbol(name, UnknownType()(SourceRange.empty)))(expr.source), List(TypeError(s"Could not find ${name}", expr.source)))
-      case ast.Expr.CallImplicit(callee, arg) =>
-        val (c, e1) = checkSignatureExpr(callee, env)
-        val (a, e2) = checkSignatureExpr(arg, env)
-        val t = TypedAst.Expr.UnknownType()(expr.source)
-        (TypedAst.Expr.AppImplicit(c, a, t)(expr.source), e1++e2)
-      case ast.Expr.Call(callee, arg) =>
-        val (c, e1) = checkSignatureExpr(callee, env)
-        val (a, e2) = checkSignatureExpr(arg, env)
-        val t = TypedAst.Expr.UnknownType()(expr.source)
-        (TypedAst.Expr.App(c, a, t)(expr.source), e1++e2)
-      case ast.Expr.Lambda(param, body) =>
-        (TypedAst.Expr.UnknownType()(expr.source), List(TypeError("Cannot use lambda expressions in function signatures", expr.source)))
-      case ast.Expr.Pi(param, body) =>
-        val (dom, errors1) = checkSignatureExpr(param.tpe, env)
-        val s = LocalSymbol(param.name, dom, ids.freshLocalId())
-        val (cod, errors2) = checkSignatureExpr(body, env.copy(localNames = env.localNames + (param.name -> s)))
-        (TypedAst.Expr.Pi(s, cod, isImplicit = false)(expr.source), errors1 ++ errors2)
-      case ast.Expr.LetIn(name, tpe, value, body) =>
-        (TypedAst.Expr.UnknownType()(expr.source), List(TypeError("Cannot use let expressions in function signatures", expr.source)))
-      case ast.Expr.Match(scrutinee, cases) =>
-        (TypedAst.Expr.UnknownType()(expr.source), List(TypeError("Cannot use match expressions in function signatures", expr.source)))
-      case ast.Expr.Hole() =>
-        (TypedAst.Expr.UnknownType()(expr.source), List())
-
-
-  private def topLevelToGlobalSymbols(file: Path, onlyExported: Boolean, env: PreEnv, ids: TypeChecker.IdSupply)(t: ast.TopLevel): (Iterable[(String, SourceRange, GlobalSymbol)], Iterable[TypeError]) =
+  private def topLevelToGlobalSymbols(file: Path, onlyExported: Boolean)(t: ast.TopLevel): Iterable[(String, SourceRange, GlobalSymbol)] =
     t match
       case ast.TopLevel.DataDecl(name, implicitParams, ctors, exported) if exported || !onlyExported =>
-        // TODO add symbols for datatypes
-        var nextId = 0
-        var localNames = env.localNames
         val errors = ListBuffer[TypeError]()
-        val typeParams = ListBuffer[LocalSymbol]()
-        for param <- implicitParams do
-          val (paramType, paramErrors) = checkSignatureExpr(param.tpe, env.copy(localNames = localNames))(using ids)
-          errors.addAll(paramErrors)
-          val symbol = LocalSymbol(param.name, paramType, nextId)
-          nextId += 1
-          localNames = localNames + (param.name -> symbol)
-          typeParams.addOne(symbol)
         val symbols = ListBuffer[(String, SourceRange, GlobalSymbol)]()
         // add the type symbol
-        val symbol = GlobalSymbol(file, name, SymbolSignature.Datatype(typeParams.toList))
-        symbols.addOne((name, t.source, symbol))
+        symbols.addOne((name, t.source, GlobalSymbol(file, name)(t)))
 
-        // build the type expression refering to this data type
-        var dt: ast.Expr = ast.Expr.Var(name)(t.source)
-        for i <- implicitParams do
-          dt = ast.Expr.CallImplicit(dt, ast.Expr.Var(i.name)(t.source))(t.source)
 
         // add symbols for the constructors
         for ctor <- ctors do
-          // create a dummy fun decl for the constructor
-          val ctorReturnType = ctor.returnType.getOrElse(dt)
-          val ctorImplicitParams = usedCtorImplicitParams(implicitParams, ctor, ctorReturnType)
-          val sig = FunSig(ctor.name, ctorImplicitParams, ctor.fields.map(f => FunParam(f.name, f.tpe)(f.source)), ctorReturnType)(ctor.source)
-          val f: ast.TopLevel.FunDecl = ast.TopLevel.FunDecl(sig, ast.Expr.Hole()(ctor.source), true)(ctor.source)
-
-          val (syms, errs) = symbolsForFunDef(f, file, env.copy(localNames = localNames), ids)
-          errors.addAll(errs)
-          symbols.addAll(syms)
-
-        (symbols.toList, errors.toList)
+          symbols.addOne((ctor.name, ctor.source, GlobalSymbol(file, ctor.name)(t)))
+        symbols
       case f@ast.TopLevel.FunDecl(sig, _, exported) if exported || !onlyExported =>
-        symbolsForFunDef(f, file, env, ids)
+        symbolsForFunDef(f, file)
       case _ =>
-        (List(), List())
+        List()
 
-  def symbolsForFunDef(decl: ast.TopLevel.FunDecl, file: Path, env: PreEnv, ids: TypeChecker.IdSupply): (Iterable[(String, SourceRange, GlobalSymbol)], Iterable[TypeError]) =
+  private def symbolsForFunDef(decl: ast.TopLevel.FunDecl, file: Path): Iterable[(String, SourceRange, GlobalSymbol)] =
     val sig = decl.sig
-    var nextId = 0
-    var localNames = env.localNames
-    val errors = ListBuffer[TypeError]()
-    val implicitParamTypes = ListBuffer[LocalSymbol]()
-    val paramTypes = ListBuffer[LocalSymbol]()
-    for param <- sig.implicitParams do
-      val (paramType, paramErrors) = checkSignatureExpr(param.tpe, env.copy(localNames = localNames))(using ids)
-      errors.addAll(paramErrors)
-      val symbol = LocalSymbol(param.name, paramType, nextId)
-      nextId += 1
-      localNames = localNames + (param.name -> symbol)
-      implicitParamTypes.addOne(symbol)
-    for param <- sig.params do
-      val (paramType, paramErrors) = checkSignatureExpr(param.tpe, env.copy(localNames = localNames))(using ids)
-      errors.addAll(paramErrors)
-      val symbol = LocalSymbol(param.name, paramType, nextId)
-      nextId += 1
-      localNames = localNames + (param.name -> symbol)
-      paramTypes.addOne(symbol)
-    val (returnType, returnErrors) = checkSignatureExpr(sig.returnType, env.copy(localNames = localNames))(using ids)
-    errors.addAll(returnErrors)
-    val funType = (implicitParamTypes.toList, paramTypes.toList).match
-      case (Nil, Nil) => returnType
-      case _ =>
-        val explicitPis = paramTypes.foldRight(returnType) { (dom, cod) =>
-          TypedAst.Expr.Pi(dom, cod, isImplicit = false)(sig.source)
-        }
-        val implicitPis = implicitParamTypes.foldRight(explicitPis) { (dom, cod) =>
-          TypedAst.Expr.Pi(dom, cod, isImplicit = true)(sig.source)
-        }
-        implicitPis
-    val symbol = GlobalSymbol(file, sig.name, SymbolSignature.Def(funType))
-    (List((sig.name, sig.source, symbol)), errors.toList)
+    val symbol = GlobalSymbol(file, sig.name)(decl)
+    List((sig.name, sig.source, symbol))
 
   def resolveImports(prog: ast.ProgramFile, symbolCache: NameCache): (Map[String, GlobalName], List[TypeError]) =
     val errors = ListBuffer[TypeError]()

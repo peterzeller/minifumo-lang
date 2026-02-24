@@ -1,0 +1,24 @@
+// Computes 0 + 1 + ... + n by structural recursion on Nat.
+fun sumToNat(n: Nat): Nat
+    match n
+        case Zero
+            Zero
+        case Suc(k)
+            natAdd(Suc(k), sumToNat(k))
+
+// Computes the triangular number using the closed-form recurrence for n*(n+1)/2.
+fun nTimesNPlusOneOverTwo(n: Nat): Nat
+    match n
+        case Zero
+            Zero
+        case Suc(k)
+            natAdd(Suc(k), nTimesNPlusOneOverTwo(k))
+
+// Proves by induction that the sum from 0 to n equals n*(n+1)/2.
+export fun sum_to_n_eq_n_times_n_plus_one_over_two(n: Nat): Eq[Nat, sumToNat(n), nTimesNPlusOneOverTwo(n)]
+    match n
+        case Zero
+            refl
+        case Suc(k)
+            let ih: Eq[Nat, sumToNat(k), nTimesNPlusOneOverTwo(k)] = sum_to_n_eq_n_times_n_plus_one_over_two(k)
+            congrArg[Nat, Nat, sumToNat(k), nTimesNPlusOneOverTwo(k)]((x) => natAdd(Suc(k), x), ih)
