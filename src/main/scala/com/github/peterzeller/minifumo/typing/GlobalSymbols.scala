@@ -34,7 +34,7 @@ case class GlobalSymbol(
   file: Path,
   name: String,
 )(
-  val declAst: ast.TopLevel,
+  val declAst: Option[ast.TopLevel],
 ):
   def symbolSignature: SymbolSignature = ???
 
@@ -45,6 +45,10 @@ case class GlobalSymbol(
   
   // calculates the typed body for the symbol
   def typedBody: Option[TypedAst.Expr] = ???
+
+object GlobalSymbol:
+  def error(name: String): GlobalSymbol =
+    GlobalSymbol(Path.of(""), name)(None)
 
 enum SymbolSignature:
   case Def(tpe: Expr)

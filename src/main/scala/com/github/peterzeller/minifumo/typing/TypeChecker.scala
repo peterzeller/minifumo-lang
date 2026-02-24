@@ -405,26 +405,8 @@ object TypeChecker:
   private def classifyHead(symbol: TypedAst.Symbol)(using ctx: Context): Option[DefEqHeadKind] =
     symbol match
       case _: TypedAst.CtorSymbol => Some(DefEqHeadKind.Constructor)
-      case TypedAst.GlobalSymbolSymbol(_, _, g) =>
-        g.symbolSignature match
-          case SymbolSignature.Datatype(_) => Some(DefEqHeadKind.TypeConstructor)
-          case SymbolSignature.Def(tpe) if hasDatatypeResultType(tpe) => Some(DefEqHeadKind.Constructor)
-          case _ => None
-      case _: TypedAst.GlobalNameSymbol => Some(DefEqHeadKind.TypeConstructor)
+      case _: TypedAst.DatatypeSymbol => Some(DefEqHeadKind.TypeConstructor)
       case _ => None
-
-  /** Checks whether a function type eventually returns a datatype head. */
-  private def hasDatatypeResultType(expr: TypedAst.Expr): Boolean =
-    def codomain(tpe: TypedAst.Expr): TypedAst.Expr =
-      tpe match
-        case TypedAst.Expr.Pi(_, cod, _) => codomain(cod)
-        case other => other
-    decomposeApplication(codomain(expr))._1 match
-      case TypedAst.Expr.Var(TypedAst.GlobalSymbolSymbol(_, _, g)) =>
-        g.symbolSignature match
-          case SymbolSignature.Datatype(_) => true
-          case _ => false
-      case _ => false
 
   /** Tries to solve deferred equality constraints by normalizing both sides. */
   private def solveOpenConstraints(fuel: Int)(implicit ctx: Context, metas: MetaContext): List[(EqualityConstraint, TypedAst.Expr, TypedAst.Expr)] =
@@ -557,17 +539,10 @@ object TypeChecker:
   private def hasConstructorHead(expr: TypedAst.Expr)(using ctx: Context): Boolean =
     decomposeApplication(expr)._1 match
       case TypedAst.Expr.Var(symbol) =>
-        classifyHead(symbol).contains(DefEqHeadKind.Constructor) || symbolLooksLikeCtor(symbol)
+        classifyHead(symbol).contains(DefEqHeadKind.Constructor)
       case _ =>
         false
 
-  /** Approximates constructor symbols for unresolved global-name variants. */
-  private def symbolLooksLikeCtor(symbol: TypedAst.Symbol): Boolean =
-    symbol match
-      case TypedAst.GlobalNameSymbol(name, _) =>
-        name.headOption.exists(_.isUpper)
-      case _ =>
-        false
 
   /** Reduces a match expression when the scrutinee head is a constructor. */
   private def reduceMatchExpr(scrutinee: TypedAst.Expr, cases: List[TypedAst.MatchCase], source: SourceRange, fuel: Int)
@@ -843,7 +818,7 @@ object TypeChecker:
       case ast.Literal.StringLit(_) => "String"
       case ast.Literal.UnitLit() => "Unit"
     ctx.globals.names.get(typeName)
-      .map(sym => TypedAst.Expr.Var(GlobalSymbolSymbol(sym.name, sym.file, sym))(value.source))
+      .map(sym => TypedAst.Expr.Var(sym.toSymbol)(value.source))
       .getOrElse(TypedAst.Expr.UnknownType()(value.source))
 
   /** Checks a pattern against the expected scrutinee type. */
@@ -898,7 +873,8 @@ object TypeChecker:
               errors ++ ctorErrors
             )
           case None =>
-            val symbol = TypedAst.CtorSymbol(name, TypedAst.Expr.UnknownType()(pattern.source))
+            val gSym = GlobalSymbol.error(name)
+            val symbol = TypedAst.CtorSymbol(gSym, TypedAst.Expr.UnknownType()(pattern.source))
             PatternCheckResult(
               TypedAst.Pattern.Ctor(symbol, Nil)(pattern.source),
               Map(),
@@ -933,10 +909,10 @@ object TypeChecker:
   private def globalSymbolToCtorSymbol(s: GlobalSymbol, source: SourceRange): (CtorSymbol, List[TypeError]) =
     s.symbolSignature match
       case minifumo.typing.SymbolSignature.Def(tpe) =>
-        (CtorSymbol(s.name, tpe), List())
+        (CtorSymbol(s, tpe), List())
       case minifumo.typing.SymbolSignature.Datatype(implicitParams) =>
         val e = TypeError(s"expected a constructor symbol, but found data type ${s.name}", source)
-        (CtorSymbol(s.name, Expr.UnknownType()(SourceRange.empty)), List(e))
+        (CtorSymbol(s, Expr.UnknownType()(SourceRange.empty)), List(e))
 
   // Collects explicit field types and result type from a constructor signature.
   private def decomposeCtorType(ctorType: TypedAst.Expr): (List[TypedAst.Expr], TypedAst.Expr) =
