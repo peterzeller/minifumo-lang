@@ -6,14 +6,14 @@ fun natSumTo(n: Nat): Nat
         case Suc(k)
             natAdd(Suc(k), natSumTo(k))
 
-// Computes n * (n + 1) / 2 and unfolds recursively for the induction proof.
+// Computes n * (n + 1) / 2 in an induction-friendly recursive shape.
 fun natGaussClosedForm(n: Nat): Nat
     match n
         case Zero
-            let _baseAsProductOverTwo = natDiv(natMul(Zero, Suc(Zero)), Suc(Suc(Zero)))
+            let baseAsProductOverTwo = natDiv(natMul(Zero, Suc(Zero)), Suc(Suc(Zero)))
             Zero
         case Suc(k)
-            let _stepAsDiffOverTwo = natDiv(
+            let stepAsDiffOverTwo = natDiv(
                 natSub(natMul(Suc(k), Suc(Suc(k))), natMul(k, Suc(k))),
                 Suc(Suc(Zero))
             )
