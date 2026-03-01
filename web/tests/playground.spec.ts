@@ -42,3 +42,13 @@ fun main(): Int
   await expect(output).toContainText('hello from browser test')
   await expect(output).toContainText('42')
 })
+
+test('tutorial examples are executable from the tutorial tab', async ({ page }) => {
+  await page.goto('/')
+
+  await page.getByRole('button', { name: 'Tutorial' }).click()
+  await page.getByRole('button', { name: 'Run example' }).first().click()
+
+  const tutorialOutput = page.getByRole('textbox', { name: 'Output for Basic expression evaluation' })
+  await expect(tutorialOutput).toContainText('42')
+})

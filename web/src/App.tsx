@@ -3,6 +3,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { oneDark } from '@codemirror/theme-one-dark'
 import { minifumoLanguage } from './minifumoLanguage'
 import { MinifumoCompiler } from './compiler'
+import { tutorialSections, type TutorialSection } from './tutorial'
+
+type Tab = 'playground' | 'tutorial'
 
 interface CompileError {
   message: string
@@ -40,7 +43,6 @@ function formatCompileError(source: string, error: CompileError): string {
   return `${location}\n${sourceLine}\n${underline}\n${error.message}`
 }
 
-
 // Runs the compiler call while capturing browser console output produced by Scala.js println helpers.
 function runCompilerWithCapturedConsole(source: string, functionName: string, shouldRun: boolean): {
   result: CompileResult
@@ -63,6 +65,61 @@ function runCompilerWithCapturedConsole(source: string, functionName: string, sh
   }
 }
 
+// Compiles Minifumo source code and returns combined output text for display.
+async function compileSource(source: string, functionName: string, shouldRun: boolean): Promise<string> {
+  const { result, consoleLines } = runCompilerWithCapturedConsole(source, functionName, shouldRun)
+
+  if (result.success) {
+    return [...consoleLines, result.output].filter((section) => section.length > 0).join('\n')
+  }
+
+  const formattedErrors = result.errors.map((error) => formatCompileError(source, error)).join('\n\n')
+  return [...consoleLines, formattedErrors].filter((section) => section.length > 0).join('\n\n')
+}
+
+// Renders one runnable tutorial code sample with compile and run output.
+function TutorialExampleCard({ section }: { section: TutorialSection }) {
+  const [outputs, setOutputs] = useState<Record<string, string>>({})
+
+  // Compiles a tutorial snippet and stores the output in local component state.
+  const runExample = async (exampleId: string, source: string, functionName: string, shouldRun: boolean) => {
+    setOutputs((previous) => ({ ...previous, [exampleId]: 'Compiling...' }))
+    await new Promise((resolve) => window.setTimeout(resolve, 0))
+    try {
+      const output = await compileSource(source, functionName, shouldRun)
+      setOutputs((previous) => ({ ...previous, [exampleId]: output }))
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      setOutputs((previous) => ({ ...previous, [exampleId]: `Unexpected frontend error while compiling:\n${errorMessage}` }))
+    }
+  }
+
+  return (
+    <article className="tutorialSection" key={section.id}>
+      <h2>{section.title}</h2>
+      <p className="subtitle">{section.content}</p>
+      {section.examples.map((example) => (
+        <div className="tutorialExample" key={example.id}>
+          <h3>{example.title}</h3>
+          <pre className="tutorialCode">{example.source}</pre>
+          <button
+            onClick={() => runExample(example.id, example.source, example.functionName, example.shouldRun)}
+            className="tutorialRunButton"
+          >
+            Run example
+          </button>
+          <textarea
+            readOnly
+            value={outputs[example.id] ?? ''}
+            className="output"
+            aria-label={`Output for ${example.title}`}
+          />
+        </div>
+      ))}
+    </article>
+  )
+}
+
 // Renders the mobile-friendly Minifumo browser playground UI.
 export function App() {
   const editorContainerRef = useRef<HTMLDivElement | null>(null)
@@ -70,6 +127,7 @@ export function App() {
   const [output, setOutput] = useState('')
   const [functionName, setFunctionName] = useState('main')
   const [shouldRun, setShouldRun] = useState(true)
+  const [activeTab, setActiveTab] = useState<Tab>('playground')
 
   // Creates the CodeMirror extension list once for editor initialization.
   const editorExtensions = useMemo(
@@ -110,17 +168,7 @@ export function App() {
     await new Promise((resolve) => window.setTimeout(resolve, 0))
 
     try {
-      const { result, consoleLines } = runCompilerWithCapturedConsole(source, functionName, shouldRun)
-
-      if (result.success) {
-        const outputSections = [...consoleLines, result.output].filter((section) => section.length > 0)
-        setOutput(outputSections.join('\n'))
-        return
-      }
-
-      const formattedErrors = result.errors.map((error) => formatCompileError(source, error)).join('\n\n')
-      const combinedOutput = [...consoleLines, formattedErrors].filter((section) => section.length > 0).join('\n\n')
-      setOutput(combinedOutput)
+      setOutput(await compileSource(source, functionName, shouldRun))
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
       setOutput(`Unexpected frontend error while compiling:\n${errorMessage}`)
@@ -132,34 +180,55 @@ export function App() {
       <h1>Minifumo Web Playground</h1>
       <p className="subtitle">Compile and run Minifumo programs directly in your browser.</p>
 
-      <div className="controls">
-        <label>
-          Function name
-          <input
-            value={functionName}
-            onChange={(event) => setFunctionName(event.target.value)}
-            placeholder="main"
-          />
-        </label>
-        <label className="checkbox">
-          <input
-            type="checkbox"
-            checked={shouldRun}
-            onChange={(event) => setShouldRun(event.target.checked)}
-          />
-          Run after compile
-        </label>
-        <button onClick={compileCode}>Compile</button>
+      <div className="tabs" role="tablist" aria-label="Minifumo website sections">
+        <button onClick={() => setActiveTab('playground')} className={activeTab === 'playground' ? 'tab activeTab' : 'tab'}>
+          Playground
+        </button>
+        <button onClick={() => setActiveTab('tutorial')} className={activeTab === 'tutorial' ? 'tab activeTab' : 'tab'}>
+          Tutorial
+        </button>
       </div>
 
-      <section className="editorPanel">
-        <div ref={editorContainerRef} className="editor" />
-      </section>
+      {activeTab === 'playground' ? (
+        <>
+          <div className="controls">
+            <label>
+              Function name
+              <input
+                value={functionName}
+                onChange={(event) => setFunctionName(event.target.value)}
+                placeholder="main"
+              />
+            </label>
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={shouldRun}
+                onChange={(event) => setShouldRun(event.target.checked)}
+              />
+              Run after compile
+            </label>
+            <button onClick={compileCode}>Compile</button>
+          </div>
 
-      <section>
-        <h2>Output</h2>
-        <textarea readOnly value={output} className="output" />
-      </section>
+          <section className="editorPanel">
+            <div ref={editorContainerRef} className="editor" />
+          </section>
+
+          <section>
+            <h2>Output</h2>
+            <textarea readOnly value={output} className="output" />
+          </section>
+        </>
+      ) : (
+        <section>
+          <h2>Tutorial</h2>
+          <p className="subtitle">Draft tutorial infrastructure for GitHub Pages with runnable examples.</p>
+          {tutorialSections.map((section) => (
+            <TutorialExampleCard key={section.id} section={section} />
+          ))}
+        </section>
+      )}
     </main>
   )
 }
