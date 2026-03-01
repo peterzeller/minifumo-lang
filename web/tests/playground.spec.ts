@@ -92,8 +92,8 @@ test('tutorial page links navigate and included code is editable', async ({ page
 test('top bar and document titles track the active page', async ({ page }) => {
   await page.goto('/')
 
-  await expect(page.locator('.topBarTitle')).toHaveText('First program')
-  await expect(page).toHaveTitle('First program')
+  await expect(page.locator('.topBarTitle')).toHaveText('Your first Minifumo program')
+  await expect(page).toHaveTitle('Your first Minifumo program')
 
   await navigateToTopLevel(page, 'Playground')
   await expect(page.locator('.topBarTitle')).toHaveText('Playground')
