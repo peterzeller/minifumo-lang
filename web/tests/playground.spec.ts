@@ -81,7 +81,7 @@ test('tutorial page links navigate and included code is editable', async ({ page
 
   const tutorialEditor = page.locator('[aria-label="Editable source for Computing list length"]')
   await expect(tutorialEditor).toBeVisible()
-  await expect(tutorialEditor.locator('.cm-line').first()).toContainText('fun main(): Int')
+  await expect(tutorialEditor).toContainText('MyList')
 
   await tutorialEditor.click()
   await page.keyboard.press('ControlOrMeta+a')
