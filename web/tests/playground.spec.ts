@@ -79,8 +79,13 @@ test('tutorial page links navigate and included code is editable', async ({ page
 
   await navigateToTutorialPage(page, 'Working with lists')
 
-  const editableSource = page.getByRole('textbox', { name: 'Editable source for Computing list length' })
-  await editableSource.fill(`fun main(): Int
+  const tutorialEditor = page.locator('[aria-label="Editable source for Computing list length"]')
+  await expect(tutorialEditor).toBeVisible()
+  await expect(tutorialEditor).toContainText('MyList')
+
+  await tutorialEditor.click()
+  await page.keyboard.press('ControlOrMeta+a')
+  await page.keyboard.type(`fun main(): Int
   7`)
 
   await page.getByRole('button', { name: 'Run example' }).first().click()
