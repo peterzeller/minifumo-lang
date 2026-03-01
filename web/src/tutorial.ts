@@ -1,3 +1,5 @@
+import { Lexer, Tokens } from 'marked'
+
 interface TutorialLink {
   label: string
   targetId: string
@@ -90,43 +92,121 @@ function pagePathToId(pagePath: string): string {
   return fileName.replace(/\.md$/u, '')
 }
 
-// Extracts inline markdown links from one paragraph while keeping plain text chunks.
-function parseParagraphParts(text: string, pagePath: string): TutorialParagraphPart[] {
-  const linkPattern = /\[([^\]]+)\]\(([^)]+)\)/gu
+// Converts one markdown link token into either a tutorial page link or plain text.
+function linkTokenToParagraphPart(token: Tokens.Link, pagePath: string): TutorialParagraphPart {
+  if (token.href.endsWith('.md')) {
+    const targetPagePath = resolveProjectPath(pagePath, token.href)
+    return {
+      text: token.text,
+      link: {
+        label: token.text,
+        targetId: pagePathToId(targetPagePath),
+      },
+    }
+  }
+
+  return { text: token.raw }
+}
+
+// Flattens inline markdown tokens into paragraph parts used by the tutorial renderer.
+function parseParagraphParts(tokens: Tokens.Generic[] | undefined, pagePath: string): TutorialParagraphPart[] {
+  if (!tokens || tokens.length === 0) {
+    return []
+  }
+
   const parts: TutorialParagraphPart[] = []
-  let currentIndex = 0
 
-  for (const match of text.matchAll(linkPattern)) {
-    const fullMatch = match[0]
-    const label = match[1]
-    const rawTarget = match[2]
-    const matchIndex = match.index ?? 0
-
-    if (matchIndex > currentIndex) {
-      parts.push({ text: text.slice(currentIndex, matchIndex) })
+  for (const token of tokens) {
+    if (token.type === 'link') {
+      parts.push(linkTokenToParagraphPart(token as Tokens.Link, pagePath))
+      continue
     }
 
-    if (rawTarget.endsWith('.md')) {
-      const targetPagePath = resolveProjectPath(pagePath, rawTarget)
-      parts.push({
-        text: label,
-        link: {
-          label,
-          targetId: pagePathToId(targetPagePath),
-        },
+    if ('tokens' in token && Array.isArray(token.tokens)) {
+      parts.push(...parseParagraphParts(token.tokens as Tokens.Generic[], pagePath))
+      continue
+    }
+
+    if ('raw' in token && typeof token.raw === 'string') {
+      parts.push({ text: token.raw })
+      continue
+    }
+
+    if ('text' in token && typeof token.text === 'string') {
+      parts.push({ text: token.text })
+    }
+  }
+
+  return parts
+}
+
+// Detects a standalone minifumo include link paragraph and returns parsed capture groups.
+function parseIncludeParagraph(token: Tokens.Paragraph): { title: string; includeTarget: string } | undefined {
+  const includeMatch = token.raw.trim().match(/^\[([^\]]+)\]\(([^)]+\.minifumo)\)$/u)
+  if (!includeMatch) {
+    return undefined
+  }
+
+  return {
+    title: includeMatch[1],
+    includeTarget: includeMatch[2],
+  }
+}
+
+// Parses markdown block tokens into tutorial blocks.
+function parseTutorialBlocks(
+  pagePath: string,
+  markdown: string,
+  minifumoSourceByPath: Record<string, string>,
+): TutorialBlock[] {
+  const tokens = Lexer.lex(markdown)
+  const blocks: TutorialBlock[] = []
+  const pageId = pagePathToId(pagePath)
+
+  for (const token of tokens) {
+    if (token.type === 'heading' && token.depth <= 3) {
+      blocks.push({
+        kind: 'heading',
+        level: token.depth as 1 | 2 | 3,
+        text: token.text,
       })
-    } else {
-      parts.push({ text: fullMatch })
+      continue
     }
 
-    currentIndex = matchIndex + fullMatch.length
+    if (token.type === 'paragraph') {
+      const include = parseIncludeParagraph(token as Tokens.Paragraph)
+      if (include) {
+        const resolvedPath = resolveProjectPath(pagePath, include.includeTarget)
+        const source = minifumoSourceByPath[resolvedPath]
+
+        if (source) {
+          blocks.push({
+            kind: 'codeInclude',
+            id: `${pageId}-${blocks.length + 1}`,
+            title: include.title,
+            source,
+            functionName: 'main',
+            shouldRun: true,
+          })
+        } else {
+          blocks.push({
+            kind: 'paragraph',
+            parts: [{ text: `Missing tutorial source file: ${include.includeTarget}` }],
+          })
+        }
+        continue
+      }
+
+      const paragraphToken = token as Tokens.Paragraph
+      const parts = parseParagraphParts(paragraphToken.tokens as Tokens.Generic[] | undefined, pagePath)
+      blocks.push({
+        kind: 'paragraph',
+        parts: parts.length > 0 ? parts : [{ text: paragraphToken.text }],
+      })
+    }
   }
 
-  if (currentIndex < text.length) {
-    parts.push({ text: text.slice(currentIndex) })
-  }
-
-  return parts.length > 0 ? parts : [{ text }]
+  return blocks
 }
 
 // Builds one parsed tutorial page from markdown text and known source files.
@@ -136,73 +216,7 @@ function parseTutorialPage(
   minifumoSourceByPath: Record<string, string>,
 ): TutorialPage {
   const pageId = pagePathToId(pagePath)
-  const lines = markdown.split('\n')
-  const blocks: TutorialBlock[] = []
-  let paragraphLines: string[] = []
-
-  // Flushes pending paragraph text into a structured paragraph block.
-  const flushParagraph = () => {
-    if (paragraphLines.length === 0) {
-      return
-    }
-
-    blocks.push({
-      kind: 'paragraph',
-      parts: parseParagraphParts(paragraphLines.join(' '), pagePath),
-    })
-    paragraphLines = []
-  }
-
-  for (const line of lines) {
-    const trimmed = line.trim()
-
-    if (trimmed.length === 0) {
-      flushParagraph()
-      continue
-    }
-
-    const includeMatch = trimmed.match(/^\[([^\]]+)\]\(([^)]+\.minifumo)\)$/u)
-    if (includeMatch) {
-      flushParagraph()
-      const title = includeMatch[1]
-      const includeTarget = includeMatch[2]
-      const resolvedPath = resolveProjectPath(pagePath, includeTarget)
-      const source = minifumoSourceByPath[resolvedPath]
-
-      if (source) {
-        blocks.push({
-          kind: 'codeInclude',
-          id: `${pageId}-${blocks.length + 1}`,
-          title,
-          source,
-          functionName: 'main',
-          shouldRun: true,
-        })
-      } else {
-        blocks.push({
-          kind: 'paragraph',
-          parts: [{ text: `Missing tutorial source file: ${includeTarget}` }],
-        })
-      }
-      continue
-    }
-
-    const headingMatch = trimmed.match(/^(#{1,3})\s+(.*)$/u)
-    if (headingMatch) {
-      flushParagraph()
-      blocks.push({
-        kind: 'heading',
-        level: headingMatch[1].length as 1 | 2 | 3,
-        text: headingMatch[2],
-      })
-      continue
-    }
-
-    paragraphLines.push(trimmed)
-  }
-
-  flushParagraph()
-
+  const blocks = parseTutorialBlocks(pagePath, markdown, minifumoSourceByPath)
   const titleHeading = blocks.find((block): block is TutorialHeading => block.kind === 'heading' && block.level === 1)
 
   return {
