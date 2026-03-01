@@ -82,14 +82,52 @@ async function compileSource(source: string, functionName: string, shouldRun: bo
   return [...consoleLines, formattedErrors].filter((section) => section.length > 0).join('\n\n')
 }
 
+// Selects the shared Minifumo editor extensions for a given theme mode.
+function getEditorExtensions(theme: Theme, baseExtensions: readonly unknown[]) {
+  if (theme === 'dark') {
+    return baseExtensions
+  }
+
+  return [basicSetup, minifumoLanguage, EditorView.lineWrapping]
+}
+
 // Renders one runnable tutorial code sample with editable source and compile output.
-function TutorialCodeEditor({ include }: { include: TutorialCodeInclude }) {
-  const [source, setSource] = useState(include.source)
+function TutorialCodeEditor({ include, theme, editorExtensions }: { include: TutorialCodeInclude; theme: Theme; editorExtensions: readonly unknown[] }) {
+  const editorContainerRef = useRef<HTMLDivElement | null>(null)
+  const editorViewRef = useRef<EditorView | null>(null)
   const [output, setOutput] = useState('')
   const [hasRun, setHasRun] = useState(false)
 
+  // Initializes and tears down the tutorial CodeMirror instance.
+  useEffect(() => {
+    if (!editorContainerRef.current) {
+      return
+    }
+
+    const editorView = new EditorView({
+      doc: include.source,
+      extensions: [
+        ...getEditorExtensions(theme, editorExtensions),
+        EditorView.contentAttributes.of({ 'aria-label': `Editable source for ${include.title}` }),
+      ],
+      parent: editorContainerRef.current,
+    })
+
+    editorViewRef.current = editorView
+
+    return () => {
+      editorView.destroy()
+      editorViewRef.current = null
+    }
+  }, [editorExtensions, include.source, include.title, theme])
+
   // Compiles a tutorial snippet and stores the output in local component state.
   const runExample = async () => {
+    if (!editorViewRef.current) {
+      return
+    }
+
+    const source = editorViewRef.current.state.doc.toString()
     setHasRun(true)
     setOutput('Compiling...')
     await new Promise((resolve) => window.setTimeout(resolve, 0))
@@ -103,12 +141,7 @@ function TutorialCodeEditor({ include }: { include: TutorialCodeInclude }) {
 
   return (
     <div className="tutorialExample" key={include.id}>
-      <textarea
-        value={source}
-        onChange={(event) => setSource(event.target.value)}
-        className="tutorialCodeEditor"
-        aria-label={`Editable source for ${include.title}`}
-      />
+      <div ref={editorContainerRef} className="editor tutorialCodeEditor" />
       <button onClick={runExample} className="tutorialRunButton">
         Run example
       </button>
@@ -118,7 +151,17 @@ function TutorialCodeEditor({ include }: { include: TutorialCodeInclude }) {
 }
 
 // Renders one parsed markdown block for the currently active tutorial page.
-function TutorialBlockView({ block, onNavigate }: { block: TutorialBlock; onNavigate: (pageId: string) => void }) {
+function TutorialBlockView({
+  block,
+  onNavigate,
+  theme,
+  editorExtensions,
+}: {
+  block: TutorialBlock
+  onNavigate: (pageId: string) => void
+  theme: Theme
+  editorExtensions: readonly unknown[]
+}) {
   if (block.kind === 'heading') {
     if (block.level === 1) {
       return <h2>{block.text}</h2>
@@ -130,7 +173,7 @@ function TutorialBlockView({ block, onNavigate }: { block: TutorialBlock; onNavi
   }
 
   if (block.kind === 'codeInclude') {
-    return <TutorialCodeEditor include={block} />
+    return <TutorialCodeEditor include={block} theme={theme} editorExtensions={editorExtensions} />
   }
 
   return (
@@ -214,7 +257,17 @@ function TutorialNavigationTree({
 }
 
 // Renders the markdown-driven tutorial with previous and next page navigation.
-function TutorialView({ currentPageId, onNavigate }: { currentPageId: string; onNavigate: (pageId: string) => void }) {
+function TutorialView({
+  currentPageId,
+  onNavigate,
+  theme,
+  editorExtensions,
+}: {
+  currentPageId: string
+  onNavigate: (pageId: string) => void
+  theme: Theme
+  editorExtensions: readonly unknown[]
+}) {
   const currentPage: TutorialPage | undefined = tutorialPagesById[currentPageId]
   const { previousPage, nextPage } = getNeighborPages(currentPageId)
 
@@ -224,7 +277,13 @@ function TutorialView({ currentPageId, onNavigate }: { currentPageId: string; on
       {currentPage ? (
         <article className="tutorialSection" key={currentPage.id}>
           {currentPage.blocks.map((block, index) => (
-            <TutorialBlockView key={`${currentPage.id}-${index}`} block={block} onNavigate={onNavigate} />
+            <TutorialBlockView
+              key={`${currentPage.id}-${index}`}
+              block={block}
+              onNavigate={onNavigate}
+              theme={theme}
+              editorExtensions={editorExtensions}
+            />
           ))}
         </article>
       ) : (
@@ -291,7 +350,7 @@ export function App() {
 
     const editorView = new EditorView({
       doc: starterProgram,
-      extensions: theme === 'dark' ? editorExtensions : [basicSetup, minifumoLanguage, EditorView.lineWrapping],
+      extensions: getEditorExtensions(theme, editorExtensions),
       parent: editorContainerRef.current,
     })
 
@@ -416,7 +475,12 @@ export function App() {
             </section>
           </>
         ) : (
-          <TutorialView currentPageId={navigationTarget.pageId} onNavigate={openTutorialPage} />
+          <TutorialView
+            currentPageId={navigationTarget.pageId}
+            onNavigate={openTutorialPage}
+            theme={theme}
+            editorExtensions={editorExtensions}
+          />
         )}
       </section>
     </main>
