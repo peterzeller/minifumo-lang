@@ -52,3 +52,20 @@ test('tutorial examples are executable from the tutorial tab', async ({ page }) 
   const tutorialOutput = page.getByRole('textbox', { name: 'Output for Basic expression evaluation' })
   await expect(tutorialOutput).toContainText('42')
 })
+
+
+test('tutorial page links navigate and included code is editable', async ({ page }) => {
+  await page.goto('/')
+
+  await page.getByRole('button', { name: 'Tutorial' }).click()
+  await page.getByRole('button', { name: 'Working with lists' }).click()
+
+  const editableSource = page.getByRole('textbox', { name: 'Editable source for Computing list length' })
+  await editableSource.fill(`fun main(): Int
+  7`)
+
+  await page.getByRole('button', { name: 'Run example' }).first().click()
+
+  const tutorialOutput = page.getByRole('textbox', { name: 'Output for Computing list length' })
+  await expect(tutorialOutput).toContainText('7')
+})
