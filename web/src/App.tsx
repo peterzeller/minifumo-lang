@@ -269,6 +269,7 @@ export function App() {
   const [theme, setTheme] = useState<Theme>(() => getInitialTheme())
   const [isNavOpen, setIsNavOpen] = useState(false)
   const [navigationTarget, setNavigationTarget] = useState<NavigationTarget>(() => getInitialNavigationTarget())
+  const isPlaygroundActive = navigationTarget.kind === 'playground'
 
   // Creates the CodeMirror extension list once for editor initialization.
   const editorExtensions = useMemo(
@@ -282,9 +283,9 @@ export function App() {
     window.localStorage.setItem('minifumo-theme', theme)
   }, [theme])
 
-  // Initializes and tears down the CodeMirror editor instance.
+  // Initializes and tears down the CodeMirror editor instance when the playground view is active.
   useEffect(() => {
-    if (!editorContainerRef.current) {
+    if (!isPlaygroundActive || !editorContainerRef.current) {
       return
     }
 
@@ -300,7 +301,7 @@ export function App() {
       editorView.destroy()
       editorViewRef.current = null
     }
-  }, [editorExtensions, theme])
+  }, [editorExtensions, isPlaygroundActive, theme])
 
   // Compiles the current editor content and optionally executes the configured function.
   const compileCode = async () => {
@@ -338,7 +339,6 @@ export function App() {
     setIsNavOpen(false)
   }
 
-  const isPlaygroundActive = navigationTarget.kind === 'playground'
   const activeTutorialPageId = navigationTarget.kind === 'tutorial' ? navigationTarget.pageId : ''
 
   return (
