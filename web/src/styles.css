@@ -68,18 +68,6 @@ body {
   color: var(--muted);
 }
 
-.tab {
-  width: 100%;
-  text-align: left;
-  background: var(--button-secondary);
-  color: var(--button-secondary-text);
-}
-
-.activeTab {
-  background: #2563eb;
-  color: #fff;
-}
-
 .controls {
   display: grid;
   grid-template-columns: 1fr auto auto;
@@ -145,21 +133,51 @@ button:disabled {
   position: fixed;
   inset: 4rem auto 0 0;
   width: min(20rem, 85vw);
-  transform: translateX(-100%);
+  transform: translateX(calc(-100% - 2px));
   transition: transform 200ms ease;
   background: var(--panel);
   border-right: 1px solid var(--panel-border);
   padding: 1rem;
   overflow: auto;
   z-index: 15;
+  pointer-events: none;
 }
 
 .tutorialSidebar.open {
   transform: translateX(0);
+  pointer-events: auto;
 }
 
-.navigationSectionTitle {
-  margin: 1rem 0 0.5rem;
+.tocGroup {
+  margin-top: 0.75rem;
+}
+
+.tocGroup summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.tocList {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding-left: 1rem;
+}
+
+.tocList li {
+  margin: 0.25rem 0;
+}
+
+.tocLink {
+  display: block;
+  width: fit-content;
+  text-decoration: none;
+  color: var(--button-secondary-text);
+  padding: 0.2rem 0;
+}
+
+.activeTocLink {
+  color: var(--button);
+  font-weight: 700;
 }
 
 .tutorialContent {
@@ -172,36 +190,17 @@ button:disabled {
   margin-top: 0.5rem;
 }
 
-.tutorialPageList {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
 .tutorialParagraph {
   line-height: 1.6;
   color: var(--text);
 }
 
 .tutorialLink {
-  display: inline;
-  min-height: auto;
-  border: none;
-  border-radius: 0;
-  padding: 0;
-  margin: 0;
-  background: none;
   color: #60a5fa;
   text-decoration: underline;
-  cursor: pointer;
-  font: inherit;
 }
 
 .tutorialExample {
-  background: var(--panel);
-  border: 1px solid var(--panel-border);
-  border-radius: 0.5rem;
-  padding: 1rem;
   margin-top: 0.75rem;
 }
 
