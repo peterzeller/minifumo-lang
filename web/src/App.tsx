@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { oneDark } from '@codemirror/theme-one-dark'
 import { minifumoLanguage } from './minifumoLanguage'
 import { MinifumoCompiler } from './compiler'
-import { tutorialSections, type TutorialSection } from './tutorial'
+import { tutorialPages, tutorialPagesById, type TutorialBlock, type TutorialCodeInclude, type TutorialPage } from './tutorial'
 
 type Tab = 'playground' | 'tutorial'
 
@@ -77,46 +77,109 @@ async function compileSource(source: string, functionName: string, shouldRun: bo
   return [...consoleLines, formattedErrors].filter((section) => section.length > 0).join('\n\n')
 }
 
-// Renders one runnable tutorial code sample with compile and run output.
-function TutorialExampleCard({ section }: { section: TutorialSection }) {
-  const [outputs, setOutputs] = useState<Record<string, string>>({})
+// Renders one runnable tutorial code sample with editable source and compile output.
+function TutorialCodeEditor({ include }: { include: TutorialCodeInclude }) {
+  const [source, setSource] = useState(include.source)
+  const [output, setOutput] = useState('')
 
   // Compiles a tutorial snippet and stores the output in local component state.
-  const runExample = async (exampleId: string, source: string, functionName: string, shouldRun: boolean) => {
-    setOutputs((previous) => ({ ...previous, [exampleId]: 'Compiling...' }))
+  const runExample = async () => {
+    setOutput('Compiling...')
     await new Promise((resolve) => window.setTimeout(resolve, 0))
     try {
-      const output = await compileSource(source, functionName, shouldRun)
-      setOutputs((previous) => ({ ...previous, [exampleId]: output }))
+      setOutput(await compileSource(source, include.functionName, include.shouldRun))
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
-      setOutputs((previous) => ({ ...previous, [exampleId]: `Unexpected frontend error while compiling:\n${errorMessage}` }))
+      setOutput(`Unexpected frontend error while compiling:\n${errorMessage}`)
     }
   }
 
   return (
-    <article className="tutorialSection" key={section.id}>
-      <h2>{section.title}</h2>
-      <p className="subtitle">{section.content}</p>
-      {section.examples.map((example) => (
-        <div className="tutorialExample" key={example.id}>
-          <h3>{example.title}</h3>
-          <pre className="tutorialCode">{example.source}</pre>
+    <div className="tutorialExample" key={include.id}>
+      <h3>{include.title}</h3>
+      <textarea
+        value={source}
+        onChange={(event) => setSource(event.target.value)}
+        className="tutorialCodeEditor"
+        aria-label={`Editable source for ${include.title}`}
+      />
+      <button onClick={runExample} className="tutorialRunButton">
+        Run example
+      </button>
+      <textarea readOnly value={output} className="output" aria-label={`Output for ${include.title}`} />
+    </div>
+  )
+}
+
+// Renders one parsed markdown block for the currently active tutorial page.
+function TutorialBlockView({ block, onNavigate }: { block: TutorialBlock; onNavigate: (pageId: string) => void }) {
+  if (block.kind === 'heading') {
+    if (block.level === 1) {
+      return <h2>{block.text}</h2>
+    }
+    if (block.level === 2) {
+      return <h3>{block.text}</h3>
+    }
+    return <h4>{block.text}</h4>
+  }
+
+  if (block.kind === 'codeInclude') {
+    return <TutorialCodeEditor include={block} />
+  }
+
+  return (
+    <p className="tutorialParagraph">
+      {block.parts.map((part, index) => {
+        const link = part.link
+        if (link) {
+          return (
+            <button key={`${link.targetId}-${index}`} className="tutorialLink" onClick={() => onNavigate(link.targetId)}>
+              {part.text}
+            </button>
+          )
+        }
+        return <span key={`${part.text}-${index}`}>{part.text}</span>
+      })}
+    </p>
+  )
+}
+
+// Renders the markdown-driven tutorial with page navigation and editable code includes.
+function TutorialView() {
+  const [currentPageId, setCurrentPageId] = useState(tutorialPages[0]?.id ?? '')
+  const currentPage: TutorialPage | undefined = tutorialPagesById[currentPageId]
+
+  const navigateToPage = (pageId: string) => {
+    if (tutorialPagesById[pageId]) {
+      setCurrentPageId(pageId)
+    }
+  }
+
+  return (
+    <section>
+      <h2>Tutorial</h2>
+      <div className="tutorialPageList" role="tablist" aria-label="Tutorial pages">
+        {tutorialPages.map((page) => (
           <button
-            onClick={() => runExample(example.id, example.source, example.functionName, example.shouldRun)}
-            className="tutorialRunButton"
+            key={page.id}
+            role="tab"
+            className={page.id === currentPageId ? 'tab activeTab' : 'tab'}
+            onClick={() => setCurrentPageId(page.id)}
           >
-            Run example
+            {page.title}
           </button>
-          <textarea
-            readOnly
-            value={outputs[example.id] ?? ''}
-            className="output"
-            aria-label={`Output for ${example.title}`}
-          />
-        </div>
-      ))}
-    </article>
+        ))}
+      </div>
+      {currentPage ? (
+        <article className="tutorialSection" key={currentPage.id}>
+          {currentPage.blocks.map((block, index) => (
+            <TutorialBlockView key={`${currentPage.id}-${index}`} block={block} onNavigate={navigateToPage} />
+          ))}
+        </article>
+      ) : (
+        <p className="subtitle">No tutorial pages were found.</p>
+      )}
+    </section>
   )
 }
 
@@ -221,13 +284,7 @@ export function App() {
           </section>
         </>
       ) : (
-        <section>
-          <h2>Tutorial</h2>
-          <p className="subtitle">Draft tutorial infrastructure for GitHub Pages with runnable examples.</p>
-          {tutorialSections.map((section) => (
-            <TutorialExampleCard key={section.id} section={section} />
-          ))}
-        </section>
+        <TutorialView />
       )}
     </main>
   )
