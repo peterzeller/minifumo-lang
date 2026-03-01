@@ -1,4 +1,5 @@
 import { basicSetup, EditorView } from 'codemirror'
+import type { Extension } from '@codemirror/state'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { oneDark } from '@codemirror/theme-one-dark'
 import { minifumoLanguage } from './minifumoLanguage'
@@ -83,7 +84,7 @@ async function compileSource(source: string, functionName: string, shouldRun: bo
 }
 
 // Selects the shared Minifumo editor extensions for a given theme mode.
-function getEditorExtensions(theme: Theme, baseExtensions: readonly unknown[]) {
+function getEditorExtensions(theme: Theme, baseExtensions: readonly Extension[]): readonly Extension[] {
   if (theme === 'dark') {
     return baseExtensions
   }
@@ -92,7 +93,7 @@ function getEditorExtensions(theme: Theme, baseExtensions: readonly unknown[]) {
 }
 
 // Renders one runnable tutorial code sample with editable source and compile output.
-function TutorialCodeEditor({ include, theme, editorExtensions }: { include: TutorialCodeInclude; theme: Theme; editorExtensions: readonly unknown[] }) {
+function TutorialCodeEditor({ include, theme, editorExtensions }: { include: TutorialCodeInclude; theme: Theme; editorExtensions: readonly Extension[] }) {
   const editorContainerRef = useRef<HTMLDivElement | null>(null)
   const editorViewRef = useRef<EditorView | null>(null)
   const [output, setOutput] = useState('')
@@ -160,7 +161,7 @@ function TutorialBlockView({
   block: TutorialBlock
   onNavigate: (pageId: string) => void
   theme: Theme
-  editorExtensions: readonly unknown[]
+  editorExtensions: readonly Extension[]
 }) {
   if (block.kind === 'heading') {
     if (block.level === 1) {
@@ -266,7 +267,7 @@ function TutorialView({
   currentPageId: string
   onNavigate: (pageId: string) => void
   theme: Theme
-  editorExtensions: readonly unknown[]
+  editorExtensions: readonly Extension[]
 }) {
   const currentPage: TutorialPage | undefined = tutorialPagesById[currentPageId]
   const { previousPage, nextPage } = getNeighborPages(currentPageId)
@@ -331,7 +332,7 @@ export function App() {
   const isPlaygroundActive = navigationTarget.kind === 'playground'
 
   // Creates the CodeMirror extension list once for editor initialization.
-  const editorExtensions = useMemo(
+  const editorExtensions = useMemo<readonly Extension[]>(
     () => [basicSetup, minifumoLanguage, oneDark, EditorView.lineWrapping],
     [],
   )
