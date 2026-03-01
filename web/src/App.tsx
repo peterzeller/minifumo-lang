@@ -270,6 +270,10 @@ export function App() {
   const [isNavOpen, setIsNavOpen] = useState(false)
   const [navigationTarget, setNavigationTarget] = useState<NavigationTarget>(() => getInitialNavigationTarget())
   const isPlaygroundActive = navigationTarget.kind === 'playground'
+  const activePageTitle =
+    navigationTarget.kind === 'playground'
+      ? 'Playground'
+      : tutorialPagesById[navigationTarget.pageId]?.title ?? tutorialPageTitlesById[navigationTarget.pageId] ?? 'Tutorial'
 
   // Creates the CodeMirror extension list once for editor initialization.
   const editorExtensions = useMemo(
@@ -282,6 +286,11 @@ export function App() {
     document.documentElement.setAttribute('data-theme', theme)
     window.localStorage.setItem('minifumo-theme', theme)
   }, [theme])
+
+  // Keeps the browser tab title in sync with the currently active page.
+  useEffect(() => {
+    document.title = activePageTitle
+  }, [activePageTitle])
 
   // Initializes and tears down the CodeMirror editor instance when the playground view is active.
   useEffect(() => {
@@ -352,7 +361,7 @@ export function App() {
         >
           ☰
         </button>
-        <h1 className="topBarTitle">Minifumo Web Playground</h1>
+        <h1 className="topBarTitle">{activePageTitle}</h1>
         <button onClick={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))} className="themeToggleButton">
           {theme === 'dark' ? 'Light' : 'Dark'}
         </button>

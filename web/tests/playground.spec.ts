@@ -88,3 +88,18 @@ test('tutorial page links navigate and included code is editable', async ({ page
   const tutorialOutput = page.getByRole('textbox', { name: 'Output for Computing list length' })
   await expect(tutorialOutput).toContainText('7')
 })
+
+test('top bar and document titles track the active page', async ({ page }) => {
+  await page.goto('/')
+
+  await expect(page.locator('.topBarTitle')).toHaveText('Your first Minifumo program')
+  await expect(page).toHaveTitle('Your first Minifumo program')
+
+  await navigateToTopLevel(page, 'Playground')
+  await expect(page.locator('.topBarTitle')).toHaveText('Playground')
+  await expect(page).toHaveTitle('Playground')
+
+  await navigateToTutorialPage(page, 'Working with lists')
+  await expect(page.locator('.topBarTitle')).toHaveText('Working with lists')
+  await expect(page).toHaveTitle('Working with lists')
+})
