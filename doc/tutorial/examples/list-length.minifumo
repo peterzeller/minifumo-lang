@@ -1,0 +1,11 @@
+data MyList = MyNil | MyCons(head: Int, tail: MyList)
+
+fun length(list: MyList): Int
+    match list
+        case MyNil
+            0
+        case MyCons(_, t)
+            1 + length(t)
+
+fun main(): Int
+    length(MyCons(1, MyCons(2, MyCons(3, MyNil))))

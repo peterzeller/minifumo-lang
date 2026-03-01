@@ -62,6 +62,9 @@ jobs:
       - name: Run tests
         run: sbt test
 
+      - name: Type-check tutorial examples
+        run: sbt "testOnly com.github.peterzeller.minifumo.TutorialExamplesSuite"
+
       - name: Build Scala.js compiler bridge for web tests
         run: sbt compilerJs/fullLinkJS
 
