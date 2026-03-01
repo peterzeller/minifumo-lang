@@ -1,7 +1,27 @@
 import { expect, test, type Page } from '@playwright/test'
 
+// Opens the sidebar and keeps it open for selecting a navigation entry.
+async function openSidebar(page: Page): Promise<void> {
+  await page.getByRole('button', { name: '☰' }).click()
+  await expect(page.locator('#site-navigation')).toHaveClass(/open/)
+}
+
+// Navigates to a top-level destination from the sidebar table of contents.
+async function navigateToTopLevel(page: Page, title: string): Promise<void> {
+  await openSidebar(page)
+  await page.locator('#site-navigation').getByRole('link', { name: title, exact: true }).click()
+}
+
+// Navigates to a tutorial page from the sidebar table of contents.
+async function navigateToTutorialPage(page: Page, title: string): Promise<void> {
+  await openSidebar(page)
+  await page.locator('#site-navigation').getByRole('link', { name: title, exact: true }).click()
+}
+
 // Replaces the editor program with the given source code.
 async function replaceProgram(page: Page, source: string): Promise<void> {
+  await navigateToTopLevel(page, 'Playground')
+  await expect(page.locator('.cm-content')).toBeVisible()
   await page.locator('.cm-content').click()
   await page.keyboard.press('ControlOrMeta+a')
   await page.keyboard.type(source)
@@ -43,22 +63,21 @@ fun main(): Int
   await expect(output).toContainText('42')
 })
 
-test('tutorial examples are executable from the tutorial tab', async ({ page }) => {
+test('tutorial example runner shows output only after execution', async ({ page }) => {
   await page.goto('/')
 
-  await page.getByRole('button', { name: 'Tutorial' }).click()
+  await navigateToTutorialPage(page, 'First program')
+
+  await expect(page.locator('textarea.output')).toHaveCount(0)
   await page.getByRole('button', { name: 'Run example' }).first().click()
 
-  const tutorialOutput = page.getByRole('textbox', { name: 'Output for Basic expression evaluation' })
-  await expect(tutorialOutput).toContainText('42')
+  await expect(page.locator('textarea.output').first()).toContainText('42')
 })
-
 
 test('tutorial page links navigate and included code is editable', async ({ page }) => {
   await page.goto('/')
 
-  await page.getByRole('button', { name: 'Tutorial' }).click()
-  await page.getByRole('button', { name: 'Working with lists' }).click()
+  await navigateToTutorialPage(page, 'Working with lists')
 
   const editableSource = page.getByRole('textbox', { name: 'Editable source for Computing list length' })
   await editableSource.fill(`fun main(): Int

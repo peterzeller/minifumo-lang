@@ -3,9 +3,14 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { oneDark } from '@codemirror/theme-one-dark'
 import { minifumoLanguage } from './minifumoLanguage'
 import { MinifumoCompiler } from './compiler'
-import { tutorialPages, tutorialPagesById, type TutorialBlock, type TutorialCodeInclude, type TutorialPage } from './tutorial'
+import { tutorialPagesById, type TutorialBlock, type TutorialCodeInclude, type TutorialPage } from './tutorial'
+import { siteNavigationModel, tutorialOrderedPages, tutorialPageTitlesById, type TutorialNavigationNode } from './navigation'
 
-type Tab = 'playground' | 'tutorial'
+type Theme = 'light' | 'dark'
+
+type NavigationTarget =
+  | { kind: 'playground' }
+  | { kind: 'tutorial'; pageId: string }
 
 interface CompileError {
   message: string
@@ -81,9 +86,11 @@ async function compileSource(source: string, functionName: string, shouldRun: bo
 function TutorialCodeEditor({ include }: { include: TutorialCodeInclude }) {
   const [source, setSource] = useState(include.source)
   const [output, setOutput] = useState('')
+  const [hasRun, setHasRun] = useState(false)
 
   // Compiles a tutorial snippet and stores the output in local component state.
   const runExample = async () => {
+    setHasRun(true)
     setOutput('Compiling...')
     await new Promise((resolve) => window.setTimeout(resolve, 0))
     try {
@@ -96,7 +103,6 @@ function TutorialCodeEditor({ include }: { include: TutorialCodeInclude }) {
 
   return (
     <div className="tutorialExample" key={include.id}>
-      <h3>{include.title}</h3>
       <textarea
         value={source}
         onChange={(event) => setSource(event.target.value)}
@@ -106,7 +112,7 @@ function TutorialCodeEditor({ include }: { include: TutorialCodeInclude }) {
       <button onClick={runExample} className="tutorialRunButton">
         Run example
       </button>
-      <textarea readOnly value={output} className="output" aria-label={`Output for ${include.title}`} />
+      {hasRun ? <textarea readOnly value={output} className="output" aria-label={`Output for ${include.title}`} /> : null}
     </div>
   )
 }
@@ -133,9 +139,17 @@ function TutorialBlockView({ block, onNavigate }: { block: TutorialBlock; onNavi
         const link = part.link
         if (link) {
           return (
-            <button key={`${link.targetId}-${index}`} className="tutorialLink" onClick={() => onNavigate(link.targetId)}>
+            <a
+              key={`${link.targetId}-${index}`}
+              className="tutorialLink"
+              href="#"
+              onClick={(event) => {
+                event.preventDefault()
+                onNavigate(link.targetId)
+              }}
+            >
               {part.text}
-            </button>
+            </a>
           )
         }
         return <span key={`${part.text}-${index}`}>{part.text}</span>
@@ -144,43 +158,105 @@ function TutorialBlockView({ block, onNavigate }: { block: TutorialBlock; onNavi
   )
 }
 
-// Renders the markdown-driven tutorial with page navigation and editable code includes.
-function TutorialView() {
-  const [currentPageId, setCurrentPageId] = useState(tutorialPages[0]?.id ?? '')
-  const currentPage: TutorialPage | undefined = tutorialPagesById[currentPageId]
+// Returns previous and next tutorial pages for a given current page id.
+function getNeighborPages(currentPageId: string): {
+  previousPage?: { pageId: string; title: string }
+  nextPage?: { pageId: string; title: string }
+} {
+  const currentIndex = tutorialOrderedPages.findIndex((page) => page.pageId === currentPageId)
+  const previousPage = currentIndex > 0 ? tutorialOrderedPages[currentIndex - 1] : undefined
+  const nextPage = currentIndex >= 0 && currentIndex < tutorialOrderedPages.length - 1 ? tutorialOrderedPages[currentIndex + 1] : undefined
+  return { previousPage, nextPage }
+}
 
-  const navigateToPage = (pageId: string) => {
-    if (tutorialPagesById[pageId]) {
-      setCurrentPageId(pageId)
-    }
-  }
+// Renders one recursive tutorial navigation branch inside the sidebar table of contents.
+function TutorialNavigationTree({
+  nodes,
+  currentPageId,
+  onOpenPage,
+}: {
+  nodes: TutorialNavigationNode[]
+  currentPageId: string
+  onOpenPage: (pageId: string) => void
+}) {
+  return (
+    <ul className="tocList">
+      {nodes.map((node) => {
+        if (node.kind === 'page') {
+          const isActive = currentPageId === node.pageId
+          return (
+            <li key={node.pageId}>
+              <a
+                href="#"
+                className={isActive ? 'tocLink activeTocLink' : 'tocLink'}
+                onClick={(event) => {
+                  event.preventDefault()
+                  onOpenPage(node.pageId)
+                }}
+              >
+                {node.title}
+              </a>
+            </li>
+          )
+        }
+
+        return (
+          <li key={node.title}>
+            <details className="tocGroup" open>
+              <summary>{node.title}</summary>
+              <TutorialNavigationTree nodes={node.children} currentPageId={currentPageId} onOpenPage={onOpenPage} />
+            </details>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
+// Renders the markdown-driven tutorial with previous and next page navigation.
+function TutorialView({ currentPageId, onNavigate }: { currentPageId: string; onNavigate: (pageId: string) => void }) {
+  const currentPage: TutorialPage | undefined = tutorialPagesById[currentPageId]
+  const { previousPage, nextPage } = getNeighborPages(currentPageId)
 
   return (
-    <section>
-      <h2>Tutorial</h2>
-      <div className="tutorialPageList" role="tablist" aria-label="Tutorial pages">
-        {tutorialPages.map((page) => (
-          <button
-            key={page.id}
-            role="tab"
-            className={page.id === currentPageId ? 'tab activeTab' : 'tab'}
-            onClick={() => setCurrentPageId(page.id)}
-          >
-            {page.title}
-          </button>
-        ))}
-      </div>
+    <section className="tutorialContent">
+      <h2>{currentPage?.title ?? tutorialPageTitlesById[currentPageId] ?? 'Tutorial'}</h2>
       {currentPage ? (
         <article className="tutorialSection" key={currentPage.id}>
           {currentPage.blocks.map((block, index) => (
-            <TutorialBlockView key={`${currentPage.id}-${index}`} block={block} onNavigate={navigateToPage} />
+            <TutorialBlockView key={`${currentPage.id}-${index}`} block={block} onNavigate={onNavigate} />
           ))}
         </article>
       ) : (
-        <p className="subtitle">No tutorial pages were found.</p>
+        <p className="subtitle">No tutorial page was found for this navigation entry.</p>
       )}
+
+      <nav className="tutorialPager" aria-label="Tutorial page navigation">
+        <button onClick={() => previousPage && onNavigate(previousPage.pageId)} disabled={!previousPage}>
+          {previousPage ? `← ${previousPage.title}` : '← Previous'}
+        </button>
+        <button onClick={() => nextPage && onNavigate(nextPage.pageId)} disabled={!nextPage}>
+          {nextPage ? `${nextPage.title} →` : 'Next →'}
+        </button>
+      </nav>
     </section>
   )
+}
+
+// Reads a saved theme value and falls back to browser preference or light mode.
+function getInitialTheme(): Theme {
+  const savedTheme = window.localStorage.getItem('minifumo-theme')
+  if (savedTheme === 'light' || savedTheme === 'dark') {
+    return savedTheme
+  }
+
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+}
+
+// Returns the initial navigation target based on the declared tutorial table of contents.
+function getInitialNavigationTarget(): NavigationTarget {
+  const firstTutorialPage = tutorialOrderedPages[0]
+  return firstTutorialPage ? { kind: 'tutorial', pageId: firstTutorialPage.pageId } : { kind: 'playground' }
 }
 
 // Renders the mobile-friendly Minifumo browser playground UI.
@@ -190,7 +266,10 @@ export function App() {
   const [output, setOutput] = useState('')
   const [functionName, setFunctionName] = useState('main')
   const [shouldRun, setShouldRun] = useState(true)
-  const [activeTab, setActiveTab] = useState<Tab>('playground')
+  const [theme, setTheme] = useState<Theme>(() => getInitialTheme())
+  const [isNavOpen, setIsNavOpen] = useState(false)
+  const [navigationTarget, setNavigationTarget] = useState<NavigationTarget>(() => getInitialNavigationTarget())
+  const isPlaygroundActive = navigationTarget.kind === 'playground'
 
   // Creates the CodeMirror extension list once for editor initialization.
   const editorExtensions = useMemo(
@@ -198,15 +277,21 @@ export function App() {
     [],
   )
 
-  // Initializes and tears down the CodeMirror editor instance.
+  // Applies and persists the active light or dark theme.
   useEffect(() => {
-    if (!editorContainerRef.current) {
+    document.documentElement.setAttribute('data-theme', theme)
+    window.localStorage.setItem('minifumo-theme', theme)
+  }, [theme])
+
+  // Initializes and tears down the CodeMirror editor instance when the playground view is active.
+  useEffect(() => {
+    if (!isPlaygroundActive || !editorContainerRef.current) {
       return
     }
 
     const editorView = new EditorView({
       doc: starterProgram,
-      extensions: editorExtensions,
+      extensions: theme === 'dark' ? editorExtensions : [basicSetup, minifumoLanguage, EditorView.lineWrapping],
       parent: editorContainerRef.current,
     })
 
@@ -216,7 +301,7 @@ export function App() {
       editorView.destroy()
       editorViewRef.current = null
     }
-  }, [editorExtensions])
+  }, [editorExtensions, isPlaygroundActive, theme])
 
   // Compiles the current editor content and optionally executes the configured function.
   const compileCode = async () => {
@@ -238,54 +323,102 @@ export function App() {
     }
   }
 
+  // Switches the main view to the playground section.
+  const openPlayground = () => {
+    setNavigationTarget({ kind: 'playground' })
+    setIsNavOpen(false)
+  }
+
+  // Switches the main view to a selected tutorial page when it exists in parsed content.
+  const openTutorialPage = (pageId: string) => {
+    if (!tutorialPagesById[pageId]) {
+      return
+    }
+
+    setNavigationTarget({ kind: 'tutorial', pageId })
+    setIsNavOpen(false)
+  }
+
+  const activeTutorialPageId = navigationTarget.kind === 'tutorial' ? navigationTarget.pageId : ''
+
   return (
     <main className="page">
-      <h1>Minifumo Web Playground</h1>
-      <p className="subtitle">Compile and run Minifumo programs directly in your browser.</p>
-
-      <div className="tabs" role="tablist" aria-label="Minifumo website sections">
-        <button onClick={() => setActiveTab('playground')} className={activeTab === 'playground' ? 'tab activeTab' : 'tab'}>
-          Playground
+      <header className="topBar">
+        <button
+          className="navToggleButton"
+          onClick={() => setIsNavOpen((current) => !current)}
+          aria-expanded={isNavOpen}
+          aria-controls="site-navigation"
+        >
+          ☰
         </button>
-        <button onClick={() => setActiveTab('tutorial')} className={activeTab === 'tutorial' ? 'tab activeTab' : 'tab'}>
-          Tutorial
+        <h1 className="topBarTitle">Minifumo Web Playground</h1>
+        <button onClick={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))} className="themeToggleButton">
+          {theme === 'dark' ? 'Light' : 'Dark'}
         </button>
-      </div>
+      </header>
 
-      {activeTab === 'playground' ? (
-        <>
-          <div className="controls">
-            <label>
-              Function name
-              <input
-                value={functionName}
-                onChange={(event) => setFunctionName(event.target.value)}
-                placeholder="main"
-              />
-            </label>
-            <label className="checkbox">
-              <input
-                type="checkbox"
-                checked={shouldRun}
-                onChange={(event) => setShouldRun(event.target.checked)}
-              />
-              Run after compile
-            </label>
-            <button onClick={compileCode}>Compile</button>
-          </div>
+      <aside id="site-navigation" className={isNavOpen ? 'tutorialSidebar open' : 'tutorialSidebar'}>
+        <nav aria-label="Main navigation">
+          <h2>Contents</h2>
+          <a
+            href="#"
+            className={isPlaygroundActive ? 'tocLink activeTocLink' : 'tocLink'}
+            onClick={(event) => {
+              event.preventDefault()
+              openPlayground()
+            }}
+          >
+            Playground
+          </a>
+          <details className="tocGroup" open>
+            <summary>Tutorial</summary>
+            <TutorialNavigationTree
+              nodes={siteNavigationModel.tutorialTree}
+              currentPageId={activeTutorialPageId}
+              onOpenPage={openTutorialPage}
+            />
+          </details>
+        </nav>
+      </aside>
 
-          <section className="editorPanel">
-            <div ref={editorContainerRef} className="editor" />
-          </section>
+      <section className="mainContent">
+        {isPlaygroundActive ? (
+          <>
+            <p className="subtitle">Compile and run Minifumo programs directly in your browser.</p>
+            <div className="controls">
+              <label>
+                Function name
+                <input
+                  value={functionName}
+                  onChange={(event) => setFunctionName(event.target.value)}
+                  placeholder="main"
+                />
+              </label>
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={shouldRun}
+                  onChange={(event) => setShouldRun(event.target.checked)}
+                />
+                Run after compile
+              </label>
+              <button onClick={compileCode}>Compile</button>
+            </div>
 
-          <section>
-            <h2>Output</h2>
-            <textarea readOnly value={output} className="output" />
-          </section>
-        </>
-      ) : (
-        <TutorialView />
-      )}
+            <section className="editorPanel">
+              <div ref={editorContainerRef} className="editor" />
+            </section>
+
+            <section>
+              <h2>Output</h2>
+              <textarea readOnly value={output} className="output" />
+            </section>
+          </>
+        ) : (
+          <TutorialView currentPageId={navigationTarget.pageId} onNavigate={openTutorialPage} />
+        )}
+      </section>
     </main>
   )
 }

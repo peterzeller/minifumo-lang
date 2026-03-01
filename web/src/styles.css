@@ -1,36 +1,71 @@
 :root {
-  color-scheme: dark;
   font-family: Inter, system-ui, -apple-system, sans-serif;
+  --background: #f8fafc;
+  --text: #0f172a;
+  --muted: #334155;
+  --panel: #ffffff;
+  --panel-strong: #e2e8f0;
+  --panel-border: #cbd5e1;
+  --button: #2563eb;
+  --button-secondary: #dbeafe;
+  --button-secondary-text: #1e3a8a;
+  --editor-bg: #f8fafc;
+  --editor-text: #0f172a;
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  --background: #111827;
+  --text: #f9fafb;
+  --muted: #cbd5e1;
+  --panel: #0f172a;
+  --panel-strong: #1e293b;
+  --panel-border: #334155;
+  --button: #2563eb;
+  --button-secondary: #1e293b;
+  --button-secondary-text: #dbe7ff;
+  --editor-bg: #020617;
+  --editor-text: #e2e8f0;
+  color-scheme: dark;
 }
 
 body {
   margin: 0;
-  background: #111827;
-  color: #f9fafb;
+  background: var(--background);
+  color: var(--text);
 }
 
 .page {
+  margin: 0 auto;
+}
+
+.topBar {
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: 4rem;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0 1rem;
+  background: var(--panel);
+  border-bottom: 1px solid var(--panel-border);
+  z-index: 20;
+}
+
+.topBarTitle {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.mainContent {
   max-width: 980px;
   margin: 0 auto;
-  padding: 1rem;
+  padding: 5rem 1rem 1rem;
 }
 
 .subtitle {
-  color: #cbd5e1;
-}
-
-.tabs {
-  display: flex;
-  gap: 0.5rem;
-  margin: 1rem 0;
-}
-
-.tab {
-  background: #1e293b;
-}
-
-.activeTab {
-  background: #2563eb;
+  color: var(--muted);
 }
 
 .controls {
@@ -65,12 +100,26 @@ button {
   border-radius: 0.5rem;
   font-weight: 600;
   padding: 0 1rem;
-  background: #2563eb;
+  background: var(--button);
   color: white;
 }
 
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.navToggleButton {
+  min-width: 2.75rem;
+  padding: 0;
+}
+
+.themeToggleButton {
+  min-width: 5rem;
+}
+
 .editorPanel {
-  border: 1px solid #334155;
+  border: 1px solid var(--panel-border);
   border-radius: 0.5rem;
   overflow: hidden;
   min-height: 50vh;
@@ -80,42 +129,78 @@ button {
   min-height: 50vh;
 }
 
-.tutorialSection {
-  border-top: 1px solid #334155;
-  padding-top: 1rem;
-  margin-top: 1.5rem;
+.tutorialSidebar {
+  position: fixed;
+  inset: 4rem auto 0 0;
+  width: min(20rem, 85vw);
+  transform: translateX(calc(-100% - 2px));
+  transition: transform 200ms ease;
+  background: var(--panel);
+  border-right: 1px solid var(--panel-border);
+  padding: 1rem;
+  overflow: auto;
+  z-index: 15;
+  pointer-events: none;
 }
 
-.tutorialPageList {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
+.tutorialSidebar.open {
+  transform: translateX(0);
+  pointer-events: auto;
+}
+
+.tocGroup {
+  margin-top: 0.75rem;
+}
+
+.tocGroup summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.tocList {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding-left: 1rem;
+}
+
+.tocList li {
+  margin: 0.25rem 0;
+}
+
+.tocLink {
+  display: block;
+  width: fit-content;
+  text-decoration: none;
+  color: var(--button-secondary-text);
+  padding: 0.2rem 0;
+}
+
+.activeTocLink {
+  color: var(--button);
+  font-weight: 700;
+}
+
+.tutorialContent {
+  max-width: 52rem;
+}
+
+.tutorialSection {
+  border-top: 1px solid var(--panel-border);
+  padding-top: 1rem;
+  margin-top: 0.5rem;
 }
 
 .tutorialParagraph {
   line-height: 1.6;
-  color: #dbe7ff;
+  color: var(--text);
 }
 
 .tutorialLink {
-  display: inline;
-  min-height: auto;
-  border: none;
-  border-radius: 0;
-  padding: 0;
-  margin: 0;
-  background: none;
   color: #60a5fa;
   text-decoration: underline;
-  cursor: pointer;
-  font: inherit;
 }
 
 .tutorialExample {
-  background: #0f172a;
-  border: 1px solid #334155;
-  border-radius: 0.5rem;
-  padding: 1rem;
   margin-top: 0.75rem;
 }
 
@@ -123,9 +208,9 @@ button {
   width: 100%;
   min-height: 12rem;
   margin-top: 0.25rem;
-  background: #020617;
-  color: #e2e8f0;
-  border: 1px solid #334155;
+  background: var(--editor-bg);
+  color: var(--editor-text);
+  border: 1px solid var(--panel-border);
   border-radius: 0.5rem;
   padding: 0.75rem;
   font-family: ui-monospace, SFMono-Regular, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
@@ -140,16 +225,27 @@ button {
   width: 100%;
   min-height: 10rem;
   margin-top: 0.5rem;
-  background: #020617;
-  color: #e2e8f0;
-  border: 1px solid #334155;
+  background: var(--editor-bg);
+  color: var(--editor-text);
+  border: 1px solid var(--panel-border);
   border-radius: 0.5rem;
   padding: 0.75rem;
   box-sizing: border-box;
 }
 
+.tutorialPager {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
 @media (max-width: 700px) {
   .controls {
     grid-template-columns: 1fr;
+  }
+
+  .topBarTitle {
+    font-size: 1rem;
   }
 }
