@@ -36,28 +36,48 @@ body {
 }
 
 .page {
+  margin: 0 auto;
+}
+
+.topBar {
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: 4rem;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0 1rem;
+  background: var(--panel);
+  border-bottom: 1px solid var(--panel-border);
+  z-index: 20;
+}
+
+.topBarTitle {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.mainContent {
   max-width: 980px;
   margin: 0 auto;
-  padding: 1rem;
+  padding: 5rem 1rem 1rem;
 }
 
 .subtitle {
   color: var(--muted);
 }
 
-.tabs {
-  display: flex;
-  gap: 0.5rem;
-  margin: 1rem 0;
-}
-
 .tab {
+  width: 100%;
+  text-align: left;
   background: var(--button-secondary);
   color: var(--button-secondary-text);
 }
 
 .activeTab {
   background: #2563eb;
+  color: #fff;
 }
 
 .controls {
@@ -101,8 +121,13 @@ button:disabled {
   cursor: not-allowed;
 }
 
+.navToggleButton {
+  min-width: 2.75rem;
+  padding: 0;
+}
+
 .themeToggleButton {
-  margin-bottom: 1rem;
+  min-width: 5rem;
 }
 
 .editorPanel {
@@ -116,29 +141,25 @@ button:disabled {
   min-height: 50vh;
 }
 
-.tutorialLayout {
-  position: relative;
-}
-
-.tutorialMenuButton {
-  margin-bottom: 1rem;
-}
-
 .tutorialSidebar {
   position: fixed;
-  inset: 0 auto 0 0;
-  width: min(20rem, 80vw);
+  inset: 4rem auto 0 0;
+  width: min(20rem, 85vw);
   transform: translateX(-100%);
   transition: transform 200ms ease;
   background: var(--panel);
   border-right: 1px solid var(--panel-border);
   padding: 1rem;
   overflow: auto;
-  z-index: 10;
+  z-index: 15;
 }
 
 .tutorialSidebar.open {
   transform: translateX(0);
+}
+
+.navigationSectionTitle {
+  margin: 1rem 0 0.5rem;
 }
 
 .tutorialContent {
@@ -223,5 +244,9 @@ button:disabled {
 @media (max-width: 700px) {
   .controls {
     grid-template-columns: 1fr;
+  }
+
+  .topBarTitle {
+    font-size: 1rem;
   }
 }
