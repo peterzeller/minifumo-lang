@@ -6,6 +6,7 @@ import { MinifumoCompiler } from './compiler'
 import { tutorialPages, tutorialPagesById, type TutorialBlock, type TutorialCodeInclude, type TutorialPage } from './tutorial'
 
 type Tab = 'playground' | 'tutorial'
+type Theme = 'light' | 'dark'
 
 interface CompileError {
   message: string
@@ -81,9 +82,11 @@ async function compileSource(source: string, functionName: string, shouldRun: bo
 function TutorialCodeEditor({ include }: { include: TutorialCodeInclude }) {
   const [source, setSource] = useState(include.source)
   const [output, setOutput] = useState('')
+  const [hasRun, setHasRun] = useState(false)
 
   // Compiles a tutorial snippet and stores the output in local component state.
   const runExample = async () => {
+    setHasRun(true)
     setOutput('Compiling...')
     await new Promise((resolve) => window.setTimeout(resolve, 0))
     try {
@@ -106,7 +109,7 @@ function TutorialCodeEditor({ include }: { include: TutorialCodeInclude }) {
       <button onClick={runExample} className="tutorialRunButton">
         Run example
       </button>
-      <textarea readOnly value={output} className="output" aria-label={`Output for ${include.title}`} />
+      {hasRun ? <textarea readOnly value={output} className="output" aria-label={`Output for ${include.title}`} /> : null}
     </div>
   )
 }
@@ -147,40 +150,77 @@ function TutorialBlockView({ block, onNavigate }: { block: TutorialBlock; onNavi
 // Renders the markdown-driven tutorial with page navigation and editable code includes.
 function TutorialView() {
   const [currentPageId, setCurrentPageId] = useState(tutorialPages[0]?.id ?? '')
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const currentPage: TutorialPage | undefined = tutorialPagesById[currentPageId]
+  const currentIndex = tutorialPages.findIndex((page) => page.id === currentPageId)
+  const previousPage = currentIndex > 0 ? tutorialPages[currentIndex - 1] : undefined
+  const nextPage = currentIndex >= 0 && currentIndex < tutorialPages.length - 1 ? tutorialPages[currentIndex + 1] : undefined
 
   const navigateToPage = (pageId: string) => {
     if (tutorialPagesById[pageId]) {
       setCurrentPageId(pageId)
+      setIsSidebarOpen(false)
     }
   }
 
   return (
-    <section>
-      <h2>Tutorial</h2>
-      <div className="tutorialPageList" role="tablist" aria-label="Tutorial pages">
-        {tutorialPages.map((page) => (
-          <button
-            key={page.id}
-            role="tab"
-            className={page.id === currentPageId ? 'tab activeTab' : 'tab'}
-            onClick={() => setCurrentPageId(page.id)}
-          >
-            {page.title}
-          </button>
-        ))}
-      </div>
-      {currentPage ? (
-        <article className="tutorialSection" key={currentPage.id}>
-          {currentPage.blocks.map((block, index) => (
-            <TutorialBlockView key={`${currentPage.id}-${index}`} block={block} onNavigate={navigateToPage} />
+    <section className="tutorialLayout">
+      <button
+        className="tutorialMenuButton"
+        onClick={() => setIsSidebarOpen((current) => !current)}
+        aria-expanded={isSidebarOpen}
+        aria-controls="tutorial-sidebar"
+      >
+        ☰ Tutorial pages
+      </button>
+      <aside id="tutorial-sidebar" className={isSidebarOpen ? 'tutorialSidebar open' : 'tutorialSidebar'}>
+        <h2>Tutorial</h2>
+        <div className="tutorialPageList" role="tablist" aria-label="Tutorial pages">
+          {tutorialPages.map((page) => (
+            <button
+              key={page.id}
+              role="tab"
+              className={page.id === currentPageId ? 'tab activeTab' : 'tab'}
+              onClick={() => navigateToPage(page.id)}
+            >
+              {page.title}
+            </button>
           ))}
-        </article>
-      ) : (
-        <p className="subtitle">No tutorial pages were found.</p>
-      )}
+        </div>
+      </aside>
+      <div className="tutorialContent">
+        <h2>{currentPage?.title ?? 'Tutorial'}</h2>
+        {currentPage ? (
+          <article className="tutorialSection" key={currentPage.id}>
+            {currentPage.blocks.map((block, index) => (
+              <TutorialBlockView key={`${currentPage.id}-${index}`} block={block} onNavigate={navigateToPage} />
+            ))}
+          </article>
+        ) : (
+          <p className="subtitle">No tutorial pages were found.</p>
+        )}
+
+        <nav className="tutorialPager" aria-label="Tutorial page navigation">
+          <button onClick={() => previousPage && navigateToPage(previousPage.id)} disabled={!previousPage}>
+            ← Previous
+          </button>
+          <button onClick={() => nextPage && navigateToPage(nextPage.id)} disabled={!nextPage}>
+            Next →
+          </button>
+        </nav>
+      </div>
     </section>
   )
+}
+
+// Reads a saved theme value and falls back to browser preference or light mode.
+function getInitialTheme(): Theme {
+  const savedTheme = window.localStorage.getItem('minifumo-theme')
+  if (savedTheme === 'light' || savedTheme === 'dark') {
+    return savedTheme
+  }
+
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
 
 // Renders the mobile-friendly Minifumo browser playground UI.
@@ -191,6 +231,7 @@ export function App() {
   const [functionName, setFunctionName] = useState('main')
   const [shouldRun, setShouldRun] = useState(true)
   const [activeTab, setActiveTab] = useState<Tab>('playground')
+  const [theme, setTheme] = useState<Theme>(() => getInitialTheme())
 
   // Creates the CodeMirror extension list once for editor initialization.
   const editorExtensions = useMemo(
@@ -200,13 +241,19 @@ export function App() {
 
   // Initializes and tears down the CodeMirror editor instance.
   useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    window.localStorage.setItem('minifumo-theme', theme)
+  }, [theme])
+
+  // Initializes and tears down the CodeMirror editor instance.
+  useEffect(() => {
     if (!editorContainerRef.current) {
       return
     }
 
     const editorView = new EditorView({
       doc: starterProgram,
-      extensions: editorExtensions,
+      extensions: theme === 'dark' ? editorExtensions : [basicSetup, minifumoLanguage, EditorView.lineWrapping],
       parent: editorContainerRef.current,
     })
 
@@ -216,7 +263,7 @@ export function App() {
       editorView.destroy()
       editorViewRef.current = null
     }
-  }, [editorExtensions])
+  }, [editorExtensions, theme])
 
   // Compiles the current editor content and optionally executes the configured function.
   const compileCode = async () => {
@@ -242,6 +289,9 @@ export function App() {
     <main className="page">
       <h1>Minifumo Web Playground</h1>
       <p className="subtitle">Compile and run Minifumo programs directly in your browser.</p>
+      <button onClick={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))} className="themeToggleButton">
+        {theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+      </button>
 
       <div className="tabs" role="tablist" aria-label="Minifumo website sections">
         <button onClick={() => setActiveTab('playground')} className={activeTab === 'playground' ? 'tab activeTab' : 'tab'}>
