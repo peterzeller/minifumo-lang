@@ -1,0 +1,18 @@
+// Defines a generic list type.
+data GList[T: Type] = GNil | GCons(head: T, tail: GList[T])
+
+// Maps a function over a generic list.
+fun gMap[A: Type, B: Type](f: A -> B, xs: GList[A]): GList[B]
+    match xs
+        case GNil
+            GNil
+        case GCons(head, tail)
+            GCons(f(head), gMap(f, tail))
+
+// Left-folds a generic list.
+fun gFoldl[A: Type, B: Type](f: B -> A -> B, init: B, xs: GList[A]): B
+    match xs
+        case GNil
+            init
+        case GCons(head, tail)
+            gFoldl(f, f(init, head), tail)

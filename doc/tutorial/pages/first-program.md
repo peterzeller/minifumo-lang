@@ -2,6 +2,6 @@
 
 This page introduces a tiny Minifumo program.
 
-Use [Working with lists](./working-with-lists.md) to continue to the next page.
+Continue with the [Language tour](./language-tour.md) for a broader walkthrough.
 
 [Basic expression evaluation](../examples/intro-main.minifumo)

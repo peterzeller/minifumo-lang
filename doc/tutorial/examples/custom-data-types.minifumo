@@ -1,0 +1,10 @@
+// Defines a simple binary tree type for Int values.
+data IntTree = IntEmpty | IntNode(value: Int, left: IntTree, right: IntTree)
+
+// Computes the sum of all tree values.
+fun treeSum(tree: IntTree): Int
+    match tree
+        case IntEmpty
+            0
+        case IntNode(value, left, right)
+            value + treeSum(left) + treeSum(right)

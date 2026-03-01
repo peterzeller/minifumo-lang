@@ -1,0 +1,3 @@
+// Prints a small greeting to standard output.
+fun main(): Unit
+    println("Hello, Minifumo!", showString())

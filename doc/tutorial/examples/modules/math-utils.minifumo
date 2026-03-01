@@ -1,0 +1,3 @@
+// Exports a tiny math helper function for other modules.
+export fun addOne(value: Int): Int
+    value + 1
