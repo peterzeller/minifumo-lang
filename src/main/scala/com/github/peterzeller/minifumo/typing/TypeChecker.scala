@@ -22,17 +22,16 @@ object TypeChecker:
 
 
   /** Type-checks a program */
-  def checkProgram(path: Path, program: ast.ProgramFile, globalNames: NameCache & SymbolCache, importStandard: Boolean, idSupply: TypeChecker.IdSupply): (TypedAst.Program, List[TypeError]) =
+  def checkProgram(path: String, program: ast.ProgramFile, globalNames: NameCache & SymbolCache, importStandard: Boolean, idSupply: TypeChecker.IdSupply): (TypedAst.Program, List[TypeError]) =
     try
       val errors = ListBuffer[TypeError]()
       var (symbolMap, importErrors) = GlobalSymbols.buildGlobalSymbols(path, program, globalNames, false, idSupply)
       if importStandard then
         // import the standard library symbols into the program file scope
-        val (standardLibSymbolMap, standardLibImportErrors) = GlobalSymbols.buildGlobalSymbols(Paths.get("standard.minifumo"), Standard.standardProgram, globalNames, false, idSupply)
+        val (standardLibSymbolMap, standardLibImportErrors) = GlobalSymbols.buildGlobalSymbols("standard.minifumo", Standard.standardProgram, globalNames, false, idSupply)
         symbolMap ++= standardLibSymbolMap
         importErrors ++= standardLibImportErrors
       errors.addAll(importErrors)
-      val definitionCache = DefinitionCache(path, globalNames)
       val globals = GlobalEnv(names = symbolMap)
       val typedItems = ListBuffer[TypedAst.TopLevel]()
       for item <- program.items do
@@ -43,7 +42,7 @@ object TypeChecker:
             errors.addAll(ctorReturnTypeErrors)
             buildDataDecl(path, decl, globals, idSupply)(using idSupply)
           case decl: ast.TopLevel.FunDecl =>
-            val context1 = TypeContext(globals, Map(), definitionCache)
+            val context1 = TypeContext(globals, Map())
             val sym = symbolMap(decl.sig.name)
             val (typedSig, context2, errs) = checkFunSig(sym, decl.sig)(using context1, itemMetaStore, idSupply)
             errors.addAll(errs)
@@ -53,7 +52,6 @@ object TypeChecker:
             errors.addAll(unresolvedMetaErrors)
             TypedAst.TopLevel.FunDecl(typedSig, elaboratedBody)(decl.source)
         typedItems.addOne(typedItem)
-        definitionCache.recordTopLevel(typedItem)
       // Returns accumulated type errors to the caller instead of throwing.
       (TypedAst.Program(typedItems.toList)(program.source), errors.toList)
     catch
@@ -127,7 +125,7 @@ object TypeChecker:
     )
 
   /** Implements a context with local bindings and global symbols. */
-  private[typing] final case class TypeContext(globals: GlobalEnv, locals: Map[String, LocalBinding], definitionCache: DefinitionCache = DefinitionCache.empty) extends Context:
+  private[typing] final case class TypeContext(globals: GlobalEnv, locals: Map[String, LocalBinding]) extends Context:
     override def lookupSymbol(name: String): Option[TypedAst.Symbol] =
       locals.get(name).map(_.symbol)
         .orElse(globals.names.get(name).map(g => g.toSymbol))
@@ -137,7 +135,24 @@ object TypeChecker:
 
     /** Resolves unfoldable global definitions on demand. */
     override def lookupDefinition(symbol: TypedAst.Symbol): Option[TypedAst.Expr] =
-      definitionCache.definitionFor(symbol)
+      symbol match {
+        case symbol: TermSymbol =>
+          symbol match {
+            case LocalSymbol(name, tpe, id) =>
+              // TODO should we be able to unfold definition of local variable?
+              None
+            case BuiltinValueSymbol(name, tpe) =>
+              None
+          }
+        case ErrorSymbol(name, tpe) =>
+          None
+        case DatatypeSymbol(name, tpe) =>
+          None
+        case FunctionSymbol(name, tpe) =>
+          name.typedBody
+        case CtorSymbol(name, tpe) =>
+          None
+      }
 
     /** Adds a local binding to the context. */
     def withLocal(symbol: TypedAst.TermSymbol, value: Option[TypedAst.Expr] = None): TypeContext =
@@ -189,7 +204,7 @@ object TypeChecker:
 
   /** Builds a typed data declaration. */
   private def buildDataDecl(
-    file: Path,
+      file: String,
       decl: ast.TopLevel.DataDecl,
       globals: GlobalEnv,
       idSupply: IdSupply
@@ -216,7 +231,7 @@ object TypeChecker:
       TypedAst.CtorDecl(symbol, fields)(ctor.source)
     }
     val dSym = globals.names(decl.name)
-    TypedAst.TopLevel.DataDecl(DatatypeSymbol(dSym, buildDatatypeType(typeParams), file), typeParams, ctorDecls)(decl.source)
+    TypedAst.TopLevel.DataDecl(DatatypeSymbol(dSym, buildDatatypeType(typeParams)), typeParams, ctorDecls)(decl.source)
 
   private def buildDatatypeType(typeParams: List[LocalSymbol]): TypedAst.Expr =
     typeParams match
@@ -989,88 +1004,6 @@ object TypeChecker:
     val paramIds = collectParamIds(resultType)
     val subst = collectTypeParamSubst(resultType, expectedType, paramIds, Map())
     fieldTypes.map(fieldType => substituteTypeParams(fieldType, subst))
-
-
-  /** Caches unfoldable function bodies and loads external typed files on demand. */
-  private[typing] final case class DefinitionCache(currentFile: Path, symbolCache: NameCache & SymbolCache):
-    private val localDefinitions: mutable.Map[String, TypedAst.Expr] = mutable.Map.empty
-    private val externalDefinitions: mutable.Map[String, Map[String, TypedAst.Expr]] = mutable.Map.empty
-    private val loadingFiles: mutable.Set[String] = mutable.Set.empty
-
-    /** Records a newly checked top-level item for local unfolding. */
-    def recordTopLevel(item: TypedAst.TopLevel): Unit =
-      item match
-        case funDecl: TypedAst.TopLevel.FunDecl =>
-          localDefinitions.update(funDecl.sig.symbol.name.name, buildFunctionLambda(funDecl))
-        case _ => ()
-
-    /** Returns an unfoldable expression for a symbol if available. */
-    def definitionFor(symbol: TypedAst.Symbol): Option[TypedAst.Expr] = {
-      symbol match {
-        case symbol: TermSymbol =>
-          None
-        case ErrorSymbol(name, tpe) =>
-          None
-        case DatatypeSymbol(name, tpe, file) =>
-          None
-        case fs: FunctionSymbol =>
-          fs.name.typedBody
-        case CtorSymbol(name, tpe) =>
-          None
-      }
-    }
-
-    /** Resolves a definition by global name and owning file. */
-    private def definitionForName(name: String, file: Path): Option[TypedAst.Expr] =
-      if sameFile(file, currentFile) then
-        localDefinitions.get(name)
-      else
-        val fileKey = normalizeFileKey(file)
-        val fileDefs = externalDefinitions.getOrElseUpdate(fileKey, loadFileDefinitions(fileKey))
-        fileDefs.get(name)
-
-    /** Checks whether two file paths refer to the same source file. */
-    private def sameFile(left: Path, right: Path): Boolean =
-      normalizeFileKey(left) == normalizeFileKey(right)
-
-
-    /** Normalizes a symbol file path into a cache key understood by symbol caches. */
-    private def normalizeFileKey(file: Path): String =
-      val raw = file.toString
-      if raw.endsWith("standard.minifumo") then
-        "standard.minifumo"
-      else
-        symbolCache match
-          case projectCache: ProjectSymbolCache if file.isAbsolute => projectCache.fromPath(file)
-          case _ => raw
-
-    /** Loads and caches typed function bodies for one file with cycle detection. */
-    private def loadFileDefinitions(fileKey: String): Map[String, TypedAst.Expr] =
-      if loadingFiles.contains(fileKey) then
-        Map.empty
-      else
-        symbolCache match
-          case projectCache: ProjectSymbolCache =>
-            loadingFiles.add(fileKey)
-            try
-              val (typedProgram, _) = projectCache.typedAst(fileKey)
-              typedProgram.items.collect {
-                case funDecl: TypedAst.TopLevel.FunDecl =>
-                  funDecl.sig.symbol.name.name -> buildFunctionLambda(funDecl)
-              }.toMap
-            finally
-              loadingFiles.remove(fileKey): Unit
-          case _ =>
-            Map.empty
-
-
-  private object DefinitionCache:
-    private object EmptySymbolCache extends NameCache with SymbolCache:
-      override def globalNames(path: String): Map[String, GlobalName] = Map.empty
-      override def globalSymbols(path: String): Map[String, GlobalSymbol] = Map.empty
-
-    /** Provides a no-op definition cache for contexts without unfolding support. */
-    val empty: DefinitionCache = DefinitionCache(Paths.get(""), EmptySymbolCache)
 
   /** Converts a typed function declaration into a lambda term for unfolding. */
   private def buildFunctionLambda(funDecl: TypedAst.TopLevel.FunDecl): TypedAst.Expr =

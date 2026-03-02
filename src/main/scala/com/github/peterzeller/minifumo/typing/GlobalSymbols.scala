@@ -1,9 +1,9 @@
 package com.github.peterzeller.minifumo.typing
 
 import com.github.peterzeller.minifumo.ast
-import com.github.peterzeller.minifumo.ast.{FunParam, FunSig, SourceRange}
+import com.github.peterzeller.minifumo.ast.{FunParam, FunSig, SourceRange, TopLevel}
 import com.github.peterzeller.minifumo.parser.{SyntaxError, parseFile}
-import com.github.peterzeller.minifumo.typing.TypeChecker.{DefinitionCache, GlobalEnv, MetaStore, TypeContext, TypeError, checkProgram}
+import com.github.peterzeller.minifumo.typing.TypeChecker.{GlobalEnv, MetaStore, TypeContext, TypeError, checkProgram}
 import com.github.peterzeller.minifumo.typing.TypedAst.Expr.UnknownType
 import com.github.peterzeller.minifumo.typing.TypedAst.{ErrorSymbol, Expr, LocalSymbol, TermSymbol}
 
@@ -30,27 +30,39 @@ enum GlobalSymbolState:
   case ComputingBody
   case BodyComputed
 
+case class GlobalSymbolContinuationData(
+  declAst: ast.TopLevel,
+  globalNames: NameCache & SymbolCache,
+  idSupply: TypeChecker.IdSupply,
+)
+
 case class GlobalSymbol(
   file: String,
   name: String,
 )(
-  val declAst: Option[ast.TopLevel],
+  // data to continue calculating the type and typed body of this symbol
+  val continuationData: Option[GlobalSymbolContinuationData],
 ):
-  
-  // TODO add caching for results
-  
-  def symbolSignature(globalNames: NameCache & SymbolCache, idSupply: TypeChecker.IdSupply): SymbolSignature = {
-    declAst match {
-      case Some(f: ast.TopLevel.FunDecl) =>
-        val definitionCache = DefinitionCache(file, globalNames)
-        val globals = globalNames.globalEnv(file)
-        val context1 = TypeContext(globals, Map(), definitionCache)
-        val itemMetaStore = MetaStore()
-        val (sig, ctx2, errors) = TypeChecker.checkFunSig(this, f.sig)(using context1, itemMetaStore, idSupply)
-        SymbolSignature.Def(sig.symbol.tpe)
-      case _ =>
-        ???
 
+  // TODO add caching for results
+
+  def symbolSignature: SymbolSignature = {
+    continuationData match {
+      case Some(data) =>
+        data.declAst match {
+          case TopLevel.DataDecl(name, implicitParams, ctors, exported) =>
+            // TODO create signature for data decl
+            ???
+          case f: TopLevel.FunDecl =>
+            val globals = data.globalNames.globalEnv(file)
+            val context1 = TypeContext(globals, Map())
+            val itemMetaStore = MetaStore()
+            val (sig, ctx2, errors) = TypeChecker.checkFunSig(this, f.sig)(using context1, itemMetaStore, data.idSupply)
+            SymbolSignature.Def(sig.symbol.tpe)
+        }
+      case _ =>
+        // TODO: return some error signature
+        ???
     }
   }
 
@@ -130,7 +142,7 @@ object GlobalSymbols:
           case None =>
             errors.addOne(TypeError(s"Import without from clause not supported", i.source))
 
-    for symbols <- prog.items.map(topLevelToGlobalSymbols(file, onlyExported)) do
+    for symbols <- prog.items.map(topLevelToGlobalSymbols(file, onlyExported, symbolCache, ids)) do
       for (name, source, sym) <- symbols do
         if res.contains(name) then
           errors.addOne(TypeError(s"Name ${name} is already defined", source))
@@ -140,27 +152,27 @@ object GlobalSymbols:
     (res, errors.toList)
 
 
-  private def topLevelToGlobalSymbols(file: String, onlyExported: Boolean)(t: ast.TopLevel): Iterable[(String, SourceRange, GlobalSymbol)] =
+  private def topLevelToGlobalSymbols(file: String, onlyExported: Boolean, globalNames: NameCache & SymbolCache, idSupply: TypeChecker.IdSupply)(t: ast.TopLevel): Iterable[(String, SourceRange, GlobalSymbol)] =
     t match
       case ast.TopLevel.DataDecl(name, implicitParams, ctors, exported) if exported || !onlyExported =>
         val errors = ListBuffer[TypeError]()
         val symbols = ListBuffer[(String, SourceRange, GlobalSymbol)]()
         // add the type symbol
-        symbols.addOne((name, t.source, GlobalSymbol(file, name)(Some(t))))
+        symbols.addOne((name, t.source, GlobalSymbol(file, name)(Some(GlobalSymbolContinuationData(t, globalNames, idSupply)))))
 
 
         // add symbols for the constructors
         for ctor <- ctors do
-          symbols.addOne((ctor.name, ctor.source, GlobalSymbol(file, ctor.name)(Some(t))))
+          symbols.addOne((ctor.name, ctor.source, GlobalSymbol(file, ctor.name)(Some(GlobalSymbolContinuationData(t, globalNames, idSupply)))))
         symbols
       case f@ast.TopLevel.FunDecl(sig, _, exported) if exported || !onlyExported =>
-        symbolsForFunDef(f, file)
+        symbolsForFunDef(f, file, globalNames, idSupply)
       case _ =>
         List()
 
-  private def symbolsForFunDef(decl: ast.TopLevel.FunDecl, file: String): Iterable[(String, SourceRange, GlobalSymbol)] =
+  private def symbolsForFunDef(decl: ast.TopLevel.FunDecl, file: String, globalNames: NameCache & SymbolCache, idSupply: TypeChecker.IdSupply): Iterable[(String, SourceRange, GlobalSymbol)] =
     val sig = decl.sig
-    val symbol = GlobalSymbol(file, sig.name)(Some(decl))
+    val symbol = GlobalSymbol(file, sig.name)(Some(GlobalSymbolContinuationData(decl, globalNames, idSupply)))
     List((sig.name, sig.source, symbol))
 
   def resolveImports(prog: ast.ProgramFile, symbolCache: NameCache): (Map[String, GlobalName], List[TypeError]) =
@@ -271,7 +283,7 @@ class ProjectSymbolCache(projectRoot: Path, val ids: TypeChecker.IdSupply) exten
       case Some(m) => m
       case None =>
         val (ast, _) = getAst(path)
-        val r = checkProgram(toPath(path), ast, this, path != "standard.minifumo", ids)
+        val r = checkProgram(path, ast, this, path != "standard.minifumo", ids)
         typedAstCache += path -> r
         r
 

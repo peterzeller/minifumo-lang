@@ -114,7 +114,7 @@ object Main:
     if syntaxErrors.nonEmpty then
       syntaxErrors.map(MinifumoErrorWithPath(path, _))
     else
-      val (_, errors) = TypeChecker.checkProgram(path, program, info, true, info.ids)
+      val (_, errors) = TypeChecker.checkProgram(info.fromPath(path), program, info, true, info.ids)
       if errors.isEmpty then
         Nil
       else

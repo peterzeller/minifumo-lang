@@ -16,10 +16,14 @@ object TypedAst:
   final case class LocalSymbol(name: String, tpe: Expr, id: Int) extends TermSymbol
   final case class BuiltinValueSymbol(name: String, tpe: Expr) extends TermSymbol // TODO do we need this?
   final case class ErrorSymbol(name: String, tpe: Expr) extends Symbol
-  final case class DatatypeSymbol(name: GlobalSymbol, tpe: Expr, file: Path) extends Symbol
+  final case class DatatypeSymbol(sym: GlobalSymbol, tpe: Expr) extends Symbol:
+    def name: String = sym.name
 
-  final case class FunctionSymbol(name: GlobalSymbol, tpe: Expr) extends Symbol
-  final case class CtorSymbol(name: GlobalSymbol, tpe: Expr) extends Symbol
+  final case class FunctionSymbol(sym: GlobalSymbol, tpe: Expr) extends Symbol:
+    def name: String = sym.name
+  final case class CtorSymbol(sym: GlobalSymbol, tpe: Expr) extends Symbol
+    :
+    def name: String = sym.name
 
   case class Program(items: List[TopLevel])(val source: SourceRange)
 
