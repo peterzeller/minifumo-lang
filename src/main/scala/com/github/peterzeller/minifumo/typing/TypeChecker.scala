@@ -922,11 +922,11 @@ object TypeChecker:
       ctx.copy(locals = rewrittenLocals)
 
   private def globalSymbolToCtorSymbol(s: GlobalSymbol, source: SourceRange): (CtorSymbol, List[TypeError]) =
-    s.symbolSignature match
-      case minifumo.typing.SymbolSignature.Def(tpe) =>
-        (CtorSymbol(s, tpe), List())
-      case minifumo.typing.SymbolSignature.Datatype(implicitParams) =>
-        val e = TypeError(s"expected a constructor symbol, but found data type ${s.name}", source)
+    s.toSymbol match
+      case c: CtorSymbol =>
+        (c, List())
+      case _ =>
+        val e = TypeError(s"expected a constructor symbol, but found ${s.name}", source)
         (CtorSymbol(s, Expr.UnknownType()(SourceRange.empty)), List(e))
 
   // Collects explicit field types and result type from a constructor signature.

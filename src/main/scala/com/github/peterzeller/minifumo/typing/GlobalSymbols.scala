@@ -36,6 +36,21 @@ case class GlobalSymbolContinuationData(
   idSupply: TypeChecker.IdSupply,
 )
 
+enum GlobalSymbolCheckState:
+  case Init
+  case SymbolCalculated(
+    sym: TypedAst.Symbol,
+    sig: TypedAst.FunSig,
+    continuationContext: TypeContext,
+    metaStore: MetaStore,
+  )
+  case BodyCalculated(
+    sym: TypedAst.Symbol,
+    ast: Option[TypedAst.TopLevel],
+    body: Option[TypedAst.Expr],
+  )
+
+
 case class GlobalSymbol(
   file: String,
   name: String,
@@ -45,34 +60,60 @@ case class GlobalSymbol(
 ):
 
   // TODO add caching for results
+  var allErrors: Vector[TypeError] = Vector()
+  var state: GlobalSymbolCheckState = GlobalSymbolCheckState.Init
 
-  def symbolSignature: SymbolSignature = {
-    continuationData match {
-      case Some(data) =>
+
+  def toSymbol: TypedAst.Symbol =
+    state match {
+      case GlobalSymbolCheckState.Init =>
+        val data = continuationData.get
         data.declAst match {
-          case TopLevel.DataDecl(name, implicitParams, ctors, exported) =>
-            // TODO create signature for data decl
-            ???
+          case d: TopLevel.DataDecl =>
+            if d.name == name then
+              // datatype symbol
+              ???
+            else
+              // constructor symbol
+              ???
           case f: TopLevel.FunDecl =>
             val globals = data.globalNames.globalEnv(file)
             val context1 = TypeContext(globals, Map())
             val itemMetaStore = MetaStore()
             val (sig, ctx2, errors) = TypeChecker.checkFunSig(this, f.sig)(using context1, itemMetaStore, data.idSupply)
-            SymbolSignature.Def(sig.symbol.tpe)
+            allErrors ++= errors
+            state = GlobalSymbolCheckState.SymbolCalculated(sig.symbol, sig, ctx2, itemMetaStore)
+            sig.symbol
         }
-      case _ =>
-        // TODO: return some error signature
-        ???
+      case s: GlobalSymbolCheckState.SymbolCalculated =>
+        s.sym
+      case s: GlobalSymbolCheckState.BodyCalculated =>
+        s.sym
     }
-  }
 
-  def toSymbol: TypedAst.Symbol = {
-    // TODO, we want to calculate this by invoking the type checker
-    ???
-  }
 
   // calculates the typed body for the symbol
-  def typedBody: Option[TypedAst.Expr] = ???
+  def typedBody: Option[TypedAst.Expr] = {
+    // force calculation of the symbol
+    toSymbol
+    state match {
+      case GlobalSymbolCheckState.Init =>
+        throw new IllegalStateException()
+      case s: GlobalSymbolCheckState.SymbolCalculated =>
+        val data = continuationData.get
+        data.declAst match {
+          case d: TopLevel.DataDecl =>
+            None
+          case f: TopLevel.FunDecl =>
+            val (body, errors) = TypeChecker.check(f.body, s.sig.returnType)(using s.continuationContext, s.metaStore, data.idSupply)
+            allErrors ++= errors
+            state = GlobalSymbolCheckState.BodyCalculated(s.sym, Some(TypedAst.TopLevel.FunDecl(s.sig, body)(f.source)), Some(body))
+            Some(body)
+        }
+      case s: GlobalSymbolCheckState.BodyCalculated =>
+        s.body
+    }
+  }
 
 object GlobalSymbol:
   def error(name: String): GlobalSymbol =
