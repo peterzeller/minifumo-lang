@@ -119,8 +119,6 @@ button:disabled {
 }
 
 .editorPanel {
-  border: 1px solid var(--panel-border);
-  border-radius: 0.5rem;
   overflow: hidden;
   min-height: 50vh;
 }
@@ -207,14 +205,30 @@ button:disabled {
 .tutorialCodeEditor {
   width: 100%;
   min-height: 12rem;
-  margin-top: 0.25rem;
+  margin-top: 0;
   background: var(--editor-bg);
   color: var(--editor-text);
-  border: 1px solid var(--panel-border);
-  border-radius: 0.5rem;
-  padding: 0.75rem;
+  border: none;
+  border-radius: 0;
+  padding: 0;
   font-family: ui-monospace, SFMono-Regular, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
   box-sizing: border-box;
+}
+
+
+.editor .cm-editor,
+.editor .cm-scroller,
+.tutorialCodeEditor .cm-editor,
+.tutorialCodeEditor .cm-scroller {
+  border: none;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.tutorialCodeEditor .cm-content,
+.editor .cm-content {
+  padding: 0;
 }
 
 .tutorialRunButton {
