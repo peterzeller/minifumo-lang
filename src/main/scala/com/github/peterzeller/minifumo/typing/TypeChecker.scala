@@ -61,7 +61,7 @@ object TypeChecker:
         throw new RuntimeException(s"error checking $path", e)
 
 
-  private def checkFunSig(sym: GlobalSymbol, sig: ast.FunSig)(implicit ctx: TypeContext, metas: MetaContext, ids: IdSupply): (TypedAst.FunSig, TypeContext,  List[TypeError]) = {
+  private[typing] def checkFunSig(sym: GlobalSymbol, sig: ast.FunSig)(implicit ctx: TypeContext, metas: MetaContext, ids: IdSupply): (TypedAst.FunSig, TypeContext,  List[TypeError]) = {
 //    throw new RuntimeException(s"Checking of fun sig $sig is not yet implemented")
     var mEnv = ctx
     val errors = mutable.ListBuffer[TypeError]()

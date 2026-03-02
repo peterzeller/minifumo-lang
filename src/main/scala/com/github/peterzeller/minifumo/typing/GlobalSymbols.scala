@@ -3,7 +3,7 @@ package com.github.peterzeller.minifumo.typing
 import com.github.peterzeller.minifumo.ast
 import com.github.peterzeller.minifumo.ast.{FunParam, FunSig, SourceRange}
 import com.github.peterzeller.minifumo.parser.{SyntaxError, parseFile}
-import com.github.peterzeller.minifumo.typing.TypeChecker.{TypeError, checkProgram}
+import com.github.peterzeller.minifumo.typing.TypeChecker.{DefinitionCache, GlobalEnv, MetaStore, TypeContext, TypeError, checkProgram}
 import com.github.peterzeller.minifumo.typing.TypedAst.Expr.UnknownType
 import com.github.peterzeller.minifumo.typing.TypedAst.{ErrorSymbol, Expr, LocalSymbol, TermSymbol}
 
@@ -21,7 +21,7 @@ case class GlobalSymbols(
 )
 
 
-case class GlobalName(file: Path, name: String)
+case class GlobalName(file: String, name: String)
 
 enum GlobalSymbolState:
   case Init
@@ -31,24 +31,40 @@ enum GlobalSymbolState:
   case BodyComputed
 
 case class GlobalSymbol(
-  file: Path,
+  file: String,
   name: String,
 )(
   val declAst: Option[ast.TopLevel],
 ):
-  def symbolSignature: SymbolSignature = ???
+  
+  // TODO add caching for results
+  
+  def symbolSignature(globalNames: NameCache & SymbolCache, idSupply: TypeChecker.IdSupply): SymbolSignature = {
+    declAst match {
+      case Some(f: ast.TopLevel.FunDecl) =>
+        val definitionCache = DefinitionCache(file, globalNames)
+        val globals = globalNames.globalEnv(file)
+        val context1 = TypeContext(globals, Map(), definitionCache)
+        val itemMetaStore = MetaStore()
+        val (sig, ctx2, errors) = TypeChecker.checkFunSig(this, f.sig)(using context1, itemMetaStore, idSupply)
+        SymbolSignature.Def(sig.symbol.tpe)
+      case _ =>
+        ???
+
+    }
+  }
 
   def toSymbol: TypedAst.Symbol = {
     // TODO, we want to calculate this by invoking the type checker
     ???
   }
-  
+
   // calculates the typed body for the symbol
   def typedBody: Option[TypedAst.Expr] = ???
 
 object GlobalSymbol:
   def error(name: String): GlobalSymbol =
-    GlobalSymbol(Path.of(""), name)(None)
+    GlobalSymbol("", name)(None)
 
 enum SymbolSignature:
   case Def(tpe: Expr)
@@ -77,10 +93,10 @@ object GlobalSymbols:
     implicitParams.filter(param => referencedNames.contains(param.name))
 
   // build a map of global names in a program file
-  def buildGlobalNames(file: Path, prog: ast.ProgramFile, onlyExported: Boolean): Map[String, GlobalName] =
+  def buildGlobalNames(file: String, prog: ast.ProgramFile, onlyExported: Boolean): Map[String, GlobalName] =
     prog.items.flatMap(topLevelToGlobalNames(file, onlyExported)).toMap
 
-  private def topLevelToGlobalNames(file: Path, onlyExported: Boolean)(t: ast.TopLevel): Iterable[(String, GlobalName)] =
+  private def topLevelToGlobalNames(file: String, onlyExported: Boolean)(t: ast.TopLevel): Iterable[(String, GlobalName)] =
     t match
       case ast.TopLevel.DataDecl(name, _, ctors, exported) if exported || !onlyExported =>
         val dataTypeName = List(name -> GlobalName(file, name))
@@ -91,10 +107,10 @@ object GlobalSymbols:
       case _ =>
         List()
 
-  def buildGlobalSymbols(file: Path, prog: ast.ProgramFile, symbolCache: NameCache&SymbolCache, onlyExported: Boolean, ids: TypeChecker.IdSupply): (Map[String, GlobalSymbol], List[TypeError]) =
+  def buildGlobalSymbols(file: String, prog: ast.ProgramFile, symbolCache: NameCache&SymbolCache, onlyExported: Boolean, ids: TypeChecker.IdSupply): (Map[String, GlobalSymbol], List[TypeError]) =
     val (imports, errors1) = resolveImports(prog, symbolCache)
     val ownNames = buildGlobalNames(file, prog, false)
-    val standardLibraryNames = buildGlobalNames(Paths.get("standard.minifumo"), Standard.standardProgram, true)
+    val standardLibraryNames = buildGlobalNames("standard.minifumo", Standard.standardProgram, true)
     val errors = ListBuffer[TypeError](errors1*)
     var res = Map[String, GlobalSymbol]()
 
@@ -124,27 +140,27 @@ object GlobalSymbols:
     (res, errors.toList)
 
 
-  private def topLevelToGlobalSymbols(file: Path, onlyExported: Boolean)(t: ast.TopLevel): Iterable[(String, SourceRange, GlobalSymbol)] =
+  private def topLevelToGlobalSymbols(file: String, onlyExported: Boolean)(t: ast.TopLevel): Iterable[(String, SourceRange, GlobalSymbol)] =
     t match
       case ast.TopLevel.DataDecl(name, implicitParams, ctors, exported) if exported || !onlyExported =>
         val errors = ListBuffer[TypeError]()
         val symbols = ListBuffer[(String, SourceRange, GlobalSymbol)]()
         // add the type symbol
-        symbols.addOne((name, t.source, GlobalSymbol(file, name)(t)))
+        symbols.addOne((name, t.source, GlobalSymbol(file, name)(Some(t))))
 
 
         // add symbols for the constructors
         for ctor <- ctors do
-          symbols.addOne((ctor.name, ctor.source, GlobalSymbol(file, ctor.name)(t)))
+          symbols.addOne((ctor.name, ctor.source, GlobalSymbol(file, ctor.name)(Some(t))))
         symbols
       case f@ast.TopLevel.FunDecl(sig, _, exported) if exported || !onlyExported =>
         symbolsForFunDef(f, file)
       case _ =>
         List()
 
-  private def symbolsForFunDef(decl: ast.TopLevel.FunDecl, file: Path): Iterable[(String, SourceRange, GlobalSymbol)] =
+  private def symbolsForFunDef(decl: ast.TopLevel.FunDecl, file: String): Iterable[(String, SourceRange, GlobalSymbol)] =
     val sig = decl.sig
-    val symbol = GlobalSymbol(file, sig.name)(decl)
+    val symbol = GlobalSymbol(file, sig.name)(Some(decl))
     List((sig.name, sig.source, symbol))
 
   def resolveImports(prog: ast.ProgramFile, symbolCache: NameCache): (Map[String, GlobalName], List[TypeError]) =
@@ -173,6 +189,7 @@ trait NameCache:
 
 trait SymbolCache:
   def globalSymbols(path: String): Map[String, GlobalSymbol]
+  def globalEnv(path: String): GlobalEnv
 
 // find the folder that contains minifumo.yml
 @tailrec
@@ -191,6 +208,7 @@ class ProjectSymbolCache(projectRoot: Path, val ids: TypeChecker.IdSupply) exten
   private var astCache: Map[String, (ast.ProgramFile, List[SyntaxError])] = Map()
   private var namesCache: Map[String, Map[String, GlobalName]] = Map()
   private var symbolCache: Map[String, Map[String, GlobalSymbol]] = Map()
+  private var globalEnvCache: Map[String, GlobalEnv] = Map()
   private var typedAstCache: Map[String, (TypedAst.Program, List[TypeError])] = Map()
 
   def toPath(importPath: String): Path =
@@ -223,7 +241,7 @@ class ProjectSymbolCache(projectRoot: Path, val ids: TypeChecker.IdSupply) exten
     namesCache.get(path) match
       case Some(m) => m
       case None =>
-        val r = GlobalSymbols.buildGlobalNames(toPath(path), getAst(path)._1, true)
+        val r = GlobalSymbols.buildGlobalNames(path, getAst(path)._1, true)
         namesCache += path -> r
         r
 
@@ -231,9 +249,20 @@ class ProjectSymbolCache(projectRoot: Path, val ids: TypeChecker.IdSupply) exten
     symbolCache.get(path) match
       case Some(m) => m
       case None =>
-        val (r,_) = GlobalSymbols.buildGlobalSymbols(toPath(path), getAst(path)._1, this, true, ids)
+        val (r,_) = GlobalSymbols.buildGlobalSymbols(path, getAst(path)._1, this, true, ids)
         symbolCache += path -> r
         r
+
+  def globalEnv(path: String): GlobalEnv =
+    globalEnvCache.get(path) match
+      case Some(m) => m
+      case None =>
+        val (r, _) = GlobalSymbols.buildGlobalSymbols(path, getAst(path)._1, this, false, ids)
+        // TODO maybe we need to include imports here
+        val e = GlobalEnv(r)
+        globalEnvCache += path -> e
+        e
+
 
   def allPaths: Set[String] = astCache.keySet + "standard.minifumo"
 
