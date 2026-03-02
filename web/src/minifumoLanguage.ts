@@ -1,5 +1,9 @@
 import { StreamLanguage, type StreamParser } from '@codemirror/language'
 
+interface ParserState {
+  inBlockComment: boolean
+}
+
 const KEYWORDS = new Set([
   'fun',
   'data',
@@ -17,14 +21,39 @@ const KEYWORDS = new Set([
 ])
 
 // Defines a lightweight token stream parser to syntax-highlight Minifumo source code.
-const parser: StreamParser<unknown> = {
-  startState: () => ({}),
-  token(stream) {
+const parser: StreamParser<ParserState> = {
+  // Initializes parser state used to track multi-line block comments.
+  startState: (): ParserState => ({ inBlockComment: false }),
+  // Produces one syntax token class for the current stream position.
+  token(stream, state: ParserState) {
+    if (state.inBlockComment) {
+      while (!stream.eol()) {
+        if (stream.match('*/')) {
+          state.inBlockComment = false
+          break
+        }
+        stream.next()
+      }
+      return 'comment'
+    }
+
     if (stream.eatSpace()) {
       return null
     }
 
-    if (stream.match(/--.*/)) {
+    if (stream.match(/\/\/.*/)) {
+      return 'comment'
+    }
+
+    if (stream.match('/*')) {
+      state.inBlockComment = true
+      while (!stream.eol()) {
+        if (stream.match('*/')) {
+          state.inBlockComment = false
+          break
+        }
+        stream.next()
+      }
       return 'comment'
     }
 
