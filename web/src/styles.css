@@ -204,7 +204,6 @@ button:disabled {
 
 .tutorialCodeEditor {
   width: 100%;
-  min-height: 12rem;
   margin-top: 0;
   background: var(--editor-bg);
   color: var(--editor-text);
@@ -232,7 +231,7 @@ button:disabled {
 }
 
 .tutorialRunButton {
-  margin-top: 0.5rem;
+  margin-top: 0;
 }
 
 .output {
