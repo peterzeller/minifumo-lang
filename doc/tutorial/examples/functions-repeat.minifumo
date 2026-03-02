@@ -21,3 +21,10 @@ fun mult(a: Nat, b: Nat): Nat
 // Raises base to exponent via repeated multiplication.
 fun pow(base: Nat, exponent: Nat): Nat
     repeatNat((value: Nat) => mult(value, base), exponent, Suc(Zero))
+
+// Runs the functions example and prints a status line.
+fun main(): Unit
+    let _sum = plus(Suc(Suc(Zero)), Suc(Suc(Suc(Zero))))
+    let _product = mult(Suc(Suc(Zero)), Suc(Suc(Suc(Zero))))
+    let _power = pow(Suc(Suc(Zero)), Suc(Suc(Suc(Zero))))
+    printlnString("repeatNat plus/mult/pow evaluated")

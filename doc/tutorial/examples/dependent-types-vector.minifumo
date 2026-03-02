@@ -14,3 +14,9 @@ fun vectorTail[T: Type, N: Nat](xs: Vector[T, Suc(N)]): Vector[T, N]
     match xs
         case VCons(_, tail)
             tail
+
+// Runs the dependent-types example and prints a status line.
+fun main(): Unit
+    let vector = VCons(1, VCons(2, VNil))
+    let _tail = vectorTail(vector)
+    printlnString("dependent vector operations compiled and ran")

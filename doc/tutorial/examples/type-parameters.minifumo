@@ -16,3 +16,10 @@ fun gFoldl[A: Type, B: Type](f: B -> A -> B, init: B, xs: GList[A]): B
             init
         case GCons(head, tail)
             gFoldl(f, f(init, head), tail)
+
+// Runs the generic map/fold example and prints the folded result.
+fun main(): Unit
+    let values = GCons(1, GCons(2, GCons(3, GNil)))
+    let doubled = gMap[Int, Int]((x: Int) => x * 2, values)
+    let total = gFoldl[Int, Int]((acc: Int, x: Int) => acc + x, 0, doubled)
+    println(total, showInt())

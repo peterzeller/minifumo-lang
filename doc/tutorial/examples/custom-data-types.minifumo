@@ -8,3 +8,8 @@ fun treeSum(tree: IntTree): Int
             0
         case IntNode(value, left, right)
             value + treeSum(left) + treeSum(right)
+
+// Runs the custom type example and prints the computed sum.
+fun main(): Unit
+    let tree = IntNode(10, IntNode(20, IntEmpty, IntEmpty), IntNode(30, IntEmpty, IntEmpty))
+    println(treeSum(tree), showInt())

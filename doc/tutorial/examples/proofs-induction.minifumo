@@ -14,3 +14,8 @@ fun addAssocByInduction(x: Nat, y: Nat, z: Nat): Eq[Nat, natAdd(x, natAdd(y, z))
         case Suc(n)
             let ih: Eq[Nat, natAdd(n, natAdd(y, z)), natAddAssocRhs(n, y, z)] = addAssocByInduction(n, y, z)
             congrArg[Nat, Nat, natAdd(n, natAdd(y, z)), natAddAssocRhs(n, y, z)]((value) => Suc(value), ih)
+
+// Runs the induction proof example and prints a status line.
+fun main(): Unit
+    let _proof = addAssocByInduction(Suc(Suc(Zero)), Suc(Zero), Suc(Suc(Suc(Zero))))
+    printlnString("induction proof constructed")
