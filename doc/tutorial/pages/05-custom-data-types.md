@@ -7,7 +7,3 @@ In practice, this is how you model domain data in Minifumo: choose constructors 
 The example defines a small binary tree of integers and computes the sum of all values.
 
 [Custom data types](../examples/custom-data-types.minifumo)
-
-Previous: [4. Simple expressions](./04-simple-expressions.md)
-
-Next: [6. Module system](./06-module-system.md)

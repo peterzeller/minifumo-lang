@@ -13,7 +13,3 @@ This page shows common everyday syntax:
 A subtle parser detail is that the lexer injects newline-sensitive structure, so indentation and line breaks matter for how blocks are grouped. The example is intentionally formatted to make that structure easy to read.
 
 [Simple expressions and statement lists](../examples/simple-expressions.minifumo)
-
-Previous: [3. Functions](./03-functions.md)
-
-Next: [5. Custom data types](./05-custom-data-types.md)

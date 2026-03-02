@@ -7,5 +7,3 @@ The recursive call provides the induction hypothesis, and proof combinators like
 The included snippet proves an associativity-shaped theorem for natural-number addition in this style. This is the same core technique used in larger proofs (including list properties like `sum(append(a, b))`).
 
 [Proof by induction example](../examples/proofs-induction.minifumo)
-
-Previous: [10. Equality and rewriting](./10-equality-rewriting.md)

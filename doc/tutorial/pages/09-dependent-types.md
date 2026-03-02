@@ -11,7 +11,3 @@ The example includes:
 - a tail function whose type guarantees non-empty input.
 
 [Dependent types with vectors](../examples/dependent-types-vector.minifumo)
-
-Previous: [8. Type parameters](./08-type-parameters.md)
-
-Next: [10. Equality and rewriting](./10-equality-rewriting.md)

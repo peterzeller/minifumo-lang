@@ -13,7 +13,3 @@ The two snippets below show a minimal exported helper and a consumer module that
 [Module file with exports](../examples/modules/math-utils.minifumo)
 
 [Module file importing exports](../examples/modules/module-main.minifumo)
-
-Previous: [5. Custom data types](./05-custom-data-types.md)
-
-Next: [8. Type parameters](./08-type-parameters.md)

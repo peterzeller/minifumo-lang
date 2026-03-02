@@ -10,7 +10,3 @@ Minifumo includes several foundational types in the standard library that appear
 The snippet demonstrates constructing these values directly and writing small helper functions over them. Reading and writing these constructors fluently is an important first step before defining your own data types.
 
 [Standard library data types](../examples/standard-library-data-types.minifumo)
-
-Previous: [1. Hello world](./01-hello-world.md)
-
-Next: [3. Functions](./03-functions.md)

@@ -13,7 +13,3 @@ This section covers:
 The included example defines `repeatNat`, which applies a `Nat -> Nat` function `n` times to a base case. It then uses this building block to define arithmetic-style operations (`plus`, `mult`, `pow`) in a compositional way.
 
 [Functions, currying, and repeatNat](../examples/functions-repeat.minifumo)
-
-Previous: [2. Standard library data types](./02-standard-library-data-types.md)
-
-Next: [4. Simple expressions](./04-simple-expressions.md)

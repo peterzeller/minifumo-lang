@@ -7,5 +7,3 @@ Comments begin with `//` and continue until the end of the line. This is useful 
 The example below keeps things minimal: it defines a single `main` function that prints a string.
 
 [Hello world with comments and functions](../examples/hello-world.minifumo)
-
-Next: [2. Standard library data types](./02-standard-library-data-types.md)
