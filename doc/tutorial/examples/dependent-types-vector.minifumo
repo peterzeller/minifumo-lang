@@ -1,0 +1,22 @@
+// Defines a length-indexed vector.
+data Vector[T: Type, N: Nat] = VNil: Vector[T, Zero] | VCons(head: T, tail: Vector[T, N]): Vector[T, Suc(N)]
+
+// Computes the vector length at the value level.
+fun vectorLength[T: Type, N: Nat](xs: Vector[T, N]): Nat
+    match xs
+        case VNil
+            Zero
+        case VCons(_, tail)
+            Suc(vectorLength(tail))
+
+// Uses dependent pattern matching to return the tail with a refined length index.
+fun vectorTail[T: Type, N: Nat](xs: Vector[T, Suc(N)]): Vector[T, N]
+    match xs
+        case VCons(_, tail)
+            tail
+
+// Runs the dependent-types example and prints a status line.
+fun main(): Unit
+    let vector = VCons(1, VCons(2, VNil))
+    let _tail = vectorTail(vector)
+    printlnString("dependent vector operations compiled and ran")

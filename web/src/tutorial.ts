@@ -44,7 +44,7 @@ const markdownPages = import.meta.glob('../../doc/tutorial/pages/*.md', {
   import: 'default',
 }) as Record<string, string>
 
-const minifumoSources = import.meta.glob('../../doc/tutorial/examples/*.minifumo', {
+const minifumoSources = import.meta.glob('../../doc/tutorial/examples/**/*.minifumo', {
   eager: true,
   query: '?raw',
   import: 'default',

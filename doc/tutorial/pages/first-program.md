@@ -2,6 +2,6 @@
 
 This page introduces a tiny Minifumo program.
 
-Use [Working with lists](./working-with-lists.md) to continue to the next page.
+Continue with [1. Hello world](./01-hello-world.md) to start the extended tutorial.
 
 [Basic expression evaluation](../examples/intro-main.minifumo)

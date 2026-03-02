@@ -1,0 +1,7 @@
+// Exports a tiny math helper function for other modules.
+export fun addOne(value: Int): Int
+    value + 1
+
+// Runs this module directly and prints an example result.
+fun main(): Unit
+    println(addOne(9), showInt())

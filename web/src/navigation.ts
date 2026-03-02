@@ -32,6 +32,67 @@ export const siteNavigationModel: SiteNavigationModel = {
     },
     {
       kind: 'group',
+      title: 'Language tour',
+      children: [
+        {
+          kind: 'page',
+          pageId: 'language-tour',
+          title: 'Overview',
+        },
+        {
+          kind: 'page',
+          pageId: '01-hello-world',
+          title: '1. Hello world',
+        },
+        {
+          kind: 'page',
+          pageId: '02-standard-library-data-types',
+          title: '2. Standard library data types',
+        },
+        {
+          kind: 'page',
+          pageId: '03-functions',
+          title: '3. Functions',
+        },
+        {
+          kind: 'page',
+          pageId: '04-simple-expressions',
+          title: '4. Simple expressions',
+        },
+        {
+          kind: 'page',
+          pageId: '05-custom-data-types',
+          title: '5. Custom data types',
+        },
+        {
+          kind: 'page',
+          pageId: '06-module-system',
+          title: '6. Module system',
+        },
+        {
+          kind: 'page',
+          pageId: '08-type-parameters',
+          title: '8. Type parameters',
+        },
+        {
+          kind: 'page',
+          pageId: '09-dependent-types',
+          title: '9. Dependent types',
+        },
+        {
+          kind: 'page',
+          pageId: '10-equality-rewriting',
+          title: '10. Equality and rewriting',
+        },
+        {
+          kind: 'page',
+          pageId: '11-proofs-by-induction',
+          title: '11. Proofs by induction',
+        },
+      ],
+    },
+    {
+      kind: 'group',
       title: 'Collections',
       children: [
         {
