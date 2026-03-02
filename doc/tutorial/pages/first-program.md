@@ -2,6 +2,6 @@
 
 This page introduces a tiny Minifumo program.
 
-Continue with the [Language tour](./language-tour.md) for a broader walkthrough.
+Continue with [1. Hello world](./01-hello-world.md) to start the extended tutorial.
 
 [Basic expression evaluation](../examples/intro-main.minifumo)
