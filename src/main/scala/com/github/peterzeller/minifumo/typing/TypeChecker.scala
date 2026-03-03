@@ -308,7 +308,8 @@ object TypeChecker:
     (instantiate(expr), metaErrors ++ constraintErrors)
 
   /** Translates a signature expression to a typed expression. */
-  private[typing] def signatureExpr(expr: ast.Expr, globals: GlobalEnv, locals: Map[String, TypedAst.TermSymbol])(implicit ids: TypeChecker.IdSupply): TypedAst.Expr =
+  private[typing] def signatureExpr(expr: ast.Expr, globals: GlobalEnv, locals: Map[String, TypedAst.TermSymbol])(implicit ids: TypeChecker.IdSupply): TypedAst.Expr = {
+    // TODO can't we just use the normal expression typing method?
     expr match
       case ast.Expr.Lit(value) => TypedAst.Expr.Lit(value)(expr.source)
       case ast.Expr.Var(name) =>
@@ -343,6 +344,7 @@ object TypeChecker:
         TypedAst.Expr.UnknownType()(expr.source)
       case _ =>
         TypedAst.Expr.UnknownType()(expr.source)
+  }
 
 
   /** Checks if two types are definitionally equal, solving metas as needed. 

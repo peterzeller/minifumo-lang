@@ -1,10 +1,11 @@
 package com.github.peterzeller.minifumo.typing
 
 import com.github.peterzeller.minifumo.ast
+import com.github.peterzeller.minifumo.ast.TopLevel.DataDecl
 import com.github.peterzeller.minifumo.ast.{FunParam, FunSig, SourceRange, TopLevel}
 import com.github.peterzeller.minifumo.parser.{SyntaxError, parseFile}
 import com.github.peterzeller.minifumo.typing.TypeChecker.{GlobalEnv, MetaStore, TypeContext, TypeError, checkProgram}
-import com.github.peterzeller.minifumo.typing.TypedAst.Expr.UnknownType
+import com.github.peterzeller.minifumo.typing.TypedAst.Expr.{Sort, UnknownType}
 import com.github.peterzeller.minifumo.typing.TypedAst.{ErrorSymbol, Expr, LocalSymbol, TermSymbol}
 
 import java.nio.file.{Path, Paths}
@@ -12,6 +13,8 @@ import scala.collection.mutable.ListBuffer
 import com.github.peterzeller.minifumo.builtins.Standard
 import com.github.peterzeller.minifumo.common.MinifumoErrorWithPath
 import com.github.peterzeller.minifumo.parser.parseInput
+import com.github.peterzeller.minifumo.typing.GlobalSymbolDecl.{Constructor, Fun}
+import com.github.peterzeller.minifumo.typing.TypedAst.TopLevel.FunDecl
 
 import scala.annotation.tailrec
 
@@ -30,8 +33,13 @@ enum GlobalSymbolState:
   case ComputingBody
   case BodyComputed
 
+enum GlobalSymbolDecl:
+  case Fun(f: ast.TopLevel.FunDecl)
+  case Data(d: ast.TopLevel.DataDecl)
+  case Constructor(datatypeSymbol: GlobalSymbol, constructorName: String)
+
 case class GlobalSymbolContinuationData(
-  declAst: ast.TopLevel,
+  declAst: GlobalSymbolDecl,
   globalNames: NameCache & SymbolCache,
   idSupply: TypeChecker.IdSupply,
 )
@@ -69,14 +77,24 @@ case class GlobalSymbol(
       case GlobalSymbolCheckState.Init =>
         val data = continuationData.get
         data.declAst match {
-          case d: TopLevel.DataDecl =>
-            if d.name == name then
-              // datatype symbol
-              ???
-            else
-              // constructor symbol
-              ???
-          case f: TopLevel.FunDecl =>
+          case GlobalSymbolDecl.Data(d) =>
+            // datatype symbol
+            val globals = data.globalNames.globalEnv(file)
+            var context = TypeContext(globals, Map())
+            val itemMetaStore = MetaStore()
+            // check implicit parameters
+            for p <- d.implicitParams do {
+              val (t, errors) = TypeChecker.checkAndElaborate(p.tpe, Sort()(SourceRange.empty))(using context, itemMetaStore, data.idSupply)
+              allErrors ++= errors
+              val l = LocalSymbol(p.name, t, data.idSupply.freshLocalId())
+              context = context.withLocal(l)
+            }
+            // TODO check constructors
+            ???
+          case GlobalSymbolDecl.Constructor(dt, constructorName) =>
+            // TODO from dt, extract the constructor symbol with the right name
+            ???
+          case GlobalSymbolDecl.Fun(f) =>
             val globals = data.globalNames.globalEnv(file)
             val context1 = TypeContext(globals, Map())
             val itemMetaStore = MetaStore()
@@ -102,13 +120,15 @@ case class GlobalSymbol(
       case s: GlobalSymbolCheckState.SymbolCalculated =>
         val data = continuationData.get
         data.declAst match {
-          case d: TopLevel.DataDecl =>
-            None
-          case f: TopLevel.FunDecl =>
+          case GlobalSymbolDecl.Fun(f) =>
             val (body, errors) = TypeChecker.check(f.body, s.sig.returnType)(using s.continuationContext, s.metaStore, data.idSupply)
             allErrors ++= errors
             state = GlobalSymbolCheckState.BodyCalculated(s.sym, Some(TypedAst.TopLevel.FunDecl(s.sig, body)(f.source)), Some(body))
             Some(body)
+          case GlobalSymbolDecl.Data(d) =>
+            None
+          case GlobalSymbolDecl.Constructor(datatypeSymbol, constructorName) =>
+            None
         }
       case s: GlobalSymbolCheckState.BodyCalculated =>
         s.body
@@ -195,16 +215,17 @@ object GlobalSymbols:
 
   private def topLevelToGlobalSymbols(file: String, onlyExported: Boolean, globalNames: NameCache & SymbolCache, idSupply: TypeChecker.IdSupply)(t: ast.TopLevel): Iterable[(String, SourceRange, GlobalSymbol)] =
     t match
-      case ast.TopLevel.DataDecl(name, implicitParams, ctors, exported) if exported || !onlyExported =>
+      case d@ast.TopLevel.DataDecl(name, implicitParams, ctors, exported) if exported || !onlyExported =>
         val errors = ListBuffer[TypeError]()
         val symbols = ListBuffer[(String, SourceRange, GlobalSymbol)]()
         // add the type symbol
-        symbols.addOne((name, t.source, GlobalSymbol(file, name)(Some(GlobalSymbolContinuationData(t, globalNames, idSupply)))))
+        val dtSymbol = GlobalSymbol(file, name)(Some(GlobalSymbolContinuationData(GlobalSymbolDecl.Data(d), globalNames, idSupply)))
+        symbols.addOne((name, t.source, dtSymbol))
 
 
         // add symbols for the constructors
         for ctor <- ctors do
-          symbols.addOne((ctor.name, ctor.source, GlobalSymbol(file, ctor.name)(Some(GlobalSymbolContinuationData(t, globalNames, idSupply)))))
+          symbols.addOne((ctor.name, ctor.source, GlobalSymbol(file, ctor.name)(Some(GlobalSymbolContinuationData(Constructor(dtSymbol, ctor.name), globalNames, idSupply)))))
         symbols
       case f@ast.TopLevel.FunDecl(sig, _, exported) if exported || !onlyExported =>
         symbolsForFunDef(f, file, globalNames, idSupply)
@@ -213,7 +234,7 @@ object GlobalSymbols:
 
   private def symbolsForFunDef(decl: ast.TopLevel.FunDecl, file: String, globalNames: NameCache & SymbolCache, idSupply: TypeChecker.IdSupply): Iterable[(String, SourceRange, GlobalSymbol)] =
     val sig = decl.sig
-    val symbol = GlobalSymbol(file, sig.name)(Some(GlobalSymbolContinuationData(decl, globalNames, idSupply)))
+    val symbol = GlobalSymbol(file, sig.name)(Some(GlobalSymbolContinuationData(Fun(decl), globalNames, idSupply)))
     List((sig.name, sig.source, symbol))
 
   def resolveImports(prog: ast.ProgramFile, symbolCache: NameCache): (Map[String, GlobalName], List[TypeError]) =
