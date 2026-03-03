@@ -40,7 +40,7 @@ object TypeChecker:
           case decl: ast.TopLevel.DataDecl =>
             val ctorReturnTypeErrors = validateCtorReturnTypes(decl, globals, idSupply, itemMetaStore)
             errors.addAll(ctorReturnTypeErrors)
-            buildDataDecl(path, decl, globals, idSupply)(using idSupply)
+            buildDataDecl(decl, globals, idSupply)
           case decl: ast.TopLevel.FunDecl =>
             val context1 = TypeContext(globals, Map())
             val sym = symbolMap(decl.sig.name)
@@ -203,28 +203,29 @@ object TypeChecker:
     )
 
   /** Builds a typed data declaration. */
-  private def buildDataDecl(
-      file: String,
+  private[typing] def buildDataDecl(
       decl: ast.TopLevel.DataDecl,
       globals: GlobalEnv,
-      idSupply: IdSupply
-    )(implicit ids: TypeChecker.IdSupply): TypedAst.TopLevel =
+      ids: TypeChecker.IdSupply): TypedAst.TopLevel.DataDecl =
     val localTypeParams = decl.implicitParams.map { param =>
-      val paramType = signatureExpr(param.tpe, globals, Map())
-      param.name -> TypedAst.LocalSymbol(param.name, paramType, idSupply.freshLocalId())
+      val paramType = signatureExpr(param.tpe, globals, Map())(using ids)
+      param.name -> TypedAst.LocalSymbol(param.name, paramType, ids.freshLocalId())
     }
     val typeParams = localTypeParams.map(_._2)
     val ctorDecls = decl.ctors.map { ctor =>
       val fields = ctor.fields.map { field =>
-        val fieldType = signatureExpr(field.tpe, globals, localTypeParams.toMap)
+        val fieldType = signatureExpr(field.tpe, globals, localTypeParams.toMap)(using ids)
         TypedAst.CtorField(field.name, fieldType)(field.source)
       }
       val symbol: CtorSymbol =
         globals.names.get(ctor.name) match {
           case Some(symbol) =>
-            val (s, _) = globalSymbolToCtorSymbol(symbol, ctor.source)
-            s
+            //val (s, _) = globalSymbolToCtorSymbol(symbol, ctor.source)
+            //s
+            // TODO construct correct type
+            TypedAst.CtorSymbol(symbol, TypedAst.Expr.UnknownType()(ctor.source))
           case None =>
+            // TODO handle not found symbol
             val cSym = globals.names(ctor.name)
             TypedAst.CtorSymbol(cSym, TypedAst.Expr.UnknownType()(ctor.source))
         }

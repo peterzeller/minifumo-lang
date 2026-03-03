@@ -80,20 +80,15 @@ case class GlobalSymbol(
           case GlobalSymbolDecl.Data(d) =>
             // datatype symbol
             val globals = data.globalNames.globalEnv(file)
-            var context = TypeContext(globals, Map())
-            val itemMetaStore = MetaStore()
-            // check implicit parameters
-            for p <- d.implicitParams do {
-              val (t, errors) = TypeChecker.checkAndElaborate(p.tpe, Sort()(SourceRange.empty))(using context, itemMetaStore, data.idSupply)
-              allErrors ++= errors
-              val l = LocalSymbol(p.name, t, data.idSupply.freshLocalId())
-              context = context.withLocal(l)
-            }
-            // TODO check constructors
-            ???
+            val typedDt = TypeChecker.buildDataDecl(d, globals, data.idSupply)
+            state = GlobalSymbolCheckState.BodyCalculated(typedDt.symbol, Some(typedDt), None)
+            typedDt.symbol
           case GlobalSymbolDecl.Constructor(dt, constructorName) =>
-            // TODO from dt, extract the constructor symbol with the right name
-            ???
+            // force dt symbol to be computed
+            dt.toSymbol
+            val data = dt.state.asInstanceOf[GlobalSymbolCheckState.BodyCalculated]
+            val decl = data.ast.get.asInstanceOf[TypedAst.TopLevel.DataDecl]
+            decl.ctors.find(_.symbol.name == constructorName).get.symbol
           case GlobalSymbolDecl.Fun(f) =>
             val globals = data.globalNames.globalEnv(file)
             val context1 = TypeContext(globals, Map())
