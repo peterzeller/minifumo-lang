@@ -120,11 +120,11 @@ button:disabled {
 
 .editorPanel {
   overflow: hidden;
-  min-height: 50vh;
+  min-height: 10px;
 }
 
 .editor {
-  min-height: 50vh;
+  min-height: 10px;
 }
 
 .tutorialSidebar {
