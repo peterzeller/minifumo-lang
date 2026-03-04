@@ -79,10 +79,22 @@ final case class BuiltinValueSymbol(name: String, tpe: Expr) extends TermSymbol 
 final case class ErrorSymbol(name: String, tpe: Expr) extends Symbol
 
 final case class DatatypeSymbol(file: String, name: String)(val continuationData: Option[DatatypeSymbolContinuationData]) extends GlobalSymbol:
+  /** Calculate the type of a datatype constructor.
+   * For example for datatype List[T: Type], the constructor would be Pi(T: Type, Sort, explicit = false) */
   def tpe: TypedAst.Expr = ???
+
+  /** Calculates the typed toplevel declaration
+   **/
+  def typed: TypedAst.TopLevel.DataDecl = ???
 
 final case class CtorSymbol(dt: DatatypeSymbol, name: String) extends GlobalSymbol:
   def file: String = dt.file
+  /** Calculates the type of the constructor.
+   * For example with
+   * datatype List[T: Type] = Nil | Cons(head: T, tail: List[T])
+   *
+   * The type of Cons would be: Pi(T: Type, Pi(head: T, Pi(tail: List[T], List[T]), true), true), false)
+   * */
   def tpe: TypedAst.Expr = ???
 
 
