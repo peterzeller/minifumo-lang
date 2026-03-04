@@ -480,7 +480,7 @@ class ProjectSymbolCache(projectRoot: Path, val ids: TypeChecker.IdSupply) exten
         for (name, gName) <- imports do {
           val symbols = globalSymbols(gName.file)
           val symbol = symbols.get(gName.name).get
-          r += name -> symbolÏ
+          r += name -> symbol
         }
         // and we also need to include the standard library
         if path != "standard.minifumo" then
