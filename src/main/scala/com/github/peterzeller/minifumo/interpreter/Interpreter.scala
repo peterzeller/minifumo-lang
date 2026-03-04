@@ -130,7 +130,7 @@ object Interpreter:
         0
 
   /** Builds a constructor runtime value with the given implicit parameter arity and fields. */
-  private def buildConstructorValue(name: String, implicitParamCount: Int, fields: List[CtorField], values: List[Value]): Value =
+  private def buildConstructorValue(name: String, implicitParamCount: Int, fields: List[LocalSymbol], values: List[Value]): Value =
     if implicitParamCount > 0 then
       Value.FuncVal(s"${name}_${fields.length + implicitParamCount}", _ => buildConstructorValue(name, implicitParamCount - 1, fields, values))
     else

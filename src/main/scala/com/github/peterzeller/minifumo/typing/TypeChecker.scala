@@ -45,7 +45,7 @@ object TypeChecker:
             val context1 = TypeContext(globals, Map())
             val sym = symbolMap(decl.sig.name) match {
               case f: FunctionSymbol => f
-              case other => 
+              case other =>
                 errors.addOne(TypeError(s"Element ${other.name} is not a function", decl.source))
                 ErrorSymbols.fun(other.name)
             }
@@ -203,32 +203,15 @@ object TypeChecker:
   private[typing] def buildDataDecl(
       decl: ast.TopLevel.DataDecl,
       globals: GlobalEnv,
-      ids: TypeChecker.IdSupply): TypedAst.TopLevel.DataDecl =
-    // TODO this seems not correct, the later parameters should be able to refer to earlier parameters by name
-    val localTypeParams = decl.implicitParams.map { param =>
-      val paramType = signatureExpr(param.tpe, globals, Map())(using ids)
-      param.name -> LocalSymbol(param.name, paramType, ids.freshLocalId())
+      ids: TypeChecker.IdSupply): TypedAst.TopLevel.DataDecl = {
+    globals.names.get(decl.name) match {
+      case Some(d: DatatypeSymbol) =>
+        d.typed
+      case _ =>
+        // TODO can this happen?
+        ???
     }
-    val typeParams = localTypeParams.map(_._2)
-    val ctorDecls = decl.ctors.map { ctor =>
-      val fields = ctor.fields.map { field =>
-        val fieldType = signatureExpr(field.tpe, globals, localTypeParams.toMap)(using ids)
-        TypedAst.CtorField(field.name, fieldType)(field.source)
-      }
-      val symbol: CtorSymbol =
-        globals.names.get(ctor.name) match {
-          case Some(symbol: CtorSymbol) =>
-            symbol
-          case _ =>
-            ErrorSymbols.constructor(ctor.name)
-        }
-      TypedAst.CtorDecl(symbol, fields)(ctor.source)
-    }
-    val dSym = globals.names(decl.name) match {
-      case d: DatatypeSymbol => d
-      case _ => ErrorSymbols.datatype(decl.name)
-    }
-    TypedAst.TopLevel.DataDecl(dSym, typeParams, ctorDecls)(decl.source)
+  }
 
   private def buildDatatypeType(typeParams: List[LocalSymbol]): TypedAst.Expr =
     typeParams match
@@ -804,6 +787,36 @@ object TypeChecker:
 //    given metas: MetaContext = MetaStore()
 //    given ids: IdSupply = IdSupply()
 //    check(expr, expectedType)
+
+  private[typing] def collectReferencedSymbols(expr: TypedAst.Expr): Set[Symbol] =
+    expr match {
+      case Expr.Lit(value) => Set()
+      case Expr.Var(symbol) => Set(symbol)
+      case Expr.AppImplicit(callee, arg, tpe) =>
+        collectReferencedSymbols(callee) ++ collectReferencedSymbols(arg)
+      case Expr.App(callee, arg, tpe) =>
+        collectReferencedSymbols(callee) ++ collectReferencedSymbols(arg)
+      case Expr.Pi(dom, cod, isImplicit) =>
+        collectReferencedSymbols(cod) -- Set(dom)
+      case Expr.Sort() => Set()
+      case Expr.Lambda(param, body, tpe) =>
+        collectReferencedSymbols(body) -- Set(param)
+      case Expr.LetIn(symbol, isConstant, declaredType, value, body) =>
+        collectReferencedSymbols(value) ++ (collectReferencedSymbols(body) -- Set(symbol))
+      case Expr.Meta(index, tpe) => Set()
+      case Expr.UnknownType() => Set()
+      case Expr.Match(scrutinee, motive, cases) =>
+        collectReferencedSymbols(scrutinee) ++ cases.flatMap(c => 
+          collectReferencedSymbols(c.body) ++ collectReferencedSymbolsInPattern(c.pattern))
+    }
+
+  private[typing] def collectReferencedSymbolsInPattern(expr: TypedAst.Pattern): Set[Symbol] =
+    expr match {
+      case Pattern.Wildcard() => Set()
+      case Pattern.Lit(value) => Set()
+      case Pattern.Binder(symbol) => Set()
+      case Pattern.Ctor(symbol, args) => Set(symbol) ++ args.flatMap(arg => collectReferencedSymbolsInPattern(arg))
+    }
 
   // Renders typed expressions in a compact user-facing format for diagnostics.
   private[typing] def prettyExpr(expr: TypedAst.Expr): String =

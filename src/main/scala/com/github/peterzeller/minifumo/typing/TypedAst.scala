@@ -30,10 +30,9 @@ object TypedAst:
       for p <- typeParams.reverseIterator do
         r = Pi(p, r, true)(r.source)
       r
-      
 
-  final case class CtorDecl(symbol: CtorSymbol, fields: List[CtorField])(val source: SourceRange)
-  final case class CtorField(name: String, tpe: Expr)(val source: SourceRange)
+
+  final case class CtorDecl(symbol: CtorSymbol, implicitFields: List[LocalSymbol], fields: List[LocalSymbol], returnType: Expr, tpe: Expr)(val source: SourceRange)
 
   enum Expr:
     def source: SourceRange
@@ -59,6 +58,9 @@ object TypedAst:
     // placeholder when typing is unknown
     case UnknownType()(val source: SourceRange)
     case Match(scrutinee: Expr, motive: Expr, cases: List[MatchCase])(val source: SourceRange)
+
+    override def toString: String =
+      TypeChecker.prettyExpr(this)
 
   final case class MatchCase(pattern: Pattern, body: Expr)(val source: SourceRange)
 

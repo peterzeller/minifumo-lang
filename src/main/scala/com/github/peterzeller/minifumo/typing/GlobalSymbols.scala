@@ -2,10 +2,10 @@ package com.github.peterzeller.minifumo.typing
 
 import com.github.peterzeller.minifumo.ast
 import com.github.peterzeller.minifumo.ast.TopLevel.DataDecl
-import com.github.peterzeller.minifumo.ast.{FunParam, FunSig, SourceRange, TopLevel}
+import com.github.peterzeller.minifumo.ast.{CtorField, FunParam, FunSig, SourceRange, TopLevel}
 import com.github.peterzeller.minifumo.parser.{SyntaxError, parseFile}
 import com.github.peterzeller.minifumo.typing.TypeChecker.{GlobalEnv, MetaStore, TypeContext, TypeError, checkProgram}
-import com.github.peterzeller.minifumo.typing.TypedAst.Expr.{Sort, UnknownType}
+import com.github.peterzeller.minifumo.typing.TypedAst.Expr.{Pi, Sort, UnknownType}
 import com.github.peterzeller.minifumo.typing.TypedAst.Expr
 
 import java.nio.file.{Path, Paths}
@@ -78,14 +78,111 @@ final case class BuiltinValueSymbol(name: String, tpe: Expr) extends TermSymbol 
 
 final case class ErrorSymbol(name: String, tpe: Expr) extends Symbol
 
+object DatatypeSymbol:
+    case class TypeCalculated(params: List[LocalSymbol], tpe: Expr)
+
+
 final case class DatatypeSymbol(file: String, name: String)(val continuationData: Option[DatatypeSymbolContinuationData]) extends GlobalSymbol:
+
+  private var allErrors: List[TypeError] = List()
+  private var typeCalculated: Option[DatatypeSymbol.TypeCalculated] = None
+  private var declCalculated: Option[TypedAst.TopLevel.DataDecl] = None
+
+  val ctorSymbols: List[CtorSymbol] = continuationData match {
+    case Some(data) =>
+      for c <- data.declAst.ctors yield
+        CtorSymbol(this, c.name)
+    case None => List()
+  }
+
   /** Calculate the type of a datatype constructor.
    * For example for datatype List[T: Type], the constructor would be Pi(T: Type, Sort, explicit = false) */
-  def tpe: TypedAst.Expr = ???
+  def tpe: TypedAst.Expr =
+    if typeCalculated.isDefined then
+      return typeCalculated.get.tpe
+
+    val data = continuationData match {
+      case None => return TypedAst.Expr.UnknownType()(SourceRange.empty)
+      case Some(d) => d
+    }
+    val globals = data.globalNames.globalEnv(file)
+    var ctx = TypeContext(globals, Map())
+    val metas = MetaStore()
+    val implicitParams: List[LocalSymbol] =
+      for p <- data.declAst.implicitParams yield
+        val (t, errors) = TypeChecker.checkAndElaborate(p.tpe, TypedAst.Expr.Sort()(SourceRange.empty))(using ctx, metas, data.idSupply)
+        allErrors ++= errors
+        val pSym = LocalSymbol(p.name, t, data.idSupply.freshLocalId())
+        ctx = ctx.withLocal(pSym)
+        pSym
+
+    val t = buildPiType(implicitParams, List(), Expr.Sort()(SourceRange.empty))
+    typeCalculated = Some(DatatypeSymbol.TypeCalculated(implicitParams, t))
+    t
+
 
   /** Calculates the typed toplevel declaration
    **/
-  def typed: TypedAst.TopLevel.DataDecl = ???
+  def typed: TypedAst.TopLevel.DataDecl = {
+    tpe
+    val data = continuationData.get
+    val typeInfo = typeCalculated.get
+    val globals = data.globalNames.globalEnv(file)
+    var ctx = TypeContext(globals, Map())
+    val metas = MetaStore()
+    val ctors: List[TypedAst.CtorDecl] =
+      for (ctor, ctorSym) <- data.declAst.ctors.zip(ctorSymbols) yield
+        val fields: List[LocalSymbol] =
+          for p <- ctor.fields yield
+            val (t, errors) = TypeChecker.checkAndElaborate(p.tpe, TypedAst.Expr.Sort()(SourceRange.empty))(using ctx, metas, data.idSupply)
+            allErrors ++= errors
+            val pSym = LocalSymbol(p.name, t, data.idSupply.freshLocalId())
+            ctx = ctx.withLocal(pSym)
+            pSym
+
+        val returnType: TypedAst.Expr =
+          ctor.returnType match {
+            case Some(rType) =>
+                val (t, errors) = TypeChecker.checkAndElaborate(rType, TypedAst.Expr.Sort()(SourceRange.empty))(using ctx, metas, data.idSupply)
+                allErrors ++= errors
+                t
+            case None =>
+              // by default return standard type
+              var r = TypedAst.Expr.Var(this)(ctor.source)
+              var pis = typeInfo.tpe
+              for p <- typeInfo.params do {
+                val Pi(c, d, _) = pis: @unchecked
+                r = TypedAst.Expr.App(r, TypedAst.Expr.Var(p)(ctor.source), d)(ctor.source)
+                pis = d
+              }
+
+              r
+          }
+        val referencedLocals: Set[Symbol] = TypeChecker.collectReferencedSymbols(returnType) ++ fields.flatMap(f => TypeChecker.collectReferencedSymbols(f.tpe))
+        val implicitFields = typeInfo.params.filter(referencedLocals.contains)
+        
+        val tpe = buildPiType(implicitFields, fields, returnType)
+        TypedAst.CtorDecl(ctorSym, implicitFields, fields, returnType, tpe)(ctor.source)
+
+
+    TypedAst.TopLevel.DataDecl(
+      this,
+      typeInfo.params,
+      ctors
+    )(data.declAst.source)
+  }
+
+def buildPiType(implicitParams: List[LocalSymbol], explicitParams: List[LocalSymbol], result: TypedAst.Expr): TypedAst.Expr =
+  implicitParams match {
+    case x:: xs =>
+      TypedAst.Expr.Pi(x, buildPiType(xs, explicitParams, result), false)(result.source)
+    case Nil =>
+      explicitParams match {
+        case x::xs =>
+          TypedAst.Expr.Pi(x, buildPiType(List(), xs, result), true)(result.source)
+        case Nil => result
+      }
+  }
 
 final case class CtorSymbol(dt: DatatypeSymbol, name: String) extends GlobalSymbol:
   def file: String = dt.file
@@ -95,7 +192,10 @@ final case class CtorSymbol(dt: DatatypeSymbol, name: String) extends GlobalSymb
    *
    * The type of Cons would be: Pi(T: Type, Pi(head: T, Pi(tail: List[T], List[T]), true), true), false)
    * */
-  def tpe: TypedAst.Expr = ???
+  def tpe: TypedAst.Expr = {
+    val ctor = dt.typed.ctors.find(_.symbol.name == name).get
+    ctor.tpe
+  }
 
 
 final case class FunctionSymbol(
