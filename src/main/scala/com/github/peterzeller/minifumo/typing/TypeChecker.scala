@@ -122,14 +122,18 @@ object TypeChecker:
 
   /** Stores global symbols for type checking. */
   private[typing] final case class GlobalEnv(
-      names: Map[String, GlobalSymbol]
-    )
+      names: Map[String, GlobalSymbol],
+      checkingSignatures: Set[String] = Set.empty,
+    ):
+    /** Extends the signature-checking set with one additional symbol name. */
+    def withCheckingSignature(name: String): GlobalEnv =
+      copy(checkingSignatures = checkingSignatures + name)
 
   /** Implements a context with local bindings and global symbols. */
   private[typing] final case class TypeContext(globals: GlobalEnv, locals: Map[String, LocalBinding], definitionCache: DefinitionCache = DefinitionCache.empty) extends Context:
     override def lookupSymbol(name: String): Option[TypedAst.Symbol] =
       locals.get(name).map(_.symbol)
-        .orElse(globals.names.get(name).map(g => TypedAst.GlobalSymbolSymbol(g.name, g.file, g)))
+        .orElse(globals.names.get(name).map(g => g))
 
     override def lookupValue(symbol: TypedAst.TermSymbol): Option[TypedAst.Expr] =
       locals.values.find(_.symbol == symbol).flatMap(_.value)
@@ -206,7 +210,7 @@ object TypeChecker:
       val symbol: CtorSymbol =
         globals.names.get(ctor.name) match {
           case Some(symbol) =>
-            val (s, _) = globalSymbolToCtorSymbol(symbol, ctor.source)
+            val (s, _) = globalSymbolToCtorSymbol(symbol, ctor.source, globals.checkingSignatures)
             s
           case None =>
             TypedAst.CtorSymbol(ctor.name, TypedAst.Expr.UnknownType()(ctor.source))
@@ -305,7 +309,7 @@ object TypeChecker:
             case None =>
               globals.names.get(name) match
                 case Some(symbol) =>
-                  TypedAst.Expr.Var(symbol.toSymbol)(expr.source)
+                  TypedAst.Expr.Var(symbol)(expr.source)
                 case None =>
                   TypedAst.Expr.Var(TypedAst.ErrorSymbol(name, TypedAst.Expr.UnknownType()(expr.source)))(expr.source)
       case ast.Expr.Call(callee, arg) =>
@@ -358,18 +362,18 @@ object TypeChecker:
       true
     else
       (a,b) match
-        case (GlobalSymbolSymbol(an, af, _), GlobalNameSymbol(bn, bf)) =>
-          an == bn && af == bf
-        case (GlobalNameSymbol(an, af), GlobalSymbolSymbol(bn, bf, _)) =>
-          an == bn && af == bf
+        case (ga: GlobalSymbol, GlobalNameSymbol(bn, bf)) =>
+          ga.name == bn && ga.file == bf
+        case (GlobalNameSymbol(an, af), gb: GlobalSymbol) =>
+          an == gb.name && af == gb.file
         case (ctor: CtorSymbol, TypedAst.GlobalNameSymbol(name, _)) =>
           ctor.name == name
         case (TypedAst.GlobalNameSymbol(name, _), ctor: CtorSymbol) =>
           name == ctor.name
-        case (ctor: CtorSymbol, TypedAst.GlobalSymbolSymbol(name, _, _)) =>
-          ctor.name == name
-        case (TypedAst.GlobalSymbolSymbol(name, _, _), ctor: CtorSymbol) =>
-          name == ctor.name
+        case (ctor: CtorSymbol, g: GlobalSymbol) =>
+          ctor.name == g.name
+        case (g: GlobalSymbol, ctor: CtorSymbol) =>
+          g.name == ctor.name
         case _ =>
           false
 
@@ -419,10 +423,10 @@ object TypeChecker:
   private def classifyHead(symbol: TypedAst.Symbol)(using ctx: Context): Option[DefEqHeadKind] =
     symbol match
       case _: TypedAst.CtorSymbol => Some(DefEqHeadKind.Constructor)
-      case TypedAst.GlobalSymbolSymbol(_, _, g) =>
-        g.symbolSignature match
-          case SymbolSignature.Datatype(_) => Some(DefEqHeadKind.TypeConstructor)
-          case SymbolSignature.Def(tpe) if hasDatatypeResultType(tpe) => Some(DefEqHeadKind.Constructor)
+      case g: GlobalSymbol =>
+        g.evaluateSignature(signatureCheckingSet) match
+          case Right(SymbolSignature.Datatype(_)) => Some(DefEqHeadKind.TypeConstructor)
+          case Right(SymbolSignature.Def(tpe)) if hasDatatypeResultType(tpe) => Some(DefEqHeadKind.Constructor)
           case _ => None
       case _: TypedAst.GlobalNameSymbol => Some(DefEqHeadKind.TypeConstructor)
       case _ => None
@@ -434,11 +438,18 @@ object TypeChecker:
         case TypedAst.Expr.Pi(_, cod, _) => codomain(cod)
         case other => other
     decomposeApplication(codomain(expr))._1 match
-      case TypedAst.Expr.Var(TypedAst.GlobalSymbolSymbol(_, _, g)) =>
-        g.symbolSignature match
+      case TypedAst.Expr.Var(g: GlobalSymbol) =>
+        g.evaluateSignature().exists {
           case SymbolSignature.Datatype(_) => true
           case _ => false
+        }
       case _ => false
+
+  /** Reads the current signature-checking stack from the type context when available. */
+  private def signatureCheckingSet(using ctx: Context): Set[String] =
+    ctx match
+      case typeCtx: TypeContext => typeCtx.globals.checkingSignatures
+      case _ => Set.empty
 
   /** Tries to solve deferred equality constraints by normalizing both sides. */
   private def solveOpenConstraints(fuel: Int)(implicit ctx: Context, metas: MetaContext): List[(EqualityConstraint, TypedAst.Expr, TypedAst.Expr)] =
@@ -857,7 +868,7 @@ object TypeChecker:
       case ast.Literal.StringLit(_) => "String"
       case ast.Literal.UnitLit() => "Unit"
     ctx.globals.names.get(typeName)
-      .map(sym => TypedAst.Expr.Var(GlobalSymbolSymbol(sym.name, sym.file, sym))(value.source))
+      .map(sym => TypedAst.Expr.Var(sym)(value.source))
       .getOrElse(TypedAst.Expr.UnknownType()(value.source))
 
   /** Checks a pattern against the expected scrutinee type. */
@@ -880,7 +891,7 @@ object TypeChecker:
         ctx.globals.names.get(name) match
           case Some(symbol) =>
             // Uses constructor matching if a global constructor of this name exists.
-            val (ctorSymbol, ctorErrors) = globalSymbolToCtorSymbol(symbol, pattern.source)
+            val (ctorSymbol, ctorErrors) = globalSymbolToCtorSymbol(symbol, pattern.source, ctx.globals.checkingSignatures)
             val typed = TypedAst.Pattern.Ctor(ctorSymbol, Nil)(pattern.source)
             val refinement = extractPatternRefinement(ctorSymbol.tpe, expectedType)
             PatternCheckResult(typed, Map(), refinement, ctorErrors)
@@ -892,7 +903,7 @@ object TypeChecker:
       case ast.Pattern.Ctor(name, args) =>
         ctx.globals.names.get(name) match
           case Some(symbol) =>
-            val (ctorSymbol, ctorErrors) = globalSymbolToCtorSymbol(symbol, pattern.source)
+            val (ctorSymbol, ctorErrors) = globalSymbolToCtorSymbol(symbol, pattern.source, ctx.globals.checkingSignatures)
             val fieldTypes = extractCtorFieldTypes(ctorSymbol.tpe, expectedType)
             val paddedFieldTypes = fieldTypes.padTo(args.length, TypedAst.Expr.UnknownType()(pattern.source))
             val argResults = args.zip(paddedFieldTypes).map { (arg, fieldType) =>
@@ -944,12 +955,14 @@ object TypeChecker:
       }
       ctx.copy(locals = rewrittenLocals)
 
-  private def globalSymbolToCtorSymbol(s: GlobalSymbol, source: SourceRange): (CtorSymbol, List[TypeError]) =
-    s.symbolSignature match
-      case minifumo.typing.SymbolSignature.Def(tpe) =>
+  private def globalSymbolToCtorSymbol(s: GlobalSymbol, source: SourceRange, checkingSignatures: Set[String] = Set.empty): (CtorSymbol, List[TypeError]) =
+    s.evaluateSignature(checkingSignatures) match
+      case Right(minifumo.typing.SymbolSignature.Def(tpe)) =>
         (CtorSymbol(s.name, tpe), List())
-      case minifumo.typing.SymbolSignature.Datatype(implicitParams) =>
+      case Right(minifumo.typing.SymbolSignature.Datatype(_)) =>
         val e = TypeError(s"expected a constructor symbol, but found data type ${s.name}", source)
+        (CtorSymbol(s.name, Expr.UnknownType()(SourceRange.empty)), List(e))
+      case Left(e) =>
         (CtorSymbol(s.name, Expr.UnknownType()(SourceRange.empty)), List(e))
 
   // Collects explicit field types and result type from a constructor signature.
@@ -1045,12 +1058,19 @@ object TypeChecker:
     /** Returns an unfoldable expression for a symbol if available. */
     def definitionFor(symbol: TypedAst.Symbol): Option[TypedAst.Expr] =
       symbol match
-        case TypedAst.GlobalSymbolSymbol(name, file, _) =>
-          definitionForName(name, file)
+        case g: GlobalSymbol =>
+          continuationBodyIfAvailable(g).orElse(definitionForName(g.name, g.file))
         case TypedAst.GlobalNameSymbol(name, file) =>
           definitionForName(name, file)
         case _ =>
           None
+
+    /** Uses continuation-provided bodies only when they are concrete unfoldable expressions. */
+    private def continuationBodyIfAvailable(symbol: GlobalSymbol): Option[TypedAst.Expr] =
+      symbol.evaluateBody().toOption.filter {
+        case TypedAst.Expr.UnknownType() => false
+        case _ => true
+      }
 
     /** Resolves a definition by global name and owning file. */
     private def definitionForName(name: String, file: Path): Option[TypedAst.Expr] =
