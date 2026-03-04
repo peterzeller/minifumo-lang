@@ -12,7 +12,7 @@ import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 
 object TypeChecker:
-  private val throwOnError = false
+  private val throwOnError = true
   private val defaultConstraintFuel = 128
 
   final case class TypeError(message: String, source: ast.SourceRange) extends MinifumoError:
@@ -39,7 +39,16 @@ object TypeChecker:
           case decl: ast.TopLevel.DataDecl =>
             val ctorReturnTypeErrors = validateCtorReturnTypes(decl, globals, idSupply, itemMetaStore)
             errors.addAll(ctorReturnTypeErrors)
-            buildDataDecl(decl, globals, idSupply)
+            val sym = globals.names.get(decl.name) match {
+              case Some(d: DatatypeSymbol) =>
+                d
+              case _ =>
+                // TODO can this happen?
+                ???
+            }
+            val res = sym.typed
+            errors.addAll(sym.allErrors)
+            res
           case decl: ast.TopLevel.FunDecl =>
             val context1 = TypeContext(globals, Map())
             val sym = symbolMap(decl.sig.name) match {
@@ -48,13 +57,9 @@ object TypeChecker:
                 errors.addOne(TypeError(s"Element ${other.name} is not a function", decl.source))
                 ErrorSymbols.fun(other.name)
             }
-            val (typedSig, context2, errs) = checkFunSig(sym, decl.sig)(using context1, itemMetaStore, idSupply)
-            errors.addAll(errs)
-
-            val typedBody = checkFunctionBody(decl.body, typedSig.returnType, context2, itemMetaStore, idSupply, errors)
-            val (elaboratedBody, unresolvedMetaErrors) = finalizeTopLevelExpr(typedBody)(using context2, itemMetaStore)
-            errors.addAll(unresolvedMetaErrors)
-            TypedAst.TopLevel.FunDecl(typedSig, elaboratedBody)(decl.source)
+            val res = sym.typedDecl.get
+            errors.addAll(sym.allErrors)
+            res
         typedItems.addOne(typedItem)
       // Returns accumulated type errors to the caller instead of throwing.
       (TypedAst.Program(typedItems.toList)(program.source), errors.toList)
@@ -129,9 +134,10 @@ object TypeChecker:
 
   /** Implements a context with local bindings and global symbols. */
   private[typing] final case class TypeContext(globals: GlobalEnv, locals: Map[String, LocalBinding]) extends Context:
-    override def lookupSymbol(name: String): Option[Symbol] =
+    override def lookupSymbol(name: String): Option[Symbol] = {
       locals.get(name).map(_.symbol)
         .orElse(globals.names.get(name))
+    }
 
     override def lookupValue(symbol: TermSymbol): Option[TypedAst.Expr] =
       locals.values.find(_.symbol == symbol).flatMap(_.value)
@@ -201,8 +207,7 @@ object TypeChecker:
   /** Builds a typed data declaration. */
   private[typing] def buildDataDecl(
       decl: ast.TopLevel.DataDecl,
-      globals: GlobalEnv,
-      ids: TypeChecker.IdSupply): TypedAst.TopLevel.DataDecl = {
+      globals: GlobalEnv): TypedAst.TopLevel.DataDecl = {
     globals.names.get(decl.name) match {
       case Some(d: DatatypeSymbol) =>
         d.typed
@@ -269,7 +274,7 @@ object TypeChecker:
     typedBody
 
   /** Resolves metas at the end of a declaration and reports unresolved placeholders. */
-  private def finalizeTopLevelExpr(expr: TypedAst.Expr)
+  private[typing] def finalizeTopLevelExpr(expr: TypedAst.Expr)
                                (implicit ctx: Context, metas: MetaContext): (TypedAst.Expr, List[TypeError]) =
     val unresolvedConstraints = solveOpenConstraints(defaultConstraintFuel)
     val unresolved = collectUnresolvedMetas(expr)
@@ -377,7 +382,7 @@ object TypeChecker:
       case _ => false
 
   /** Extracts constructor-like or datatype application heads from a term. */
-  private def extractHeadedExpr(expr: TypedAst.Expr)(using ctx: Context): Option[HeadedExpr] =
+  private def extractHeadedExpr(expr: TypedAst.Expr): Option[HeadedExpr] =
     val (head, args) = decomposeApplication(expr)
     head match
       case TypedAst.Expr.Var(symbol) =>
@@ -395,7 +400,7 @@ object TypeChecker:
     loop(expr, Nil)
 
   /** Classifies heads that represent constructors or type constructors. */
-  private def classifyHead(symbol: Symbol)(using ctx: Context): Option[DefEqHeadKind] =
+  private def classifyHead(symbol: Symbol): Option[DefEqHeadKind] =
     symbol match
       case _: CtorSymbol => Some(DefEqHeadKind.Constructor)
       case _: DatatypeSymbol => Some(DefEqHeadKind.TypeConstructor)
@@ -508,7 +513,7 @@ object TypeChecker:
           callee
 
   /** Checks whether unfolding would get stuck on a non-constructor match scrutinee. */
-  private def shouldDeferUnfold(definition: TypedAst.Expr, appliedArg: TypedAst.Expr)(using ctx: Context): Boolean =
+  private def shouldDeferUnfold(definition: TypedAst.Expr, appliedArg: TypedAst.Expr): Boolean =
     definition match
       case TypedAst.Expr.Lambda(param, body, _) =>
         val inspectsParam = hasMatchOnParam(body, param.id)
@@ -529,7 +534,7 @@ object TypeChecker:
         false
 
   /** Checks whether an expression has a constructor at its application head. */
-  private def hasConstructorHead(expr: TypedAst.Expr)(using ctx: Context): Boolean =
+  private def hasConstructorHead(expr: TypedAst.Expr): Boolean =
     decomposeApplication(expr)._1 match
       case TypedAst.Expr.Var(symbol) =>
         classifyHead(symbol).contains(DefEqHeadKind.Constructor)
@@ -547,7 +552,7 @@ object TypeChecker:
         TypedAst.Expr.Match(scrutinee, TypedAst.Expr.UnknownType()(source), reducedCases)(source)
 
   /** Selects and specializes the first matching branch for a reduced scrutinee. */
-  private def selectMatchCase(scrutinee: TypedAst.Expr, cases: List[TypedAst.MatchCase])(using ctx: Context): Option[TypedAst.Expr] =
+  private def selectMatchCase(scrutinee: TypedAst.Expr, cases: List[TypedAst.MatchCase]): Option[TypedAst.Expr] =
     val (head, args) = decomposeApplication(scrutinee)
     head match
       case TypedAst.Expr.Var(symbol) if hasConstructorLikeHead(symbol, cases) =>
@@ -558,7 +563,7 @@ object TypeChecker:
         None
 
   /** Checks whether a scrutinee symbol can participate in constructor-pattern reduction. */
-  private def hasConstructorLikeHead(symbol: Symbol, cases: List[TypedAst.MatchCase])(using ctx: Context): Boolean =
+  private def hasConstructorLikeHead(symbol: Symbol, cases: List[TypedAst.MatchCase]): Boolean =
     classifyHead(symbol).contains(DefEqHeadKind.Constructor) ||
       cases.exists {
         case TypedAst.MatchCase(TypedAst.Pattern.Ctor(ctorSymbol, _), _) => symbolsEqual(symbol, ctorSymbol)
@@ -819,7 +824,7 @@ object TypeChecker:
     expr match
       case TypedAst.Expr.UnknownType() => "_"
       case TypedAst.Expr.Sort() => "Type"
-      case TypedAst.Expr.Var(symbol) => symbol.name
+      case TypedAst.Expr.Var(symbol) => symbol.toString
       case TypedAst.Expr.Lit(ast.Literal.IntLit(_)) => "Int"
       case TypedAst.Expr.Lit(ast.Literal.BoolLit(_)) => "Bool"
       case TypedAst.Expr.Lit(ast.Literal.StringLit(_)) => "String"
@@ -934,7 +939,7 @@ object TypeChecker:
       case c: CtorSymbol =>
         (c, List())
       case _ =>
-        (ErrorSymbols.constructor(s.name), List())
+        (ErrorSymbols.constructor(s.name), List(TypeError(s"Symbol $s is not a constructor", source)))
   }
 
   // Collects explicit field types and result type from a constructor signature.

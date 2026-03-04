@@ -23,6 +23,7 @@ case class GlobalSymbols(
 )
 
 
+// TODO do we need a global name or can we directly use a symbol?
 case class GlobalName(file: String, name: String)
 
 enum GlobalSymbolState:
@@ -66,6 +67,28 @@ sealed trait Symbol:
 
   def tpe: Expr
 
+  override def toString: String =
+    this match {
+      case symbol: TermSymbol =>
+        symbol match {
+          case LocalSymbol(name, tpe, id) =>
+            name
+          case BuiltinValueSymbol(name, tpe) =>
+            name
+        }
+      case symbol: GlobalSymbol =>
+        symbol match {
+          case DatatypeSymbol(file, name) =>
+            name
+          case CtorSymbol(dt, name) =>
+            name
+          case FunctionSymbol(file, name) =>
+            name
+        }
+      case ErrorSymbol(name, tpe) =>
+        s"Error($name)"
+    }
+
 sealed trait TermSymbol extends Symbol
 
 
@@ -76,7 +99,8 @@ final case class LocalSymbol(name: String, tpe: Expr, id: Int) extends TermSymbo
 
 final case class BuiltinValueSymbol(name: String, tpe: Expr) extends TermSymbol // TODO do we need this?
 
-final case class ErrorSymbol(name: String, tpe: Expr) extends Symbol
+final case class ErrorSymbol(name: String, tpe: Expr) extends Symbol:
+  throw new RuntimeException(s"Created error symbol")
 
 object DatatypeSymbol:
     case class TypeCalculated(params: List[LocalSymbol], tpe: Expr)
@@ -84,7 +108,7 @@ object DatatypeSymbol:
 
 final case class DatatypeSymbol(file: String, name: String)(val continuationData: Option[DatatypeSymbolContinuationData]) extends GlobalSymbol:
 
-  private var allErrors: List[TypeError] = List()
+  var allErrors: List[TypeError] = List()
   private var typeCalculated: Option[DatatypeSymbol.TypeCalculated] = None
   None
 
@@ -151,7 +175,7 @@ final case class DatatypeSymbol(file: String, name: String)(val continuationData
               var r = TypedAst.Expr.Var(this)(ctor.source)
               var pis = typeInfo.tpe
               for p <- typeInfo.params do {
-                val Pi(c, d, _) = pis: @unchecked
+                val Pi(_, d, _) = pis: @unchecked
                 r = TypedAst.Expr.App(r, TypedAst.Expr.Var(p)(ctor.source), d)(ctor.source)
                 pis = d
               }
@@ -218,13 +242,13 @@ final case class FunctionSymbol(
         val data = continuationData.get
         val f = data.declAst
         val globals = data.globalNames.globalEnv(file)
+        println(s"Global env for $file: ${globals.names.keySet}")
         val context1 = TypeContext(globals, Map())
         val itemMetaStore = MetaStore()
         val (sig, ctx2, errors) = TypeChecker.checkFunSig(this, f.sig)(using context1, itemMetaStore, data.idSupply)
         allErrors ++= errors
         state = FunctionSymbolCheckState.SymbolCalculated(sig, ctx2, itemMetaStore)
-        // TODO build pi type from signature
-        sig.returnType
+        sig.functionType
       case s: FunctionSymbolCheckState.SymbolCalculated =>
         s.sig.functionType
       case s: FunctionSymbolCheckState.BodyCalculated =>
@@ -244,16 +268,27 @@ final case class FunctionSymbol(
         val f = data.declAst
         val (body, errors) = TypeChecker.check(f.body, s.sig.returnType)(using s.continuationContext, s.metaStore, data.idSupply)
         allErrors ++= errors
-        state = FunctionSymbolCheckState.BodyCalculated(TypedAst.TopLevel.FunDecl(s.sig, body)(f.source))
-        Some(body)
+        val (elaboratedBody, unresolvedMetaErrors) = TypeChecker.finalizeTopLevelExpr(body)(using s.continuationContext, s.metaStore)
+        allErrors ++= unresolvedMetaErrors
+
+        state = FunctionSymbolCheckState.BodyCalculated(TypedAst.TopLevel.FunDecl(s.sig, elaboratedBody)(f.source))
+        Some(elaboratedBody)
       case s: FunctionSymbolCheckState.BodyCalculated =>
         Some(s.fun.body)
     }
   }
 
+  def typedDecl: Option[TypedAst.TopLevel.FunDecl] = {
+    typedBody
+    state match {
+      case FunctionSymbolCheckState.BodyCalculated(fun) => Some(fun)
+      case _ => None
+    }
+  }
+
 object ErrorSymbols:
   def fun(name: String): FunctionSymbol =
-    FunctionSymbol("", "")(None)
+    FunctionSymbol("", name)(None)
   def datatype(name: String): DatatypeSymbol =
     DatatypeSymbol("", name)(None)
   def constructor(name: String): CtorSymbol =
@@ -436,8 +471,20 @@ class ProjectSymbolCache(projectRoot: Path, val ids: TypeChecker.IdSupply) exten
     globalEnvCache.get(path) match
       case Some(m) => m
       case None =>
-        val (r, _) = GlobalSymbols.buildGlobalSymbols(path, getAst(path)._1, this, false, ids)
-        // TODO maybe we need to include imports here
+        val ast = getAst(path)._1
+        var (r, _) = GlobalSymbols.buildGlobalSymbols(path, ast, this, false, ids)
+        // add imports to global env
+        val (imports, _) = GlobalSymbols.resolveImports(ast, this)
+        // resolve imported names to symbols
+        // TODO do we need to make sure there are no cycles here?
+        for (name, gName) <- imports do {
+          val symbols = globalSymbols(gName.file)
+          val symbol = symbols.get(gName.name).get
+          r += name -> symbolÏ
+        }
+        // and we also need to include the standard library
+        if path != "standard.minifumo" then
+          r ++= globalEnv("standard.minifumo").names
         val e = GlobalEnv(r)
         globalEnvCache += path -> e
         e
