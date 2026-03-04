@@ -3,7 +3,6 @@ import com.github.peterzeller.minifumo.interpreter.Interpreter
 import com.github.peterzeller.minifumo.parser.parseInput
 import com.github.peterzeller.minifumo.typing.{GlobalName, GlobalSymbol, NameCache, SymbolCache, TypeChecker}
 
-import java.nio.file.Path
 
 class WebRuntimeStandardLibrarySuite extends munit.FunSuite:
 
@@ -27,6 +26,9 @@ class WebRuntimeStandardLibrarySuite extends munit.FunSuite:
     override def globalSymbols(path: String): Map[String, GlobalSymbol] =
       Map.empty
 
+    override def globalEnv(path: String): TypeChecker.GlobalEnv =
+      TypeChecker.GlobalEnv(Map())
+
   test("standalone interpreter run can use standard library operators when bundled runtime is loaded") {
     val (program, parseErrors) = parseInput(
       """fun main(): Int
@@ -36,10 +38,10 @@ class WebRuntimeStandardLibrarySuite extends munit.FunSuite:
     assertEquals(parseErrors, List.empty)
 
     val ids = TypeChecker.IdSupply()
-    val (typedProgram, typeErrors) = TypeChecker.checkProgram(Path.of("/playground/input.minifumo"), program, EmptyCache, importStandard = true, ids)
+    val (typedProgram, typeErrors) = TypeChecker.checkProgram("/playground/input.minifumo", program, EmptyCache, importStandard = true, ids)
     assertEquals(typeErrors, List.empty)
 
-    val (typedStandardProgram, standardErrors) = TypeChecker.checkProgram(Path.of("standard.minifumo"), Standard.standardProgram, EmptyCache, importStandard = false, ids)
+    val (typedStandardProgram, standardErrors) = TypeChecker.checkProgram("standard.minifumo", Standard.standardProgram, EmptyCache, importStandard = false, ids)
     assertEquals(standardErrors, List.empty)
 
     val result = Interpreter.evalProg(typedProgram, List(typedStandardProgram), "main")

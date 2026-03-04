@@ -19,7 +19,7 @@ class MySuite extends munit.FunSuite {
     val sign = if value >= 0 then Interpreter.Value.AdtVal("True", Nil) else Interpreter.Value.AdtVal("False", Nil)
     Interpreter.Value.AdtVal("MakeInt", List(sign, natValue(math.abs(value))))
 
-  private val dummyPath: Path = Path.of("dummy.minifumo")
+  private val dummyPath: String = "dummy.minifumo"
   private val dummyCache = new ProjectSymbolCache(Path.of("."), TypeChecker.IdSupply())
 
   test("interpreter evals main with a simple function call") {
@@ -122,7 +122,7 @@ class MySuite extends munit.FunSuite {
 
   test("standard library compiles without type errors") {
     // Type-checks the bundled standard library in isolation.
-    val standardPath = Path.of("standard.minifumo")
+    val standardPath = "standard.minifumo"
     val standardCache = new ProjectSymbolCache(Path.of("."), TypeChecker.IdSupply())
     val (_, errors) = TypeChecker.checkProgram(
       standardPath,

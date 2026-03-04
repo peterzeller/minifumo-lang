@@ -4,7 +4,6 @@ import com.github.peterzeller.minifumo.ast
 import com.github.peterzeller.minifumo.ast.{Literal, SourceRange}
 import com.github.peterzeller.minifumo.typing.TypedAst.Expr.{Pi, Sort, UnknownType}
 
-import java.nio.file.Path
 
 object TypedAst:
   case class Program(items: List[TopLevel])(val source: SourceRange)

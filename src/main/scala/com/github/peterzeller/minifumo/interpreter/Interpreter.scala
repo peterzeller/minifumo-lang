@@ -1,7 +1,7 @@
 package com.github.peterzeller.minifumo.interpreter
 
 import com.github.peterzeller.minifumo.ast.Literal
-import com.github.peterzeller.minifumo.typing.{DatatypeSymbol, GlobalSymbols, LocalSymbol, ProjectSymbolCache, Symbol, TermSymbol, TypedAst}
+import com.github.peterzeller.minifumo.typing.{DatatypeSymbol, LocalSymbol, ProjectSymbolCache, Symbol, TermSymbol, TypedAst}
 import com.github.peterzeller.minifumo.typing.TypedAst.*
 import com.github.peterzeller.minifumo.typing.TypedAst.TopLevel.FunDecl
 

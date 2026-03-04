@@ -10,7 +10,6 @@ import com.github.peterzeller.minifumo.typing.TypedAst.Expr.{Sort, UnknownType}
 
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
-import java.nio.file.{Path, Paths}
 
 object TypeChecker:
   private val throwOnError = false
@@ -124,7 +123,7 @@ object TypeChecker:
     )
 
   /** Stores global symbols for type checking. */
-  private[typing] final case class GlobalEnv(
+  final case class GlobalEnv(
       names: Map[String, GlobalSymbol]
     )
 
@@ -150,11 +149,11 @@ object TypeChecker:
           }
         case ErrorSymbol(name, tpe) =>
           None
-        case DatatypeSymbol(name, tpe) =>
+        case DatatypeSymbol(_, _) =>
           None
         case f: FunctionSymbol =>
           f.typedBody
-        case CtorSymbol(name, tpe) =>
+        case CtorSymbol(_, _) =>
           None
       }
 
@@ -213,10 +212,7 @@ object TypeChecker:
     }
   }
 
-  private def buildDatatypeType(typeParams: List[LocalSymbol]): TypedAst.Expr =
-    typeParams match
-      case Nil => TypedAst.Expr.Sort()(SourceRange.empty)
-      case x::xs => TypedAst.Expr.Pi(x, buildDatatypeType(xs), true)(SourceRange.empty)
+  
 
 
   /** Validates that explicit constructor return types match the declared data type. */
@@ -1018,11 +1014,7 @@ object TypeChecker:
     fieldTypes.map(fieldType => substituteTypeParams(fieldType, subst))
 
   /** Converts a typed function declaration into a lambda term for unfolding. */
-  private def buildFunctionLambda(funDecl: TypedAst.TopLevel.FunDecl): TypedAst.Expr =
-    val params = funDecl.sig.typeParams ++ funDecl.sig.params
-    params.foldRight(funDecl.body) { (param, body) =>
-      TypedAst.Expr.Lambda(param, body, TypedAst.Expr.UnknownType()(body.source))(body.source)
-    }
+  
 
   def formatError(path: String, sourceLines: Vector[String], error: TypeError): String =
     val lineNr = error.source.start.line

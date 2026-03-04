@@ -2,10 +2,10 @@ package com.github.peterzeller.minifumo.typing
 
 import com.github.peterzeller.minifumo.ast
 import com.github.peterzeller.minifumo.ast.TopLevel.DataDecl
-import com.github.peterzeller.minifumo.ast.{CtorField, FunParam, FunSig, SourceRange, TopLevel}
+import com.github.peterzeller.minifumo.ast.{SourceRange, TopLevel}
 import com.github.peterzeller.minifumo.parser.{SyntaxError, parseFile}
 import com.github.peterzeller.minifumo.typing.TypeChecker.{GlobalEnv, MetaStore, TypeContext, TypeError, checkProgram}
-import com.github.peterzeller.minifumo.typing.TypedAst.Expr.{Pi, Sort, UnknownType}
+import com.github.peterzeller.minifumo.typing.TypedAst.Expr.Pi
 import com.github.peterzeller.minifumo.typing.TypedAst.Expr
 
 import java.nio.file.{Path, Paths}
@@ -86,7 +86,7 @@ final case class DatatypeSymbol(file: String, name: String)(val continuationData
 
   private var allErrors: List[TypeError] = List()
   private var typeCalculated: Option[DatatypeSymbol.TypeCalculated] = None
-  private var declCalculated: Option[TypedAst.TopLevel.DataDecl] = None
+  None
 
   val ctorSymbols: List[CtorSymbol] = continuationData match {
     case Some(data) =>
@@ -265,25 +265,10 @@ enum SymbolSignature:
 
 object GlobalSymbols:
   // Collects variable names referenced from a constructor signature expression.
-  private def collectReferencedVariables(expr: ast.Expr): Set[String] =
-    expr match
-      case ast.Expr.Var(name) => Set(name)
-      case ast.Expr.Lit(_) => Set.empty
-      case ast.Expr.Call(callee, arg) => collectReferencedVariables(callee) ++ collectReferencedVariables(arg)
-      case ast.Expr.CallImplicit(callee, arg) => collectReferencedVariables(callee) ++ collectReferencedVariables(arg)
-      case ast.Expr.Lambda(param, body) =>
-        param.tpe.map(collectReferencedVariables).getOrElse(Set.empty) ++ collectReferencedVariables(body)
-      case ast.Expr.Pi(param, body) => collectReferencedVariables(param.tpe) ++ collectReferencedVariables(body)
-      case ast.Expr.LetIn(_, tpe, value, body) =>
-        tpe.map(collectReferencedVariables).getOrElse(Set.empty) ++ collectReferencedVariables(value) ++ collectReferencedVariables(body)
-      case ast.Expr.Match(scrutinee, cases) =>
-        collectReferencedVariables(scrutinee) ++ cases.flatMap(c => collectReferencedVariables(c.body)).toSet
-      case ast.Expr.Hole() => Set.empty
+  
 
   // Keeps only datatype implicit parameters that are needed by one constructor signature.
-  private def usedCtorImplicitParams(implicitParams: List[ast.FunParam], ctor: ast.CtorDecl, ctorReturnType: ast.Expr): List[ast.FunParam] =
-    val referencedNames = (ctor.fields.map(_.tpe) :+ ctorReturnType).flatMap(collectReferencedVariables).toSet
-    implicitParams.filter(param => referencedNames.contains(param.name))
+  
 
   // build a map of global names in a program file
   def buildGlobalNames(file: String, prog: ast.ProgramFile, onlyExported: Boolean): Map[String, GlobalName] =
@@ -302,8 +287,8 @@ object GlobalSymbols:
 
   def buildGlobalSymbols(file: String, prog: ast.ProgramFile, symbolCache: NameCache&SymbolCache, onlyExported: Boolean, ids: TypeChecker.IdSupply): (Map[String, GlobalSymbol], List[TypeError]) =
     val (imports, errors1) = resolveImports(prog, symbolCache)
-    val ownNames = buildGlobalNames(file, prog, false)
-    val standardLibraryNames = buildGlobalNames("standard.minifumo", Standard.standardProgram, true)
+    buildGlobalNames(file, prog, false)
+    buildGlobalNames("standard.minifumo", Standard.standardProgram, true)
     val errors = ListBuffer[TypeError](errors1*)
     var res = Map[String, GlobalSymbol]()
 
@@ -336,7 +321,7 @@ object GlobalSymbols:
   private def topLevelToGlobalSymbols(file: String, onlyExported: Boolean, globalNames: NameCache & SymbolCache, idSupply: TypeChecker.IdSupply)(t: ast.TopLevel): Iterable[(String, SourceRange, GlobalSymbol)] =
     t match
       case d@ast.TopLevel.DataDecl(name, implicitParams, ctors, exported) if exported || !onlyExported =>
-        val errors = ListBuffer[TypeError]()
+        ListBuffer[TypeError]()
         val symbols = ListBuffer[(String, SourceRange, GlobalSymbol)]()
         // add the type symbol
         val dtSymbol = DatatypeSymbol(file, name)(Some(DatatypeSymbolContinuationData(d, globalNames, idSupply)))

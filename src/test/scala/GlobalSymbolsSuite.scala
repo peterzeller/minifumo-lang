@@ -15,6 +15,7 @@ class GlobalSymbolsSuite extends munit.FunSuite:
   case class DummyNameCache(names: Map[String, Map[String, GlobalName]]) extends NameCache with SymbolCache:
     override def globalNames(path: String): Map[String, GlobalName] = names.getOrElse(path, Map())
     override def globalSymbols(path: String): Map[String, GlobalSymbol] = ???
+    override def globalEnv(path: String): TypeChecker.GlobalEnv = ???
 
   private val ids = TypeChecker.IdSupply()
 
@@ -27,22 +28,10 @@ class GlobalSymbolsSuite extends munit.FunSuite:
       |fun hidden(): Int
       |  2
     """.stripMargin)
-    val names = GlobalSymbols.buildGlobalNames(Paths.get("main.minifumo"), program, onlyExported = true)
+    val names = GlobalSymbols.buildGlobalNames("main.minifumo", program, onlyExported = true)
     assertEquals(names.keySet, Set("Foo", "MakeFoo", "visible"))
   }
 
-  test("checkSignatureExpr resolves known names and rejects lambdas") {
-    val source = ast.SourceRange.empty
-    val env = GlobalSymbols.PreEnv(globalNames = Map("Int" -> GlobalName(Paths.get("std"), "Int")))
-    val intExpr = ast.Expr.Var("Int")(source)
-    val (resolved, errors) = GlobalSymbols.checkSignatureExpr(intExpr, env)(using ids)
-    assert(errors.isEmpty)
-    assert(resolved.isInstanceOf[TypedAst.Expr.Var])
-    val lambdaParam = ast.LambdaParam("x", None)(source)
-    val lambdaExpr = ast.Expr.Lambda(lambdaParam, ast.Expr.Var("x")(source))(source)
-    val (_, lambdaErrors) = GlobalSymbols.checkSignatureExpr(lambdaExpr, env)(using ids)
-    assert(lambdaErrors.nonEmpty)
-  }
 
   test("buildGlobalSymbols reports undefined types in signatures") {
     val program = parseProgram("""
@@ -50,7 +39,7 @@ class GlobalSymbolsSuite extends munit.FunSuite:
       |  1
     """.stripMargin)
     val cache = DummyNameCache(Map())
-    val (_, errors) = GlobalSymbols.buildGlobalSymbols(Paths.get("main.minifumo"), program, cache, onlyExported = false, ids)
+    val (_, errors) = GlobalSymbols.buildGlobalSymbols("main.minifumo", program, cache, onlyExported = false, ids)
     assert(errors.exists(_.message.contains("Could not find Missing")))
   }
 
@@ -60,7 +49,7 @@ class GlobalSymbolsSuite extends munit.FunSuite:
       items = List()
     )(ast.SourceRange.empty)
     val cache = DummyNameCache(
-      Map("lib" -> Map("foo" -> GlobalName(Paths.get("lib"), "foo")))
+      Map("lib" -> Map("foo" -> GlobalName("lib", "foo")))
     )
     val (imports, errors) = GlobalSymbols.resolveImports(program, cache)
     assert(errors.isEmpty)
@@ -89,7 +78,7 @@ class GlobalSymbolsSuite extends munit.FunSuite:
     """.stripMargin)
     assertEquals(parseErrors, List())
     val cache = DummyNameCache(Map())
-    val (symbols, errors) = GlobalSymbols.buildGlobalSymbols(Paths.get("main.minifumo"), program, cache, onlyExported = false, ids)
+    val (symbols, errors) = GlobalSymbols.buildGlobalSymbols("main.minifumo", program, cache, onlyExported = false, ids)
     assertEquals(errors, List())
     assert(symbols.contains("SizedList"))
     assert(symbols.contains("SizedNil"))
@@ -107,7 +96,7 @@ class GlobalSymbolsSuite extends munit.FunSuite:
     """.stripMargin)
     assertEquals(parseErrors, List())
 
-    val dummyPath = Paths.get("eq_test.minifumo")
+    val dummyPath = "eq_test.minifumo"
     val cache = ProjectSymbolCache(Paths.get("."), ids)
     val (_, errors) = checkProgram(dummyPath, program, cache, importStandard = true, ids)
     assertEquals(errors, List())
