@@ -199,11 +199,11 @@ final case class DatatypeSymbol(file: String, name: String)(val continuationData
 def buildPiType(implicitParams: List[LocalSymbol], explicitParams: List[LocalSymbol], result: TypedAst.Expr): TypedAst.Expr =
   implicitParams match {
     case x:: xs =>
-      TypedAst.Expr.Pi(x, buildPiType(xs, explicitParams, result), false)(result.source)
+      TypedAst.Expr.Pi(x, buildPiType(xs, explicitParams, result), true)(result.source)
     case Nil =>
       explicitParams match {
         case x::xs =>
-          TypedAst.Expr.Pi(x, buildPiType(List(), xs, result), true)(result.source)
+          TypedAst.Expr.Pi(x, buildPiType(List(), xs, result), false)(result.source)
         case Nil => result
       }
   }

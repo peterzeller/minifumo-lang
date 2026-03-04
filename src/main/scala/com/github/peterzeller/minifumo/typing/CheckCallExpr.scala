@@ -37,7 +37,7 @@ object CheckCallImplicitExpr:
         val resultType = substitute(cod, dom, typedArg)
         val errs3 =
           if isImplicit then List()
-          else List(TypeError("Expected an explicit function argument", expr.callee.source))
+          else List(TypeError(s"Expected an explicit function argument\nCallee ${expr.callee} has type ${calleeType}", expr.callee.source))
         (TypedAst.Expr.AppImplicit(typedCallee, typedArg, resultType)(expr.source), resultType, errs1 ++ errs2 ++ errs3)
       case other =>
         val (typedArg, _, errs2) = TypeChecker.infer(expr.arg)
