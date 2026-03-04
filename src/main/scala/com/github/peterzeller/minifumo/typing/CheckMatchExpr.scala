@@ -15,7 +15,7 @@ object CheckMatchExpr:
   def check(expr: ast.Expr.Match, expectedType: TypedAst.Expr)(using ctx: TypeContext, metas: MetaContext, ids: IdSupply): (TypedAst.Expr, List[TypeError]) =
     val ast.Expr.Match(scrutinee, cases) = expr
     val (scrutineeExpr, scrutineeType, scrutineeErrs) = TypeChecker.infer(scrutinee)
-    val motiveParam = TypedAst.LocalSymbol("x_scrut", scrutineeType, ids.freshLocalId())
+    val motiveParam = LocalSymbol("x_scrut", scrutineeType, ids.freshLocalId())
     val motiveBody = replaceExpr(expectedType, scrutineeExpr, TypedAst.Expr.Var(motiveParam)(expr.source))
     val motive = TypedAst.Expr.Lambda(motiveParam, motiveBody, TypedAst.Expr.UnknownType()(expr.source))(expr.source)
     val typedCases = cases.map { case ast.MatchCase(pattern, body) =>

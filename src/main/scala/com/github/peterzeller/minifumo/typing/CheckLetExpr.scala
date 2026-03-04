@@ -15,12 +15,12 @@ object CheckLetExpr:
         (typedValue, expected, errs)
       case None => TypeChecker.inferAndElaborate(value)
     val (valueExpr, valueType, errs) = inferredValue
-    val symbol = TypedAst.LocalSymbol(name, valueType, ids.freshLocalId())
+    val symbol = LocalSymbol(name, valueType, ids.freshLocalId())
     val bodyCtx = ctx.withLocal(symbol, Some(valueExpr))
     val (bodyExpr, bodyType, errs2) = TypeChecker.infer(body)(using bodyCtx, metas, ids)
     (TypedAst.Expr.LetIn(symbol, isConstant = false, valueType, valueExpr, bodyExpr)(expr.source), bodyType, errs ++ errs2)
 
 
   /** Collects locally bound symbols that may appear in typed let annotations. */
-  private def localSymbols(ctx: TypeContext): Map[String, TypedAst.TermSymbol] =
+  private def localSymbols(ctx: TypeContext): Map[String, TermSymbol] =
     ctx.locals.view.mapValues(_.symbol).toMap

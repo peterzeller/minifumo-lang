@@ -19,4 +19,4 @@ object CheckVarExpr:
           case None =>
             val errs = List(TypeError(s"Unknown symbol ${name}", expr.source))
             val unknownType = Expr.UnknownType()(SourceRange.empty)
-            (TypedAst.Expr.Var(TypedAst.ErrorSymbol(name, unknownType))(expr.source), unknownType, errs)
+            (TypedAst.Expr.Var(ErrorSymbol(name, unknownType))(expr.source), unknownType, errs)

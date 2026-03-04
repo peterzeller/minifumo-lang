@@ -2,8 +2,7 @@ package com.github.peterzeller.minifumo.backends.lean
 
 import com.github.peterzeller.minifumo.ast.{Literal, SourceRange}
 import com.github.peterzeller.minifumo.backends.lean.LeanBackend.{GeneratedLeanFile, SourceMapEntry}
-import com.github.peterzeller.minifumo.typing.{GlobalSymbol, ProjectSymbolCache, TypedAst}
-import com.github.peterzeller.minifumo.typing.TypedAst.LocalSymbol
+import com.github.peterzeller.minifumo.typing.{BuiltinValueSymbol, CtorSymbol, LocalSymbol, DatatypeSymbol, ErrorSymbol, FunctionSymbol, GlobalSymbol, ProjectSymbolCache, TypedAst}
 
 import java.nio.file.Path
 import scala.collection.mutable
@@ -86,8 +85,8 @@ object LeanEmitter:
     files.flatMap: file =>
       val (program, _) = cache.typedAst(file)
       program.items.flatMap:
-        case TypedAst.TopLevel.DataDecl(symbol, _, ctors) => symbol.sym :: ctors.map(_.symbol.sym)
-        case TypedAst.TopLevel.FunDecl(sig, _) => List(sig.symbol.sym)
+        case TypedAst.TopLevel.DataDecl(symbol, _, ctors) => symbol :: ctors.map(_.symbol)
+        case TypedAst.TopLevel.FunDecl(sig, _) => List(sig.symbol)
     .toSet
 
   // Creates a stable declaration key for dependency sorting.
@@ -214,12 +213,12 @@ object LeanEmitter:
           case Literal.UnitLit() => "()"
       case TypedAst.Expr.Var(symbol) =>
         symbol match
-          case local: TypedAst.LocalSymbol => localScope.getOrElse(local.id, mangle.mangle(LeanNameMangler.NameKind.LocalName, local.name))
-          case fun: TypedAst.FunctionSymbol => emitGlobalRef(fun.name, None, mangle, currentModule, localDefinitions, moduleNameByFile)
-          case ctor: TypedAst.CtorSymbol => emitGlobalRef(ctor.name, None, mangle, currentModule, localDefinitions, moduleNameByFile)
-          case dt: TypedAst.DatatypeSymbol => emitGlobalRef(dt.name, Some(dt.sym.file), mangle, currentModule, localDefinitions, moduleNameByFile)
-          case err: TypedAst.ErrorSymbol => emitGlobalRef(err.name, None, mangle, currentModule, localDefinitions, moduleNameByFile)
-          case builtin: TypedAst.BuiltinValueSymbol => emitGlobalRef(builtin.name, None, mangle, currentModule, localDefinitions, moduleNameByFile)
+          case local: LocalSymbol => localScope.getOrElse(local.id, mangle.mangle(LeanNameMangler.NameKind.LocalName, local.name))
+          case fun: FunctionSymbol => emitGlobalRef(fun.name, None, mangle, currentModule, localDefinitions, moduleNameByFile)
+          case ctor: CtorSymbol => emitGlobalRef(ctor.name, None, mangle, currentModule, localDefinitions, moduleNameByFile)
+          case dt: DatatypeSymbol => emitGlobalRef(dt.name, Some(dt.file), mangle, currentModule, localDefinitions, moduleNameByFile)
+          case err: ErrorSymbol => emitGlobalRef(err.name, None, mangle, currentModule, localDefinitions, moduleNameByFile)
+          case builtin: BuiltinValueSymbol => emitGlobalRef(builtin.name, None, mangle, currentModule, localDefinitions, moduleNameByFile)
       case TypedAst.Expr.App(callee, arg, _) =>
         s"(${emitExpr(callee, mangle, localScope, currentModule, localDefinitions, moduleNameByFile)} ${emitExpr(arg, mangle, localScope, currentModule, localDefinitions, moduleNameByFile)})"
       case TypedAst.Expr.AppImplicit(callee, arg, _) =>
@@ -306,9 +305,9 @@ object LeanEmitter:
       case TypedAst.Expr.Lit(_) => Set.empty
       case TypedAst.Expr.Var(symbol) =>
         symbol match
-          case f: TypedAst.FunctionSymbol => Set(f.name)
-          case c: TypedAst.CtorSymbol => Set(c.name)
-          case d: TypedAst.DatatypeSymbol => Set(d.name)
+          case f: FunctionSymbol => Set(f.name)
+          case c: CtorSymbol => Set(c.name)
+          case d: DatatypeSymbol => Set(d.name)
           case _ => Set.empty
       case TypedAst.Expr.App(callee, arg, tpe) => collectGlobalNames(callee) ++ collectGlobalNames(arg) ++ collectGlobalNames(tpe)
       case TypedAst.Expr.AppImplicit(callee, arg, tpe) => collectGlobalNames(callee) ++ collectGlobalNames(arg) ++ collectGlobalNames(tpe)

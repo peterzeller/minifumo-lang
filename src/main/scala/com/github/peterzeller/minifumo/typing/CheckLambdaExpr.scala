@@ -8,8 +8,8 @@ object CheckLambdaExpr:
   /** Infers the type for a lambda expression. */
   def infer(expr: ast.Expr.Lambda)(using ctx: TypeContext, metas: MetaContext, ids: IdSupply): (TypedAst.Expr, TypedAst.Expr, List[TypeError]) =
     val paramType = expr.param.tpe.map(t => signatureExpr(t, ctx.globals, Map())).getOrElse(TypedAst.Expr.UnknownType()(expr.source))
-    val localSymbol = TypedAst.LocalSymbol(expr.param.name, paramType, ids.freshLocalId())
-    val localSymbol2 = TypedAst.LocalSymbol(expr.param.name, paramType, ids.freshLocalId())
+    val localSymbol = LocalSymbol(expr.param.name, paramType, ids.freshLocalId())
+    val localSymbol2 = LocalSymbol(expr.param.name, paramType, ids.freshLocalId())
     val bodyCtx = ctx.withLocal(localSymbol)
     val (bodyExpr, bodyType, errs) = TypeChecker.infer(expr.body)(using bodyCtx, metas, ids)
     val fnType = TypedAst.Expr.Pi(localSymbol2, bodyType, isImplicit = false)(expr.source)
@@ -20,7 +20,7 @@ object CheckLambdaExpr:
     val expectedNorm = whnf(expectedType)
     expectedNorm match
       case TypedAst.Expr.Pi(dom, cod, false) =>
-        val p = TypedAst.LocalSymbol(expr.param.name, dom.tpe, ids.freshLocalId())
+        val p = LocalSymbol(expr.param.name, dom.tpe, ids.freshLocalId())
         val bodyCtx = ctx.withLocal(p)
         val (typedBody, errs) = TypeChecker.check(expr.body, cod)(using bodyCtx, metas, ids)
         (TypedAst.Expr.Lambda(p, typedBody, expectedNorm)(expr.source), errs)

@@ -2,29 +2,11 @@ package com.github.peterzeller.minifumo.typing
 
 import com.github.peterzeller.minifumo.ast
 import com.github.peterzeller.minifumo.ast.{Literal, SourceRange}
-import com.github.peterzeller.minifumo.typing.TypedAst.Expr.{Sort, UnknownType}
+import com.github.peterzeller.minifumo.typing.TypedAst.Expr.{Pi, Sort, UnknownType}
 
 import java.nio.file.Path
 
 object TypedAst:
-  sealed trait Symbol:
-    def name: String
-    def tpe: Expr
-
-  sealed trait TermSymbol extends Symbol
-
-  final case class LocalSymbol(name: String, tpe: Expr, id: Int) extends TermSymbol
-  final case class BuiltinValueSymbol(name: String, tpe: Expr) extends TermSymbol // TODO do we need this?
-  final case class ErrorSymbol(name: String, tpe: Expr) extends Symbol
-  final case class DatatypeSymbol(sym: GlobalSymbol, tpe: Expr) extends Symbol:
-    def name: String = sym.name
-
-  final case class FunctionSymbol(sym: GlobalSymbol, tpe: Expr) extends Symbol:
-    def name: String = sym.name
-  final case class CtorSymbol(sym: GlobalSymbol, tpe: Expr) extends Symbol
-    :
-    def name: String = sym.name
-
   case class Program(items: List[TopLevel])(val source: SourceRange)
 
   enum TopLevel:
@@ -39,7 +21,16 @@ object TypedAst:
     typeParams: List[LocalSymbol],
     params: List[LocalSymbol],
     returnType: Expr,
-  )
+  ):
+    /** Calculate the function type of the function signature */
+    lazy val functionType: Expr =
+      var r = returnType
+      for p <- params.reverseIterator do
+        r = Pi(p, r, false)(r.source)
+      for p <- typeParams.reverseIterator do
+        r = Pi(p, r, true)(r.source)
+      r
+      
 
   final case class CtorDecl(symbol: CtorSymbol, fields: List[CtorField])(val source: SourceRange)
   final case class CtorField(name: String, tpe: Expr)(val source: SourceRange)

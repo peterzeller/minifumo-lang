@@ -1,7 +1,7 @@
 package com.github.peterzeller.minifumo.interpreter
 
 import com.github.peterzeller.minifumo.ast.Literal
-import com.github.peterzeller.minifumo.typing.{ProjectSymbolCache, TypedAst}
+import com.github.peterzeller.minifumo.typing.{DatatypeSymbol, GlobalSymbols, LocalSymbol, ProjectSymbolCache, Symbol, TermSymbol, TypedAst}
 import com.github.peterzeller.minifumo.typing.TypedAst.*
 import com.github.peterzeller.minifumo.typing.TypedAst.TopLevel.FunDecl
 
@@ -88,7 +88,7 @@ object Interpreter:
     val dependencyPrograms = symbols.allPaths.toList.map(path => symbols.typedAst(path)._1)
     evalProg(prog, dependencyPrograms, funcName)
 
-  private def buildGlobalTableForProg(res: mutable.Map[Symbol, Value], t: Program): Unit = {
+  private def buildGlobalTableForProg(res: mutable.Map[com.github.peterzeller.minifumo.typing.Symbol, Value], t: Program): Unit = {
     for p <- t.items do
       p match
         case TypedAst.TopLevel.DataDecl(sym, typeParams, ctors) =>
@@ -149,18 +149,18 @@ object Interpreter:
         Value.FuncVal(name, v => buildFnBody(name + "'", ps, body, locals + (p -> v), globals))
 
   /** Describes a function body for evaluation. */
-  private final case class FunctionBody(params: List[TypedAst.LocalSymbol], body: TypedAst.Expr)
+  private final case class FunctionBody(params: List[LocalSymbol], body: TypedAst.Expr)
 
   /** Evaluates an expression with the given local and global environments. */
   private def evalExpr(
       expr: TypedAst.Expr,
-      locals: Map[TypedAst.TermSymbol, Value],
-      globals: mutable.Map[TypedAst.Symbol, Value]
+      locals: Map[TermSymbol, Value],
+      globals: mutable.Map[Symbol, Value]
     ): Value =
     debugPrint(s"Start expression ${prettyPrint(expr)}")
     val res = expr match
       case TypedAst.Expr.Lit(value) => literalValue(value)
-      case TypedAst.Expr.Var(symbol: TypedAst.TermSymbol) =>
+      case TypedAst.Expr.Var(symbol: TermSymbol) =>
         locals.getOrElse(symbol, globals.getOrElse(symbol, throw RuntimeException(s"Could not find var $symbol")))
       case TypedAst.Expr.Var(symbol) =>
         globals.getOrElse(symbol, {
@@ -229,8 +229,8 @@ object Interpreter:
   private def evalMatch(
       scrutinee: Value,
       cases: List[TypedAst.MatchCase],
-      locals: Map[TypedAst.TermSymbol, Value],
-      globals: mutable.Map[TypedAst.Symbol, Value]
+      locals: Map[TermSymbol, Value],
+      globals: mutable.Map[Symbol, Value]
     ): Value =
     cases match
       case Nil => throw new RuntimeException(s"Value ${scrutinee} did not match any pattern.")
@@ -245,7 +245,7 @@ object Interpreter:
             evalMatch(scrutinee, tail, locals, globals)
 
   /** Matches a pattern against a value, returning bindings on success. */
-  private def matchPattern(pattern: TypedAst.Pattern, value: Value): Option[Map[TypedAst.TermSymbol, Value]] =
+  private def matchPattern(pattern: TypedAst.Pattern, value: Value): Option[Map[TermSymbol, Value]] =
     pattern match
       case TypedAst.Pattern.Wildcard() => Some(Map())
       case TypedAst.Pattern.Lit(lit) =>
@@ -255,7 +255,7 @@ object Interpreter:
       case TypedAst.Pattern.Ctor(symbol, args) =>
         value match
           case Value.AdtVal(name, values) if name == symbol.name && values.length == args.length =>
-            val maybeBindings = args.zip(values).foldLeft(Option(Map[TypedAst.TermSymbol, Value]())) {
+            val maybeBindings = args.zip(values).foldLeft(Option(Map[TermSymbol, Value]())) {
               case (Some(bindings), (pat, v)) =>
                 matchPattern(pat, v).map(bindings ++ _)
               case (None, _) => None
