@@ -21,7 +21,7 @@ object CheckMatchExpr:
     val typedCases = cases.map { case ast.MatchCase(pattern, body) =>
       val patternResult = checkPattern(pattern, scrutineeType, ctx, ids)
       val caseCtx = applyTypeRefinements(ctx.copy(locals = ctx.locals ++ patternResult.bindings), patternResult.refinements)
-      val patternTerm = patternToExpr(patternResult.typedPattern, scrutineeExpr.source)
+      val patternTerm = patternToExpr(patternResult.typedPattern, patternResult.refinements, scrutineeExpr.source)
       val branchExpected0 = TypedAst.Expr.App(motive, patternTerm, TypedAst.Expr.UnknownType()(body.source))(body.source)
       val branchExpectedType = whnf(substituteTypeParams(branchExpected0, patternResult.refinements))
       val (typedBody, bodyErrs) = TypeChecker.check(body, branchExpectedType)(using caseCtx, metas, ids)
@@ -32,14 +32,19 @@ object CheckMatchExpr:
     (typedMatch, scrutineeErrs ++ errors)
 
   /** Converts a typed pattern into a branch refinement term. */
-  private def patternToExpr(pattern: TypedAst.Pattern, source: ast.SourceRange): TypedAst.Expr =
+  private def patternToExpr(pattern: TypedAst.Pattern, refinements: Map[Int, TypedAst.Expr], source: ast.SourceRange): TypedAst.Expr =
     pattern match
       case TypedAst.Pattern.Wildcard() => TypedAst.Expr.UnknownType()(source)
       case TypedAst.Pattern.Lit(value) => TypedAst.Expr.Lit(value)(source)
       case TypedAst.Pattern.Binder(symbol) => TypedAst.Expr.Var(symbol)(source)
       case TypedAst.Pattern.Ctor(symbol, args) =>
-        args.foldLeft[TypedAst.Expr](TypedAst.Expr.Var(symbol)(source)) { (callee, argPattern) =>
-          TypedAst.Expr.App(callee, patternToExpr(argPattern, source), TypedAst.Expr.UnknownType()(source))(source)
+        val ctorDecl = symbol.dt.typed.ctors.find(_.symbol.name == symbol.name).get
+        val withImplicitArgs = ctorDecl.implicitFields.foldLeft[TypedAst.Expr](TypedAst.Expr.Var(symbol)(source)) { (callee, field) =>
+          val implicitArg = refinements.getOrElse(field.id, TypedAst.Expr.Var(field)(source))
+          TypedAst.Expr.AppImplicit(callee, implicitArg, TypedAst.Expr.UnknownType()(source))(source)
+        }
+        args.foldLeft[TypedAst.Expr](withImplicitArgs) { (callee, argPattern) =>
+          TypedAst.Expr.App(callee, patternToExpr(argPattern, refinements, source), TypedAst.Expr.UnknownType()(source))(source)
         }
 
   /** Replaces exact occurrences of a target expression with a replacement expression. */
