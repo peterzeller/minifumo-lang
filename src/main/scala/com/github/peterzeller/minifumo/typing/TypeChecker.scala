@@ -158,8 +158,7 @@ object TypeChecker:
         case DatatypeSymbol(_, _) =>
           None
         case f: FunctionSymbol =>
-          // TODO here we should produce a correct lambda expression
-          f.typedBody
+          f.typedBody.map(body => etaExpandFunctionBody(body, f.tpe, body.source))
         case CtorSymbol(_, _) =>
           None
       }
@@ -1038,8 +1037,24 @@ object TypeChecker:
     val subst = collectTypeParamSubst(resultType, expectedType, paramIds, Map())
     fieldTypes.map(fieldType => substituteTypeParams(fieldType, subst))
 
-  /** Converts a typed function declaration into a lambda term for unfolding. */
-  
+  /** Eta-expands a function body into a lambda using the function type's Pi binders. */
+  private def etaExpandFunctionBody(body: TypedAst.Expr, functionType: TypedAst.Expr, source: SourceRange): TypedAst.Expr =
+    val (params, returnType) = collectPiParams(functionType)
+    val (lambdaExpr, _) = params.reverse.foldLeft((body, returnType)) {
+      case ((currentBody, currentType), (param, isImplicit)) =>
+        val lambdaType = TypedAst.Expr.Pi(param, currentType, isImplicit)(source)
+        (TypedAst.Expr.Lambda(param, currentBody, lambdaType)(source), lambdaType)
+    }
+    lambdaExpr
+
+  /** Collects all Pi parameters from a type together with their implicitness flags. */
+  private def collectPiParams(tpe: TypedAst.Expr): (List[(LocalSymbol, Boolean)], TypedAst.Expr) =
+    tpe match
+      case TypedAst.Expr.Pi(dom, cod, isImplicit) =>
+        val (tailParams, resultType) = collectPiParams(cod)
+        ((dom, isImplicit) :: tailParams, resultType)
+      case other =>
+        (List.empty, other)
 
   def formatError(path: String, sourceLines: Vector[String], error: TypeError): String =
     val lineNr = error.source.start.line
