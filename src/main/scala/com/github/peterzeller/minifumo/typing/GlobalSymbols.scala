@@ -152,7 +152,8 @@ final case class DatatypeSymbol(file: String, name: String)(val continuationData
     val data = continuationData.get
     val typeInfo = typeCalculated.get
     val globals = data.globalNames.globalEnv(file)
-    var ctx = TypeContext(globals, Map())
+    // Constructor fields and result types may refer to the datatype's implicit parameters.
+    var ctx = typeInfo.params.foldLeft(TypeContext(globals, Map()))((acc, p) => acc.withLocal(p))
     val metas = MetaStore()
     val ctors: List[TypedAst.CtorDecl] =
       for (ctor, ctorSym) <- data.declAst.ctors.zip(ctorSymbols) yield

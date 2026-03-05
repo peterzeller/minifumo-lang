@@ -50,7 +50,7 @@ object TypeChecker:
             errors.addAll(sym.allErrors)
             res
           case decl: ast.TopLevel.FunDecl =>
-            val context1 = TypeContext(globals, Map())
+            TypeContext(globals, Map())
             val sym = symbolMap(decl.sig.name) match {
               case f: FunctionSymbol => f
               case other =>
@@ -262,16 +262,7 @@ object TypeChecker:
     loop(expr)
 
   /** Type-checks a function body against its return type. */
-  private def checkFunctionBody(
-      body: ast.Expr,
-      returnType: TypedAst.Expr,
-      context: TypeContext,
-      metas: MetaContext,
-      idSupply: IdSupply,
-      errors: ListBuffer[TypeError]): TypedAst.Expr =
-    val (typedBody, errs) = check(body, returnType)(using context, metas, idSupply)
-    errors.addAll(errs)
-    typedBody
+  
 
   /** Resolves metas at the end of a declaration and reports unresolved placeholders. */
   private[typing] def finalizeTopLevelExpr(expr: TypedAst.Expr)
@@ -983,6 +974,12 @@ object TypeChecker:
         val cAcc = collectTypeParamSubst(tc, ec, paramIds, acc)
         collectTypeParamSubst(ta, ea, paramIds, cAcc)
       case (TypedAst.Expr.App(tc, ta, _), TypedAst.Expr.App(ec, ea, _)) =>
+        val cAcc = collectTypeParamSubst(tc, ec, paramIds, acc)
+        collectTypeParamSubst(ta, ea, paramIds, cAcc)
+      case (TypedAst.Expr.App(tc, ta, _), TypedAst.Expr.AppImplicit(ec, ea, _)) =>
+        val cAcc = collectTypeParamSubst(tc, ec, paramIds, acc)
+        collectTypeParamSubst(ta, ea, paramIds, cAcc)
+      case (TypedAst.Expr.AppImplicit(tc, ta, _), TypedAst.Expr.App(ec, ea, _)) =>
         val cAcc = collectTypeParamSubst(tc, ec, paramIds, acc)
         collectTypeParamSubst(ta, ea, paramIds, cAcc)
       case _ =>
