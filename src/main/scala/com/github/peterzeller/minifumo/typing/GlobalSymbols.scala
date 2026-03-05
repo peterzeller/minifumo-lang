@@ -99,8 +99,7 @@ final case class LocalSymbol(name: String, tpe: Expr, id: Int) extends TermSymbo
 
 final case class BuiltinValueSymbol(name: String, tpe: Expr) extends TermSymbol // TODO do we need this?
 
-final case class ErrorSymbol(name: String, tpe: Expr) extends Symbol:
-  throw new RuntimeException(s"Created error symbol")
+final case class ErrorSymbol(name: String, tpe: Expr) extends Symbol
 
 object DatatypeSymbol:
     case class TypeCalculated(params: List[LocalSymbol], tpe: Expr)
@@ -175,8 +174,11 @@ final case class DatatypeSymbol(file: String, name: String)(val continuationData
               var r = TypedAst.Expr.Var(this)(ctor.source)
               var pis = typeInfo.tpe
               for p <- typeInfo.params do {
-                val Pi(_, d, _) = pis: @unchecked
-                r = TypedAst.Expr.App(r, TypedAst.Expr.Var(p)(ctor.source), d)(ctor.source)
+                val Pi(_, d, isImplicit) = pis: @unchecked
+                if isImplicit then
+                  r = TypedAst.Expr.AppImplicit(r, TypedAst.Expr.Var(p)(ctor.source), d)(ctor.source)
+                else
+                  r = TypedAst.Expr.App(r, TypedAst.Expr.Var(p)(ctor.source), d)(ctor.source)
                 pis = d
               }
 

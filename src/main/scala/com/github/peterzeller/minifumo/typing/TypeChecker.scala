@@ -12,7 +12,7 @@ import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 
 object TypeChecker:
-  private val throwOnError = true
+  private val throwOnError = false
   private val defaultConstraintFuel = 128
 
   final case class TypeError(message: String, source: ast.SourceRange) extends MinifumoError:

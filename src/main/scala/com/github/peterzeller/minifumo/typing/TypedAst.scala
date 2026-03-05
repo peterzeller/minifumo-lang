@@ -58,8 +58,35 @@ object TypedAst:
     case UnknownType()(val source: SourceRange)
     case Match(scrutinee: Expr, motive: Expr, cases: List[MatchCase])(val source: SourceRange)
 
+    // Some basic checks to catch some errors early
+    this match {
+      case i: App =>
+        i.callee.calculateType match {
+          case Some(p: TypedAst.Expr.Pi) =>
+            require(!p.isImplicit)
+          case _ =>
+        }
+      case _ =>
+    }
+
     override def toString: String =
       TypeChecker.prettyExpr(this)
+
+    def calculateType: Option[Expr] =
+      this match {
+        case Expr.Lit(value) =>
+          None
+        case Expr.Var(symbol) => Some(symbol.tpe)
+        case Expr.AppImplicit(callee, arg, tpe) => Some(tpe)
+        case Expr.App(callee, arg, tpe) => Some(tpe)
+        case Expr.Pi(dom, cod, isImplicit) => Some(Expr.Sort()(SourceRange.empty))
+        case Expr.Sort() => Some(Expr.Sort()(SourceRange.empty))
+        case Expr.Lambda(param, body, tpe) => None
+        case Expr.LetIn(symbol, isConstant, declaredType, value, body) => body.calculateType
+        case Expr.Meta(index, tpe) => Some(tpe)
+        case Expr.UnknownType() => Some(this)
+        case Expr.Match(scrutinee, motive, cases) => None
+      }
 
   final case class MatchCase(pattern: Pattern, body: Expr)(val source: SourceRange)
 
