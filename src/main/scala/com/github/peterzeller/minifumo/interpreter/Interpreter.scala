@@ -45,16 +45,19 @@ object Interpreter:
       d match
         case Value.AdtVal("Zero", _) => 0
         case Value.AdtVal("Suc", List(x)) => 1 + natToInt(x)
+        case _ => throw new RuntimeException(s"cannot convert $d to int")
 
     private def readChar(d: Value): Char =
       d match
         case Value.AdtVal("MakeChar", List(x)) =>
           natToInt(x).asInstanceOf[Char]
+        case _ => throw new RuntimeException(s"cannot convert $d to char")
 
     private def readList[T](d: Value, f: Value => T): List[T] = 
       d match
         case Value.AdtVal("Nil", _) => List()
         case Value.AdtVal("Cons", List(x, xs)) => f(x) :: readList(xs, f)
+        case _ => throw new RuntimeException(s"cannot convert $d to list")
 
 
     // force evaluation of lazy expressions
@@ -147,9 +150,6 @@ object Interpreter:
         evalExpr(body, locals, globals)
       case p :: ps =>
         Value.FuncVal(name, v => buildFnBody(name + "'", ps, body, locals + (p -> v), globals))
-
-  /** Describes a function body for evaluation. */
-  private final case class FunctionBody(params: List[LocalSymbol], body: TypedAst.Expr)
 
   /** Evaluates an expression with the given local and global environments. */
   private def evalExpr(

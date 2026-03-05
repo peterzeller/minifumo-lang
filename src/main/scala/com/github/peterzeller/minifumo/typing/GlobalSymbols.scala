@@ -110,7 +110,6 @@ final case class DatatypeSymbol(file: String, name: String)(val continuationData
 
   var allErrors: List[TypeError] = List()
   private var typeCalculated: Option[DatatypeSymbol.TypeCalculated] = None
-  None
 
   val ctorSymbols: List[CtorSymbol] = continuationData match {
     case Some(data) =>
@@ -243,7 +242,6 @@ final case class FunctionSymbol(
         val data = continuationData.get
         val f = data.declAst
         val globals = data.globalNames.globalEnv(file)
-        println(s"Global env for $file: ${globals.names.keySet}")
         val context1 = TypeContext(globals, Map())
         val itemMetaStore = MetaStore()
         val (sig, ctx2, errors) = TypeChecker.checkFunSig(this, f.sig)(using context1, itemMetaStore, data.idSupply)
@@ -322,10 +320,9 @@ object GlobalSymbols:
         List()
 
   def buildGlobalSymbols(file: String, prog: ast.ProgramFile, symbolCache: NameCache&SymbolCache, onlyExported: Boolean, ids: TypeChecker.IdSupply): (Map[String, GlobalSymbol], List[TypeError]) =
-    val (imports, errors1) = resolveImports(prog, symbolCache)
     buildGlobalNames(file, prog, false)
     buildGlobalNames("standard.minifumo", Standard.standardProgram, true)
-    val errors = ListBuffer[TypeError](errors1*)
+    val errors = ListBuffer[TypeError]()
     var res = Map[String, GlobalSymbol]()
 
     if !onlyExported then

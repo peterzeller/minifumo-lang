@@ -168,11 +168,10 @@ object LeanEmitter:
           s"(${n} : ${emitExpr(p.tpe, mangle, localScope.toMap, currentModule, localDefinitions, moduleNameByFile)})"
         val returnType = emitExpr(sig.returnType, mangle, localScope.toMap, currentModule, localDefinitions, moduleNameByFile)
         val bodyText = emitExpr(body, mangle, localScope.toMap, currentModule, localDefinitions, moduleNameByFile)
-        val recursion = emitRecursionClause(sig, body, mangle, localScope.toMap)
         val lines = Vector(
           s"def ${funName} ${(typeParams ++ params).mkString(" ")} : ${returnType} :=",
           s"  ${bodyText}"
-        ) ++ recursion ++ Vector("")
+        ) ++ Vector("")
         Some(DeclChunk(lines, Path.of(file), declSource(decl)))
 
   // Extracts the source range from a typed top-level declaration.
@@ -185,15 +184,6 @@ object LeanEmitter:
   private def renderTypeParamArgs(typeParams: List[LocalSymbol], mangle: LeanNameMangler.Context): String =
     if typeParams.isEmpty then ""
     else typeParams.map(p => s" (${mangle.mangle(LeanNameMangler.NameKind.LocalName, p.name)})").mkString
-
-  // Emits a conservative termination clause for recursive functions.
-  private def emitRecursionClause(
-      sig: TypedAst.FunSig,
-      body: TypedAst.Expr,
-      mangle: LeanNameMangler.Context,
-      localScope: Map[Int, String]
-    ): Vector[String] =
-    Vector.empty
 
   // Emits one typed expression into Lean syntax.
   private def emitExpr(

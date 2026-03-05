@@ -1,7 +1,7 @@
 import org.scalajs.linker.interface.ModuleKind
 import sbt.io.IO
 
-val scala3Version = "3.7.4"
+val scala3Version = "3.8.2"
 
 ThisBuild / semanticdbEnabled := true
 ThisBuild / semanticdbVersion := scalafixSemanticdb.revision
