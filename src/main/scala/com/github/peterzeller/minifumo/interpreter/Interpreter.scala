@@ -204,19 +204,7 @@ object Interpreter:
     }
 
   private def prettyPrint(expr: Expr): String =
-    expr match {
-      case TypedAst.Expr.Lit(value) => value.toString
-      case TypedAst.Expr.Var(symbol) => symbol.name
-      case TypedAst.Expr.AppImplicit(callee, arg, tpe) => prettyPrint(callee) + "[" + prettyPrint(arg) + "]"
-      case TypedAst.Expr.App(callee, arg, tpe) => prettyPrint(callee) + "(" + prettyPrint(arg) + ")"
-      case TypedAst.Expr.Pi(dom, cod, isImplicit) => "PI " + dom.name + ". " +  prettyPrint(dom.tpe) + " -> " + prettyPrint(cod)
-      case TypedAst.Expr.Sort() => "Sort"
-      case TypedAst.Expr.Lambda(param, body, tpe) => "fun " + param.name + ". " +  prettyPrint(param.tpe) + " -> " + prettyPrint(body)
-      case TypedAst.Expr.LetIn(symbol, isConstant, declaredType, value, body) => "let " + symbol.name + ": " +  prettyPrint(symbol.tpe) + " = " + prettyPrint(value) + " in " + prettyPrint(body)
-      case TypedAst.Expr.Meta(index, tpe) => s"META_$index"
-      case TypedAst.Expr.UnknownType() => "???"
-      case TypedAst.Expr.Match(scrutinee, _, cases) => "match ..."
-    }
+    expr.toString
 
   /** Applies a function value to an argument value. */
   private def applyValue(fn: Value, arg: Value): Value =

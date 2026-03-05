@@ -158,6 +158,7 @@ object TypeChecker:
         case DatatypeSymbol(_, _) =>
           None
         case f: FunctionSymbol =>
+          // TODO here we should produce a correct lambda expression
           f.typedBody
         case CtorSymbol(_, _) =>
           None
@@ -417,13 +418,23 @@ object TypeChecker:
 
   /** Attempts to solve one constraint by reducing it and assigning metas when possible. */
   private def trySolveConstraint(constraint: EqualityConstraint, fuel: Int)
-                                (implicit ctx: Context, metas: MetaContext): Option[(EqualityConstraint, TypedAst.Expr, TypedAst.Expr)] =
-    val reducedLeft = reduceExpr(constraint.left, fuel)
-    val reducedRight = reduceExpr(constraint.right, fuel)
-    if canSolveByUnification(reducedLeft, reducedRight) then
+                                (implicit ctx: Context, metas: MetaContext): Option[(EqualityConstraint, TypedAst.Expr, TypedAst.Expr)] = {
+    val left = instantiate(constraint.left)
+    val right = instantiate(constraint.right)
+    if canSolveByUnification(left, right) then
       None
-    else
-      Some((constraint, reducedLeft, reducedRight))
+    else {
+      // if it cannot be unified, try to reduce both sides
+      val reducedLeft = reduceExpr(left, fuel)
+      val reducedRight = reduceExpr(right, fuel)
+      if canSolveByUnification(reducedLeft, reducedRight) then
+       None
+      else {
+        // otherwise return unresolved constraint
+        Some((EqualityConstraint(left, right, constraint.source), reducedLeft, reducedRight))
+      }
+    }
+  }
 
   /** Solves equality by recursively assigning metas and matching term structure. */
   private def canSolveByUnification(left: TypedAst.Expr, right: TypedAst.Expr)
@@ -539,8 +550,9 @@ object TypeChecker:
     selectMatchCase(scrutinee, cases) match
       case Some(body) => reduceExpr(body, fuel)
       case None =>
-        val reducedCases = cases.map(c => TypedAst.MatchCase(c.pattern, reduceExpr(c.body, fuel))(c.source))
-        TypedAst.Expr.Match(scrutinee, TypedAst.Expr.UnknownType()(source), reducedCases)(source)
+        // TODO should we reduce also the cases?
+        // val reducedCases = cases.map(c => TypedAst.MatchCase(c.pattern, reduceExpr(c.body, fuel))(c.source))
+        TypedAst.Expr.Match(scrutinee, TypedAst.Expr.UnknownType()(source), cases)(source)
 
   /** Selects and specializes the first matching branch for a reduced scrutinee. */
   private def selectMatchCase(scrutinee: TypedAst.Expr, cases: List[TypedAst.MatchCase]): Option[TypedAst.Expr] =
@@ -824,10 +836,21 @@ object TypeChecker:
       case TypedAst.Expr.Pi(dom, cod, false) => s"${dom.name}: ${prettyExpr(dom.tpe)} -> ${prettyExpr(cod)}"
       case TypedAst.Expr.App(callee, arg, _) => s"${prettyExpr(callee)}(${prettyExpr(arg)})"
       case TypedAst.Expr.AppImplicit(callee, arg, _) => s"${prettyExpr(callee)}[${prettyExpr(arg)}]"
-      case TypedAst.Expr.Lambda(param, _, _) => s"(\\${param.name} => ...)"
-      case TypedAst.Expr.LetIn(symbol, _, _, _, _) => s"(let ${symbol.name} = ...)"
-      case TypedAst.Expr.Match(_, _, _) => "match"
+      case TypedAst.Expr.Lambda(param, t, body) => s"(lambda (${param.name}: $t)  => $body)"
+      case TypedAst.Expr.LetIn(symbol, _, t, v, body) => s"(let ${symbol.name}: $t = $v in $body)"
+      case TypedAst.Expr.Match(s, m, cs) => s"(match ${prettyExpr(s)} with motive ${prettyExpr(m)} ${cs.map(prettyCase).mkString(" ")})"
       case m@TypedAst.Expr.Meta(index, tpe) => s"?${m.name}_$index : ${prettyExpr(tpe)}"
+
+  private def prettyCase(m: MatchCase): String =
+    s"case ${prettyPattern(m.pattern)} => ${m.body}"
+
+  private def prettyPattern(pattern: Pattern): String =
+    pattern match {
+      case Pattern.Wildcard() => "_"
+      case Pattern.Lit(value) => value.toString
+      case Pattern.Binder(symbol) => symbol.name
+      case Pattern.Ctor(symbol, args) => s"${symbol.name}(${args.map(prettyPattern).mkString(", ")})"
+    }
 
   /** Determines the type of a literal value. */
   private[typing] def literalType(value: ast.Literal, ctx: TypeContext): TypedAst.Expr =
