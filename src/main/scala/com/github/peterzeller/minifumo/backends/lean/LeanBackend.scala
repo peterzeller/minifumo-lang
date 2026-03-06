@@ -27,7 +27,7 @@ object LeanBackend:
     val idSupply = TypeChecker.IdSupply()
     val cache = new ProjectSymbolCache(io, idSupply)
     val entryFile = if Files.isDirectory(entry) then root.resolve("main.minifumo") else entry
-    val entryImportPath = entryFile.toString
+    val entryImportPath = io.makeRelative(entryFile)
     val projectFiles = collectReachableFiles(entryImportPath, cache)
 
     projectFiles.foreach(cache.typedAst)
