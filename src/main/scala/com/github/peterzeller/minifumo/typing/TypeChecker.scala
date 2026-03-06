@@ -158,8 +158,7 @@ object TypeChecker:
         case DatatypeSymbol(_, _) =>
           None
         case f: FunctionSymbol =>
-          // TODO here we should produce a correct lambda expression
-          f.typedBody
+          f.typedDecl.map(funDeclToLambdaFromSignature)
         case CtorSymbol(_, _) =>
           None
       }
@@ -1038,8 +1037,15 @@ object TypeChecker:
     val subst = collectTypeParamSubst(resultType, expectedType, paramIds, Map())
     fieldTypes.map(fieldType => substituteTypeParams(fieldType, subst))
 
-  /** Converts a typed function declaration into a lambda term for unfolding. */
-  
+  /** Rebuilds a function definition as nested lambdas from its checked signature binders. */
+  private def funDeclToLambdaFromSignature(funDecl: TypedAst.TopLevel.FunDecl): TypedAst.Expr =
+    val allParams = funDecl.sig.typeParams.map((_, true)) ++ funDecl.sig.params.map((_, false))
+    val (lambdaExpr, _) = allParams.reverse.foldLeft((funDecl.body, funDecl.sig.returnType)) {
+      case ((currentBody, currentType), (param, isImplicit)) =>
+        val lambdaType = TypedAst.Expr.Pi(param, currentType, isImplicit)(funDecl.source)
+        (TypedAst.Expr.Lambda(param, currentBody, lambdaType)(funDecl.source), lambdaType)
+    }
+    lambdaExpr
 
   def formatError(path: String, sourceLines: Vector[String], error: TypeError): String =
     val lineNr = error.source.start.line
