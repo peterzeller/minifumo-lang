@@ -1,7 +1,6 @@
 package com.github.peterzeller.minifumo.typing
 
 import java.nio.file.{Files, Path, Paths}
-import scala.annotation.tailrec
 
 class GlobalSymbolsIo(projectRoot: Path) {
 
@@ -22,15 +21,17 @@ class GlobalSymbolsIo(projectRoot: Path) {
 
 object GlobalSymbolsIo:
   def create(path: String): GlobalSymbolsIo =
-    GlobalSymbolsIo(findProjectRoot(Path.of(path)))
+    GlobalSymbolsIo(Path.of(path))
 
   // find the folder that contains minifumo.yml
-  @tailrec
-  def findProjectRoot(path: Path): Path =
-    if path.toFile.isDirectory then
-      if path.resolve("minifumo.yml").toFile.exists() then
-        return path
-    val parent = path.getParent
-    if parent == path then
-      throw new RuntimeException("could not minifumo project root")
-    findProjectRoot(path.getParent)
+  def findProjectRoot(inputPath: Path): Path =
+    var path = inputPath
+    while path != null do
+      if path.toFile.isDirectory then
+        if path.resolve("minifumo.yml").toFile.exists() then
+          return path
+      val parent = path.getParent
+      if parent == path then
+        throw new RuntimeException(s"could not minifumo project root for ${inputPath.toAbsolutePath}")
+      path = path.getParent
+    throw new RuntimeException(s"could not minifumo project root for ${inputPath.toAbsolutePath}")
