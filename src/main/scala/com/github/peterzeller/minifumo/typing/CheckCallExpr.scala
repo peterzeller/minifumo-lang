@@ -23,7 +23,7 @@ object CheckCallExpr:
         val resultType = TypedAst.Expr.UnknownType()(SourceRange.empty)
         val errs3 =
           if other.isInstanceOf[UnknownType] then List()
-          else List(TypeError(s"Expected a function but found expression of type $other", expr.callee.source))
+          else List(TypeError(s"Expected a function but found expression of type $other\nCallee: ${expr.callee}\nArg: ${expr.arg}", expr.callee.source))
         (TypedAst.Expr.App(typedCallee, typedArg, resultType)(expr.source), resultType, errs1 ++ errs2 ++ errs3)
 
 /** Type-checking logic for implicit call expressions. */
@@ -37,12 +37,12 @@ object CheckCallImplicitExpr:
         val resultType = substitute(cod, dom, typedArg)
         val errs3 =
           if isImplicit then List()
-          else List(TypeError("Expected an explicit function argument", expr.callee.source))
+          else List(TypeError(s"Expected an explicit function argument\nCallee ${expr.callee} has type ${calleeType}", expr.callee.source))
         (TypedAst.Expr.AppImplicit(typedCallee, typedArg, resultType)(expr.source), resultType, errs1 ++ errs2 ++ errs3)
       case other =>
         val (typedArg, _, errs2) = TypeChecker.infer(expr.arg)
         val resultType = TypedAst.Expr.UnknownType()(SourceRange.empty)
         val errs3 =
           if other.isInstanceOf[UnknownType] then List()
-          else List(TypeError(s"Expected a function but found expression of type $other", expr.callee.source))
+          else List(TypeError(s"Expected a function but found expression of type $other\nCallee: ${expr.callee}\nArg: ${expr.arg}", expr.callee.source))
         (TypedAst.Expr.AppImplicit(typedCallee, typedArg, resultType)(expr.source), resultType, errs1 ++ errs2 ++ errs3)

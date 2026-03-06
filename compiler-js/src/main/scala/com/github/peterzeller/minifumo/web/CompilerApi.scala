@@ -3,9 +3,8 @@ package com.github.peterzeller.minifumo.web
 import com.github.peterzeller.minifumo.builtins.Standard
 import com.github.peterzeller.minifumo.interpreter.Interpreter
 import com.github.peterzeller.minifumo.parser.parseInput
-import com.github.peterzeller.minifumo.typing.{GlobalName, GlobalSymbol, NameCache, SymbolCache, TypeChecker}
+import com.github.peterzeller.minifumo.typing.{GlobalSymbolsIo, ProjectSymbolCache, TypeChecker}
 
-import java.nio.file.Path
 import scala.scalajs.js
 import scala.scalajs.js.JSConverters.*
 import scala.scalajs.js.annotation.{JSExport, JSExportTopLevel}
@@ -15,11 +14,14 @@ import scala.util.control.NonFatal
 @JSExportTopLevel("MinifumoCompiler")
 object CompilerApi:
 
-  private val inMemoryFile: Path = Path.of("/playground/input.minifumo")
+  private val inMemoryFile: String = "/playground/input.minifumo"
 
   /** Compiles source code and optionally runs a named function from the resulting program. */
   @JSExport
   def compileAndRun(source: String, functionName: String = "main", runFunction: Boolean = true): js.Object =
+    val ids = TypeChecker.IdSupply()
+    val symbolCache = ProjectSymbolCache(new GlobalSymbolsIo("."), ids)
+    symbolCache.addInput(inMemoryFile, source)
     try
       val (program, syntaxErrors) = parseInput(source)
       if syntaxErrors.nonEmpty then
@@ -31,8 +33,7 @@ object CompilerApi:
           executed = false
         )
       else
-        val ids = TypeChecker.IdSupply()
-        val (typedProgram, typeErrors) = TypeChecker.checkProgram(inMemoryFile, program, EmptyCache, importStandard = true, ids)
+        val (typedProgram, typeErrors) = TypeChecker.checkProgram(inMemoryFile, program, symbolCache, importStandard = true, ids)
         if typeErrors.nonEmpty then
           compileResult(
             success = false,
@@ -72,7 +73,8 @@ object CompilerApi:
   // Type-checks the bundled standard library once for runtime evaluation support.
   private lazy val typedStandardProgram =
     val ids = TypeChecker.IdSupply()
-    val (typedStandard, errors) = TypeChecker.checkProgram(Path.of("standard.minifumo"), Standard.standardProgram, EmptyCache, importStandard = false, ids)
+    val symbolCache = ProjectSymbolCache(new GlobalSymbolsIo("."), ids)
+    val (typedStandard, errors) = TypeChecker.checkProgram("standard.minifumo", Standard.standardProgram, symbolCache, importStandard = false, ids)
     if errors.nonEmpty then
       val errorMessage = errors.map(_.message).mkString("\n")
       throw new IllegalStateException(s"Failed to type-check standard library:\n$errorMessage")
@@ -115,10 +117,3 @@ object CompilerApi:
       executed = executed
     )
 
-  // Minimal cache implementation for browser mode where imports are disabled.
-  private object EmptyCache extends NameCache with SymbolCache:
-    override def globalNames(path: String): Map[String, GlobalName] =
-      Map.empty
-
-    override def globalSymbols(path: String): Map[String, GlobalSymbol] =
-      Map.empty

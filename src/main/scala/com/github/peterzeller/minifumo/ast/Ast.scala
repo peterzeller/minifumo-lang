@@ -101,6 +101,32 @@ enum Expr:
 
   def source: SourceRange
 
+  override def toString: String =
+    this match {
+      case Expr.Lit(value) =>
+        value match {
+          case Literal.IntLit(value) => value.toString
+          case Literal.BoolLit(value) => value.toString
+          case Literal.StringLit(value) => s"\"$value\""
+          case Literal.UnitLit() => "unit"
+        }
+      case Expr.Var(name) =>
+        name
+      case Expr.CallImplicit(callee, arg) =>
+        s"$callee[$arg]"
+      case Expr.Call(callee, arg) =>
+        s"$callee($arg)"
+      case Expr.Lambda(param, body) =>
+        s"(fun $param => $body)"
+      case Expr.Pi(param, body) =>
+        s"($param => $body)"
+      case Expr.LetIn(name, tpe, value, body) =>
+        s"let $name: $tpe = $value in $body"
+      case Expr.Match(scrutinee, cases) =>
+        s"match $scrutinee ${cases.map(c => s"$c").mkString(" | ")}"
+      case Expr.Hole() => "???"
+    }
+
 final case class MatchCase(pattern: Pattern, body: Expr)(val source: SourceRange)
 
 enum Literal:

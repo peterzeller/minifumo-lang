@@ -2,65 +2,10 @@ package com.github.peterzeller.minifumo.typing
 
 import com.github.peterzeller.minifumo.ast
 import com.github.peterzeller.minifumo.ast.{Literal, SourceRange}
-import com.github.peterzeller.minifumo.typing.GlobalSymbols.PreEnv
-import com.github.peterzeller.minifumo.typing.TypedAst.Expr.{Sort, UnknownType}
+import com.github.peterzeller.minifumo.typing.TypedAst.Expr.{Pi, Sort, UnknownType}
 
-import java.nio.file.Path
 
 object TypedAst:
-  sealed trait Symbol:
-    def name: String
-    def tpe: Expr
-
-  sealed trait TermSymbol extends Symbol
-
-  final case class LocalSymbol(name: String, tpe: Expr, id: Int) extends TermSymbol
-  final case class BuiltinValueSymbol(name: String, tpe: Expr) extends TermSymbol // TODO do we need this?
-  final case class ErrorSymbol(name: String, tpe: Expr) extends Symbol
-  final case class DatatypeSymbol(name: String, tpe: Expr, file: Path) extends Symbol // TODO is this just a global symbol?
-
-  final case class FunctionSymbol(name: String, tpe: Expr) extends Symbol // TODO is this just a global symbol?
-  final case class CtorSymbol(name: String, tpe: Expr) extends Symbol // TODO is this just a global symbol?
-
-  final case class GlobalSymbolSymbol(name: String, file: Path, g: GlobalSymbol) extends Symbol:
-    def tpe: Expr =
-      g.symbolSignature.match
-        case SymbolSignature.Def(tpe) => tpe
-        case SymbolSignature.Datatype(implicitParams) =>
-          // Rebuilds a dependent Pi type for imported datatype parameters.
-          def replaceLocals(expr: Expr, subst: Map[Int, Expr]): Expr =
-            expr match
-              case Expr.Var(sym: LocalSymbol) => subst.getOrElse(sym.id, Expr.Var(sym)(SourceRange.empty))
-              case Expr.App(callee, arg, tpe) => Expr.App(replaceLocals(callee, subst), replaceLocals(arg, subst), replaceLocals(tpe, subst))(SourceRange.empty)
-              case Expr.AppImplicit(callee, arg, tpe) => Expr.AppImplicit(replaceLocals(callee, subst), replaceLocals(arg, subst), replaceLocals(tpe, subst))(SourceRange.empty)
-              case Expr.Pi(dom, cod, isImplicit) =>
-                val newDomType = replaceLocals(dom.tpe, subst)
-                val newDom = LocalSymbol(dom.name, newDomType, dom.id)
-                Expr.Pi(newDom, replaceLocals(cod, subst), isImplicit)(SourceRange.empty)
-              case Expr.Lambda(param, body, tpe) => Expr.Lambda(param, replaceLocals(body, subst), replaceLocals(tpe, subst))(SourceRange.empty)
-              case Expr.LetIn(symbol, isConstant, declaredType, value, body) =>
-                Expr.LetIn(symbol, isConstant, replaceLocals(declaredType, subst), replaceLocals(value, subst), replaceLocals(body, subst))(SourceRange.empty)
-              case Expr.Match(scrutinee, motive, cases) =>
-                Expr.Match(replaceLocals(scrutinee, subst), replaceLocals(motive, subst), cases.map(c => MatchCase(c.pattern, replaceLocals(c.body, subst))(c.source)))(SourceRange.empty)
-              case other => other
-
-          def buildPi(params: List[LocalSymbol], subst: Map[Int, Expr], nextId: Int): Expr =
-            params match
-              case Nil => Expr.Sort()(SourceRange.empty)
-              case p :: tail =>
-                val domType = replaceLocals(p.tpe, subst)
-                val dom = LocalSymbol(p.name, domType, nextId)
-                val cod = buildPi(tail, subst + (p.id -> Expr.Var(dom)(SourceRange.empty)), nextId - 1)
-                Expr.Pi(dom, cod, isImplicit = true)(SourceRange.empty)
-
-          buildPi(implicitParams, Map.empty, -1)
-
-
-
-
-  final case class GlobalNameSymbol(name: String, file: Path) extends Symbol:
-    def tpe: Expr = UnknownType()(SourceRange.empty)
-
   case class Program(items: List[TopLevel])(val source: SourceRange)
 
   enum TopLevel:
@@ -75,10 +20,18 @@ object TypedAst:
     typeParams: List[LocalSymbol],
     params: List[LocalSymbol],
     returnType: Expr,
-  )
+  ):
+    /** Calculate the function type of the function signature */
+    lazy val functionType: Expr =
+      var r = returnType
+      for p <- params.reverseIterator do
+        r = Pi(p, r, false)(r.source)
+      for p <- typeParams.reverseIterator do
+        r = Pi(p, r, true)(r.source)
+      r
 
-  final case class CtorDecl(symbol: CtorSymbol, fields: List[CtorField])(val source: SourceRange)
-  final case class CtorField(name: String, tpe: Expr)(val source: SourceRange)
+
+  final case class CtorDecl(symbol: CtorSymbol, implicitFields: List[LocalSymbol], fields: List[LocalSymbol], returnType: Expr, tpe: Expr)(val source: SourceRange)
 
   enum Expr:
     def source: SourceRange
@@ -105,34 +58,35 @@ object TypedAst:
     case UnknownType()(val source: SourceRange)
     case Match(scrutinee: Expr, motive: Expr, cases: List[MatchCase])(val source: SourceRange)
 
-    def tpe(env: PreEnv): Expr =
-      this match
-        case Expr.Lit(value) =>
-          value match
-            case Literal.IntLit(value) =>
-              val i = env.globalNames("Int")
-              Expr.Var(DatatypeSymbol(i.name, Sort()(SourceRange.empty), i.file))(SourceRange.empty)
-            case Literal.BoolLit(value) =>
-              val i = env.globalNames("Bool")
-              Expr.Var(DatatypeSymbol(i.name, Sort()(SourceRange.empty), i.file))(SourceRange.empty)
-            case Literal.StringLit(value) =>
-              val i = env.globalNames("String")
-              Expr.Var(DatatypeSymbol(i.name, Sort()(SourceRange.empty), i.file))(SourceRange.empty)
-            case Literal.UnitLit() =>
-              val i = env.globalNames("Unit")
-              Expr.Var(DatatypeSymbol(i.name, Sort()(SourceRange.empty), i.file))(SourceRange.empty)
-        case Expr.Var(symbol) => symbol.tpe
-        case Expr.AppImplicit(callee, arg, tpe) => tpe
-        case Expr.App(callee, arg, tpe) => tpe
-        case Expr.Pi(dom, cod, _) => Sort()(SourceRange.empty)
-        case Expr.Sort() => Sort()(SourceRange.empty)
-        case Expr.Lambda(param, body, tpe) => tpe
-        case Expr.LetIn(symbol, isConstant, declaredType, value, body) => body.tpe(env)
-        case Expr.Meta(index, tpe) => tpe
-        case Expr.UnknownType() => Sort()(SourceRange.empty)
-        case Expr.Match(scrutinee, motive, cases) =>
-          cases.headOption.map(_.body.tpe(env)).getOrElse(UnknownType()(SourceRange.empty))
+    // Some basic checks to catch some errors early
+    this match {
+      case i: App =>
+        i.callee.calculateType match {
+          case Some(p: TypedAst.Expr.Pi) =>
+            require(!p.isImplicit)
+          case _ =>
+        }
+      case _ =>
+    }
 
+    override def toString: String =
+      TypeChecker.prettyExpr(this)
+
+    def calculateType: Option[Expr] =
+      this match {
+        case Expr.Lit(value) =>
+          None
+        case Expr.Var(symbol) => Some(symbol.tpe)
+        case Expr.AppImplicit(callee, arg, tpe) => Some(tpe)
+        case Expr.App(callee, arg, tpe) => Some(tpe)
+        case Expr.Pi(dom, cod, isImplicit) => Some(Expr.Sort()(SourceRange.empty))
+        case Expr.Sort() => Some(Expr.Sort()(SourceRange.empty))
+        case Expr.Lambda(param, body, tpe) => None
+        case Expr.LetIn(symbol, isConstant, declaredType, value, body) => body.calculateType
+        case Expr.Meta(index, tpe) => Some(tpe)
+        case Expr.UnknownType() => Some(this)
+        case Expr.Match(scrutinee, motive, cases) => None
+      }
 
   final case class MatchCase(pattern: Pattern, body: Expr)(val source: SourceRange)
 

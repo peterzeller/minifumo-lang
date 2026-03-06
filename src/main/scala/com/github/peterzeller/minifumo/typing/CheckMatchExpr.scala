@@ -15,13 +15,13 @@ object CheckMatchExpr:
   def check(expr: ast.Expr.Match, expectedType: TypedAst.Expr)(using ctx: TypeContext, metas: MetaContext, ids: IdSupply): (TypedAst.Expr, List[TypeError]) =
     val ast.Expr.Match(scrutinee, cases) = expr
     val (scrutineeExpr, scrutineeType, scrutineeErrs) = TypeChecker.infer(scrutinee)
-    val motiveParam = TypedAst.LocalSymbol("x_scrut", scrutineeType, ids.freshLocalId())
+    val motiveParam = LocalSymbol("x_scrut", scrutineeType, ids.freshLocalId())
     val motiveBody = replaceExpr(expectedType, scrutineeExpr, TypedAst.Expr.Var(motiveParam)(expr.source))
     val motive = TypedAst.Expr.Lambda(motiveParam, motiveBody, TypedAst.Expr.UnknownType()(expr.source))(expr.source)
     val typedCases = cases.map { case ast.MatchCase(pattern, body) =>
       val patternResult = checkPattern(pattern, scrutineeType, ctx, ids)
       val caseCtx = applyTypeRefinements(ctx.copy(locals = ctx.locals ++ patternResult.bindings), patternResult.refinements)
-      val patternTerm = patternToExpr(patternResult.typedPattern, scrutineeExpr.source)
+      val patternTerm = patternToExpr(patternResult.typedPattern, patternResult.refinements, scrutineeExpr.source)
       val branchExpected0 = TypedAst.Expr.App(motive, patternTerm, TypedAst.Expr.UnknownType()(body.source))(body.source)
       val branchExpectedType = whnf(substituteTypeParams(branchExpected0, patternResult.refinements))
       val (typedBody, bodyErrs) = TypeChecker.check(body, branchExpectedType)(using caseCtx, metas, ids)
@@ -32,14 +32,24 @@ object CheckMatchExpr:
     (typedMatch, scrutineeErrs ++ errors)
 
   /** Converts a typed pattern into a branch refinement term. */
-  private def patternToExpr(pattern: TypedAst.Pattern, source: ast.SourceRange): TypedAst.Expr =
+  private def patternToExpr(pattern: TypedAst.Pattern, refinements: Map[Int, TypedAst.Expr], source: ast.SourceRange): TypedAst.Expr =
     pattern match
       case TypedAst.Pattern.Wildcard() => TypedAst.Expr.UnknownType()(source)
       case TypedAst.Pattern.Lit(value) => TypedAst.Expr.Lit(value)(source)
       case TypedAst.Pattern.Binder(symbol) => TypedAst.Expr.Var(symbol)(source)
       case TypedAst.Pattern.Ctor(symbol, args) =>
-        args.foldLeft[TypedAst.Expr](TypedAst.Expr.Var(symbol)(source)) { (callee, argPattern) =>
-          TypedAst.Expr.App(callee, patternToExpr(argPattern, source), TypedAst.Expr.UnknownType()(source))(source)
+        val ctorDecl = symbol.dt.typed.ctors.find(_.symbol.name == symbol.name) match {
+          case Some(v) => v
+          case None =>
+            // if constructor is not found, return unknown type
+            return TypedAst.Expr.UnknownType()(source)
+        }
+        val withImplicitArgs = ctorDecl.implicitFields.foldLeft[TypedAst.Expr](TypedAst.Expr.Var(symbol)(source)) { (callee, field) =>
+          val implicitArg = refinements.getOrElse(field.id, TypedAst.Expr.Var(field)(source))
+          TypedAst.Expr.AppImplicit(callee, implicitArg, TypedAst.Expr.UnknownType()(source))(source)
+        }
+        args.foldLeft[TypedAst.Expr](withImplicitArgs) { (callee, argPattern) =>
+          TypedAst.Expr.App(callee, patternToExpr(argPattern, refinements, source), TypedAst.Expr.UnknownType()(source))(source)
         }
 
   /** Replaces exact occurrences of a target expression with a replacement expression. */

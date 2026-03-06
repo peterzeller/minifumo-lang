@@ -13,7 +13,7 @@ function findBestLinkOutput(entries) {
 
 // Finds the Scala.js linker artifact and copies it into the web source tree when available.
 async function syncCompilerArtifact() {
-  const scalaVersion = 'scala-3.7.4'
+  const scalaVersion = 'scala-3.8.2'
   const targetRoot = join('..', 'compiler-js', 'target', scalaVersion)
   const destinationDir = join('src', 'generated')
   const destinationFile = join(destinationDir, 'minifumo-compiler.js')

@@ -1,6 +1,6 @@
 package com.github.peterzeller.minifumo
 
-import com.github.peterzeller.minifumo.typing.{ProjectSymbolCache, TypeChecker}
+import com.github.peterzeller.minifumo.typing.{GlobalSymbolsIo, ProjectSymbolCache, TypeChecker}
 import munit.FunSuite
 
 import java.nio.file.{Files, Path, Paths}
@@ -28,15 +28,15 @@ class TutorialExamplesSuite extends FunSuite:
   // Creates a symbol cache rooted at the repository for tutorial-file type checking.
   private def makeSymbolCache(idSupply: TypeChecker.IdSupply): ProjectSymbolCache =
     val repositoryRoot = Paths.get(".").toAbsolutePath.normalize()
-    new ProjectSymbolCache(repositoryRoot, idSupply)
+    new ProjectSymbolCache(GlobalSymbolsIo(repositoryRoot), idSupply)
 
   // Ensures each tutorial snippet type-checks in CI.
   for file <- tutorialExampleFiles() do
     test(s"tutorial example type-checks: ${file.getFileName}"):
       val idSupply = TypeChecker.IdSupply()
       val symbolCache = makeSymbolCache(idSupply)
-      val relativePath = symbolCache.makeRelative(file)
+      val relativePath = symbolCache.io.makeRelative(file)
       val (program, syntaxErrors) = symbolCache.getAst(relativePath)
       assertEquals(syntaxErrors, Nil)
-      val (_, typeErrors) = TypeChecker.checkProgram(file, program, symbolCache, true, idSupply)
+      val (_, typeErrors) = TypeChecker.checkProgram(file.toString, program, symbolCache, true, idSupply)
       assertEquals(typeErrors, Nil)

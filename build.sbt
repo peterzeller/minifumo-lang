@@ -1,7 +1,7 @@
 import org.scalajs.linker.interface.ModuleKind
 import sbt.io.IO
 
-val scala3Version = "3.7.4"
+val scala3Version = "3.8.2"
 
 ThisBuild / semanticdbEnabled := true
 ThisBuild / semanticdbVersion := scalafixSemanticdb.revision
@@ -40,9 +40,10 @@ lazy val compilerJs = project
     Compile / unmanagedSources := {
       val coreStandard = (coreJvm / baseDirectory).value.getAbsolutePath + "/src/main/scala/com/github/peterzeller/minifumo/builtins/Standard.scala"
       val coreMain = (coreJvm / baseDirectory).value.getAbsolutePath + "/src/main/scala/com/github/peterzeller/minifumo/Main.scala"
+      val io = (coreJvm / baseDirectory).value.getAbsolutePath + "/src/main/scala/com/github/peterzeller/minifumo/typing/GlobalSymbolsIo.scala"
       (Compile / unmanagedSources).value.filterNot { source =>
         val path = source.getAbsolutePath
-        path == coreStandard || path == coreMain || path.contains("/backends/lean/")
+        path == coreStandard || path == coreMain || path.contains("/backends/lean/") || path == io
       }
     },
     Compile / sourceGenerators += Def.task {

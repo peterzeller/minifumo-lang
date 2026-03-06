@@ -5,7 +5,7 @@ import com.github.peterzeller.minifumo.backends.lean.LeanBackend.{BackendError, 
 import com.github.peterzeller.minifumo.backends.lean.LeanRunner.LeanDiagnostic
 import com.github.peterzeller.minifumo.common.MinifumoErrorWithPath
 
-import java.nio.file.Path
+import java.nio.file.{Path}
 
 object LeanErrorMapper:
   // Formats one Lean diagnostic with generated-file location details.
@@ -31,10 +31,10 @@ object LeanErrorMapper:
         case Some(generated) =>
           generated.lineMap.find(entry => diag.line >= entry.startLine && diag.line <= entry.endLine) match
             case Some(entry) =>
-              MinifumoErrorWithPath(entry.sourcePath, BackendError(leanMessage(diag, generated.path), entry.sourceRange))
+              MinifumoErrorWithPath(entry.sourcePath.toString, BackendError(leanMessage(diag, generated.path), entry.sourceRange))
             case None =>
               val fallbackRange = SourceRange(SourcePos(1, 1), SourcePos(1, 1))
-              MinifumoErrorWithPath(diagPath, BackendError(leanMessage(diag, generated.path), fallbackRange))
+              MinifumoErrorWithPath(diagPath.toString, BackendError(leanMessage(diag, generated.path), fallbackRange))
         case None =>
           val fallbackRange = SourceRange(SourcePos(1, 1), SourcePos(1, 1))
-          MinifumoErrorWithPath(diagPath, BackendError(leanMessage(diag, diagPath), fallbackRange))
+          MinifumoErrorWithPath(diagPath.toString, BackendError(leanMessage(diag, diagPath), fallbackRange))

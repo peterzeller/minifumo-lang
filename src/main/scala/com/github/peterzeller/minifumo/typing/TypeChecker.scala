@@ -10,7 +10,6 @@ import com.github.peterzeller.minifumo.typing.TypedAst.Expr.{Sort, UnknownType}
 
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
-import java.nio.file.{Path, Paths}
 
 object TypeChecker:
   private val throwOnError = false
@@ -22,17 +21,16 @@ object TypeChecker:
 
 
   /** Type-checks a program */
-  def checkProgram(path: Path, program: ast.ProgramFile, globalNames: NameCache & SymbolCache, importStandard: Boolean, idSupply: TypeChecker.IdSupply): (TypedAst.Program, List[TypeError]) =
+  def checkProgram(path: String, program: ast.ProgramFile, globalNames: NameCache & SymbolCache, importStandard: Boolean, idSupply: TypeChecker.IdSupply): (TypedAst.Program, List[TypeError]) =
     try
       val errors = ListBuffer[TypeError]()
       var (symbolMap, importErrors) = GlobalSymbols.buildGlobalSymbols(path, program, globalNames, false, idSupply)
       if importStandard then
         // import the standard library symbols into the program file scope
-        val (standardLibSymbolMap, standardLibImportErrors) = GlobalSymbols.buildGlobalSymbols(Paths.get("standard.minifumo"), Standard.standardProgram, globalNames, false, idSupply)
+        val (standardLibSymbolMap, standardLibImportErrors) = GlobalSymbols.buildGlobalSymbols("standard.minifumo", Standard.standardProgram, globalNames, false, idSupply)
         symbolMap ++= standardLibSymbolMap
         importErrors ++= standardLibImportErrors
       errors.addAll(importErrors)
-      val definitionCache = DefinitionCache(path, globalNames)
       val globals = GlobalEnv(names = symbolMap)
       val typedItems = ListBuffer[TypedAst.TopLevel]()
       for item <- program.items do
@@ -41,18 +39,28 @@ object TypeChecker:
           case decl: ast.TopLevel.DataDecl =>
             val ctorReturnTypeErrors = validateCtorReturnTypes(decl, globals, idSupply, itemMetaStore)
             errors.addAll(ctorReturnTypeErrors)
-            buildDataDecl(path, decl, globals, idSupply)(using idSupply)
+            val sym = globals.names.get(decl.name) match {
+              case Some(d: DatatypeSymbol) =>
+                d
+              case _ =>
+                // TODO can this happen?
+                ???
+            }
+            val res = sym.typed
+            errors.addAll(sym.allErrors)
+            res
           case decl: ast.TopLevel.FunDecl =>
-            val context1 = TypeContext(globals, Map(), definitionCache)
-            val (typedSig, context2, errs) = checkFunSig(decl.sig)(using context1, itemMetaStore, idSupply)
-            errors.addAll(errs)
-
-            val typedBody = checkFunctionBody(decl.body, typedSig.returnType, context2, itemMetaStore, idSupply, errors)
-            val (elaboratedBody, unresolvedMetaErrors) = finalizeTopLevelExpr(typedBody)(using context2, itemMetaStore)
-            errors.addAll(unresolvedMetaErrors)
-            TypedAst.TopLevel.FunDecl(typedSig, elaboratedBody)(decl.source)
+            TypeContext(globals, Map())
+            val sym = symbolMap(decl.sig.name) match {
+              case f: FunctionSymbol => f
+              case other =>
+                errors.addOne(TypeError(s"Element ${other.name} is not a function", decl.source))
+                ErrorSymbols.fun(other.name)
+            }
+            val res = sym.typedDecl.get
+            errors.addAll(sym.allErrors)
+            res
         typedItems.addOne(typedItem)
-        definitionCache.recordTopLevel(typedItem)
       // Returns accumulated type errors to the caller instead of throwing.
       (TypedAst.Program(typedItems.toList)(program.source), errors.toList)
     catch
@@ -60,12 +68,12 @@ object TypeChecker:
         throw new RuntimeException(s"error checking $path", e)
 
 
-  private def checkFunSig(sig: ast.FunSig)(implicit ctx: TypeContext, metas: MetaContext, ids: IdSupply): (TypedAst.FunSig, TypeContext,  List[TypeError]) = {
+  private[typing] def checkFunSig(sym: FunctionSymbol, sig: ast.FunSig)(implicit ctx: TypeContext, metas: MetaContext, ids: IdSupply): (TypedAst.FunSig, TypeContext,  List[TypeError]) = {
 //    throw new RuntimeException(s"Checking of fun sig $sig is not yet implemented")
     var mEnv = ctx
     val errors = mutable.ListBuffer[TypeError]()
-    val typedImplicitParams = mutable.ListBuffer[TypedAst.LocalSymbol]()
-    val typedParams = mutable.ListBuffer[TypedAst.LocalSymbol]()
+    val typedImplicitParams = mutable.ListBuffer[LocalSymbol]()
+    val typedParams = mutable.ListBuffer[LocalSymbol]()
     // first check the implicit params
     for p <- sig.implicitParams do
       val (paramType, errs) = check(p.tpe, Sort()(SourceRange.empty))(using mEnv)
@@ -92,15 +100,14 @@ object TypeChecker:
     for p <- typedImplicitParams.reverseIterator do
       fnType = TypedAst.Expr.Pi(p, fnType, true)(p.tpe.source.merge(fnType.source))
 
-    val sym = FunctionSymbol(sig.name, fnType)
     (TypedAst.FunSig(sym, typedImplicitParams.toList, typedParams.toList, returnType), mEnv, errors.toList)
   }
 
   /** Provides a lookup interface for local and global symbols during type checking. */
   trait Context:
-    def lookupSymbol(name: String): Option[TypedAst.Symbol]
-    def lookupValue(symbol: TypedAst.TermSymbol): Option[TypedAst.Expr]
-    def lookupDefinition(symbol: TypedAst.Symbol): Option[TypedAst.Expr]
+    def lookupSymbol(name: String): Option[Symbol]
+    def lookupValue(symbol: TermSymbol): Option[TypedAst.Expr]
+    def lookupDefinition(symbol: Symbol): Option[TypedAst.Expr]
 
   /** Provides a mutable store for meta-variable assignments. */
   trait MetaContext:
@@ -110,7 +117,7 @@ object TypeChecker:
     def equalityConstraints: List[EqualityConstraint]
 
   /** Represents a binding in the local context. */
-  private[typing] final case class LocalBinding(symbol: TypedAst.TermSymbol, value: Option[TypedAst.Expr])
+  private[typing] final case class LocalBinding(symbol: TermSymbol, value: Option[TypedAst.Expr])
 
   /** Groups the result of type-checking one pattern node. */
   private[typing] final case class PatternCheckResult(
@@ -121,29 +128,47 @@ object TypeChecker:
     )
 
   /** Stores global symbols for type checking. */
-  private[typing] final case class GlobalEnv(
+  final case class GlobalEnv(
       names: Map[String, GlobalSymbol]
     )
 
   /** Implements a context with local bindings and global symbols. */
-  private[typing] final case class TypeContext(globals: GlobalEnv, locals: Map[String, LocalBinding], definitionCache: DefinitionCache = DefinitionCache.empty) extends Context:
-    override def lookupSymbol(name: String): Option[TypedAst.Symbol] =
+  private[typing] final case class TypeContext(globals: GlobalEnv, locals: Map[String, LocalBinding]) extends Context:
+    override def lookupSymbol(name: String): Option[Symbol] = {
       locals.get(name).map(_.symbol)
-        .orElse(globals.names.get(name).map(g => TypedAst.GlobalSymbolSymbol(g.name, g.file, g)))
+        .orElse(globals.names.get(name))
+    }
 
-    override def lookupValue(symbol: TypedAst.TermSymbol): Option[TypedAst.Expr] =
+    override def lookupValue(symbol: TermSymbol): Option[TypedAst.Expr] =
       locals.values.find(_.symbol == symbol).flatMap(_.value)
 
     /** Resolves unfoldable global definitions on demand. */
-    override def lookupDefinition(symbol: TypedAst.Symbol): Option[TypedAst.Expr] =
-      definitionCache.definitionFor(symbol)
+    override def lookupDefinition(symbol: Symbol): Option[TypedAst.Expr] =
+      symbol match {
+        case symbol: TermSymbol =>
+          symbol match {
+            case LocalSymbol(name, tpe, id) =>
+              // TODO should we be able to unfold definition of local variable?
+              None
+            case BuiltinValueSymbol(name, tpe) =>
+              None
+          }
+        case ErrorSymbol(name, tpe) =>
+          None
+        case DatatypeSymbol(_, _) =>
+          None
+        case f: FunctionSymbol =>
+          f.typedDecl.map(funDeclToLambdaFromSignature)
+        case CtorSymbol(_, _) =>
+          None
+      }
 
     /** Adds a local binding to the context. */
-    def withLocal(symbol: TypedAst.TermSymbol, value: Option[TypedAst.Expr] = None): TypeContext =
+    def withLocal(symbol: TermSymbol, value: Option[TypedAst.Expr] = None): TypeContext =
       copy(locals = locals + (symbol.name -> LocalBinding(symbol, value)))
 
     /** Adds multiple local bindings to the context. */
-    def withLocals(symbols: List[TypedAst.TermSymbol]): TypeContext =
+    def withLocals(symbols: List[TermSymbol]): TypeContext =
       symbols.foldLeft(this) { (ctx, symbol) => ctx.withLocal(symbol) }
 
   /** Stores meta-variable assignments during unification. */
@@ -178,47 +203,21 @@ object TypeChecker:
       nextMeta += 1
       id
 
-  /** Describes a function signature after outline typing. */
-  private final case class FunctionInfo(
-      symbol: TypedAst.FunctionSymbol,
-      implicitParams: List[TypedAst.LocalSymbol],
-      params: List[TypedAst.LocalSymbol],
-      returnType: TypedAst.Expr
-    )
 
   /** Builds a typed data declaration. */
-  private def buildDataDecl(
-    file: Path,
+  private[typing] def buildDataDecl(
       decl: ast.TopLevel.DataDecl,
-      globals: GlobalEnv,
-      idSupply: IdSupply
-    )(implicit ids: TypeChecker.IdSupply): TypedAst.TopLevel =
-    val localTypeParams = decl.implicitParams.map { param =>
-      val paramType = signatureExpr(param.tpe, globals, Map())
-      param.name -> TypedAst.LocalSymbol(param.name, paramType, idSupply.freshLocalId())
+      globals: GlobalEnv): TypedAst.TopLevel.DataDecl = {
+    globals.names.get(decl.name) match {
+      case Some(d: DatatypeSymbol) =>
+        d.typed
+      case _ =>
+        // TODO can this happen?
+        ???
     }
-    val typeParams = localTypeParams.map(_._2)
-    val ctorDecls = decl.ctors.map { ctor =>
-      val fields = ctor.fields.map { field =>
-        val fieldType = signatureExpr(field.tpe, globals, localTypeParams.toMap)
-        TypedAst.CtorField(field.name, fieldType)(field.source)
-      }
-      val symbol: CtorSymbol =
-        globals.names.get(ctor.name) match {
-          case Some(symbol) =>
-            val (s, _) = globalSymbolToCtorSymbol(symbol, ctor.source)
-            s
-          case None =>
-            TypedAst.CtorSymbol(ctor.name, TypedAst.Expr.UnknownType()(ctor.source))
-        }
-      TypedAst.CtorDecl(symbol, fields)(ctor.source)
-    }
-    TypedAst.TopLevel.DataDecl(DatatypeSymbol(decl.name, buildDatatypeType(typeParams), file), typeParams, ctorDecls)(decl.source)
+  }
 
-  private def buildDatatypeType(typeParams: List[LocalSymbol]): TypedAst.Expr =
-    typeParams match
-      case Nil => TypedAst.Expr.Sort()(SourceRange.empty)
-      case x::xs => TypedAst.Expr.Pi(x, buildDatatypeType(xs), true)(SourceRange.empty)
+  
 
 
   /** Validates that explicit constructor return types match the declared data type. */
@@ -263,19 +262,10 @@ object TypeChecker:
     loop(expr)
 
   /** Type-checks a function body against its return type. */
-  private def checkFunctionBody(
-      body: ast.Expr,
-      returnType: TypedAst.Expr,
-      context: TypeContext,
-      metas: MetaContext,
-      idSupply: IdSupply,
-      errors: ListBuffer[TypeError]): TypedAst.Expr =
-    val (typedBody, errs) = check(body, returnType)(using context, metas, idSupply)
-    errors.addAll(errs)
-    typedBody
+  
 
   /** Resolves metas at the end of a declaration and reports unresolved placeholders. */
-  private def finalizeTopLevelExpr(expr: TypedAst.Expr)
+  private[typing] def finalizeTopLevelExpr(expr: TypedAst.Expr)
                                (implicit ctx: Context, metas: MetaContext): (TypedAst.Expr, List[TypeError]) =
     val unresolvedConstraints = solveOpenConstraints(defaultConstraintFuel)
     val unresolved = collectUnresolvedMetas(expr)
@@ -290,7 +280,8 @@ object TypeChecker:
     (instantiate(expr), metaErrors ++ constraintErrors)
 
   /** Translates a signature expression to a typed expression. */
-  private[typing] def signatureExpr(expr: ast.Expr, globals: GlobalEnv, locals: Map[String, TypedAst.TermSymbol])(implicit ids: TypeChecker.IdSupply): TypedAst.Expr =
+  private[typing] def signatureExpr(expr: ast.Expr, globals: GlobalEnv, locals: Map[String, TermSymbol])(implicit ids: TypeChecker.IdSupply): TypedAst.Expr = {
+    // TODO can't we just use the normal expression typing method?
     expr match
       case ast.Expr.Lit(value) => TypedAst.Expr.Lit(value)(expr.source)
       case ast.Expr.Var(name) =>
@@ -305,9 +296,9 @@ object TypeChecker:
             case None =>
               globals.names.get(name) match
                 case Some(symbol) =>
-                  TypedAst.Expr.Var(symbol.toSymbol)(expr.source)
+                  TypedAst.Expr.Var(symbol)(expr.source)
                 case None =>
-                  TypedAst.Expr.Var(TypedAst.ErrorSymbol(name, TypedAst.Expr.UnknownType()(expr.source)))(expr.source)
+                  TypedAst.Expr.Var(ErrorSymbol(name, TypedAst.Expr.UnknownType()(expr.source)))(expr.source)
       case ast.Expr.Call(callee, arg) =>
         val calleeExpr = signatureExpr(callee, globals, locals)
         val argExpr = signatureExpr(arg, globals, locals)
@@ -325,6 +316,7 @@ object TypeChecker:
         TypedAst.Expr.UnknownType()(expr.source)
       case _ =>
         TypedAst.Expr.UnknownType()(expr.source)
+  }
 
 
   /** Checks if two types are definitionally equal, solving metas as needed. 
@@ -353,25 +345,8 @@ object TypeChecker:
             metas.addEqualityConstraint(EqualityConstraint(t1, t2, source))
             true
 
-  def symbolsEqual(a: Symbol, b: Symbol): Boolean =
-    if a == b then
-      true
-    else
-      (a,b) match
-        case (GlobalSymbolSymbol(an, af, _), GlobalNameSymbol(bn, bf)) =>
-          an == bn && af == bf
-        case (GlobalNameSymbol(an, af), GlobalSymbolSymbol(bn, bf, _)) =>
-          an == bn && af == bf
-        case (ctor: CtorSymbol, TypedAst.GlobalNameSymbol(name, _)) =>
-          ctor.name == name
-        case (TypedAst.GlobalNameSymbol(name, _), ctor: CtorSymbol) =>
-          name == ctor.name
-        case (ctor: CtorSymbol, TypedAst.GlobalSymbolSymbol(name, _, _)) =>
-          ctor.name == name
-        case (TypedAst.GlobalSymbolSymbol(name, _, _), ctor: CtorSymbol) =>
-          name == ctor.name
-        case _ =>
-          false
+  private def symbolsEqual(a: Symbol, b: Symbol): Boolean =
+    a == b
 
   /** Renders a deferred equality constraint as an Eq(a, b) datatype application. */
   private def prettyEqConstraint(left: TypedAst.Expr, right: TypedAst.Expr): String =
@@ -383,7 +358,7 @@ object TypeChecker:
       case (TypedAst.Expr.UnknownType(), _) => true
       case (_, TypedAst.Expr.UnknownType()) => true
       case (TypedAst.Expr.Var(s1), TypedAst.Expr.Var(s2)) if symbolsEqual(s1, s2) => true
-      case (TypedAst.Expr.Var(p1: TypedAst.LocalSymbol), TypedAst.Expr.Var(p2: TypedAst.LocalSymbol)) if p1.name == p2.name => true
+      case (TypedAst.Expr.Var(p1: LocalSymbol), TypedAst.Expr.Var(p2: LocalSymbol)) if p1.name == p2.name => true
       case (TypedAst.Expr.Lit(v1), TypedAst.Expr.Lit(v2)) => v1 == v2
       case (TypedAst.Expr.Sort(), TypedAst.Expr.Sort()) => true
       case (TypedAst.Expr.App(c1, a1, _), TypedAst.Expr.App(c2, a2, _)) => syntacticallyEquivalent(c1, c2) && syntacticallyEquivalent(a1, a2)
@@ -398,7 +373,7 @@ object TypeChecker:
       case _ => false
 
   /** Extracts constructor-like or datatype application heads from a term. */
-  private def extractHeadedExpr(expr: TypedAst.Expr)(using ctx: Context): Option[HeadedExpr] =
+  private def extractHeadedExpr(expr: TypedAst.Expr): Option[HeadedExpr] =
     val (head, args) = decomposeApplication(expr)
     head match
       case TypedAst.Expr.Var(symbol) =>
@@ -416,29 +391,11 @@ object TypeChecker:
     loop(expr, Nil)
 
   /** Classifies heads that represent constructors or type constructors. */
-  private def classifyHead(symbol: TypedAst.Symbol)(using ctx: Context): Option[DefEqHeadKind] =
+  private def classifyHead(symbol: Symbol): Option[DefEqHeadKind] =
     symbol match
-      case _: TypedAst.CtorSymbol => Some(DefEqHeadKind.Constructor)
-      case TypedAst.GlobalSymbolSymbol(_, _, g) =>
-        g.symbolSignature match
-          case SymbolSignature.Datatype(_) => Some(DefEqHeadKind.TypeConstructor)
-          case SymbolSignature.Def(tpe) if hasDatatypeResultType(tpe) => Some(DefEqHeadKind.Constructor)
-          case _ => None
-      case _: TypedAst.GlobalNameSymbol => Some(DefEqHeadKind.TypeConstructor)
+      case _: CtorSymbol => Some(DefEqHeadKind.Constructor)
+      case _: DatatypeSymbol => Some(DefEqHeadKind.TypeConstructor)
       case _ => None
-
-  /** Checks whether a function type eventually returns a datatype head. */
-  private def hasDatatypeResultType(expr: TypedAst.Expr): Boolean =
-    def codomain(tpe: TypedAst.Expr): TypedAst.Expr =
-      tpe match
-        case TypedAst.Expr.Pi(_, cod, _) => codomain(cod)
-        case other => other
-    decomposeApplication(codomain(expr))._1 match
-      case TypedAst.Expr.Var(TypedAst.GlobalSymbolSymbol(_, _, g)) =>
-        g.symbolSignature match
-          case SymbolSignature.Datatype(_) => true
-          case _ => false
-      case _ => false
 
   /** Tries to solve deferred equality constraints by normalizing both sides. */
   private def solveOpenConstraints(fuel: Int)(implicit ctx: Context, metas: MetaContext): List[(EqualityConstraint, TypedAst.Expr, TypedAst.Expr)] =
@@ -460,13 +417,23 @@ object TypeChecker:
 
   /** Attempts to solve one constraint by reducing it and assigning metas when possible. */
   private def trySolveConstraint(constraint: EqualityConstraint, fuel: Int)
-                                (implicit ctx: Context, metas: MetaContext): Option[(EqualityConstraint, TypedAst.Expr, TypedAst.Expr)] =
-    val reducedLeft = reduceExpr(constraint.left, fuel)
-    val reducedRight = reduceExpr(constraint.right, fuel)
-    if canSolveByUnification(reducedLeft, reducedRight) then
+                                (implicit ctx: Context, metas: MetaContext): Option[(EqualityConstraint, TypedAst.Expr, TypedAst.Expr)] = {
+    val left = instantiate(constraint.left)
+    val right = instantiate(constraint.right)
+    if canSolveByUnification(left, right) then
       None
-    else
-      Some((constraint, reducedLeft, reducedRight))
+    else {
+      // if it cannot be unified, try to reduce both sides
+      val reducedLeft = reduceExpr(left, fuel)
+      val reducedRight = reduceExpr(right, fuel)
+      if canSolveByUnification(reducedLeft, reducedRight) then
+       None
+      else {
+        // otherwise return unresolved constraint
+        Some((EqualityConstraint(left, right, constraint.source), reducedLeft, reducedRight))
+      }
+    }
+  }
 
   /** Solves equality by recursively assigning metas and matching term structure. */
   private def canSolveByUnification(left: TypedAst.Expr, right: TypedAst.Expr)
@@ -533,7 +500,7 @@ object TypeChecker:
       callee
     else
       callee match
-        case TypedAst.Expr.Var(symbol: TypedAst.TermSymbol) =>
+        case TypedAst.Expr.Var(symbol: TermSymbol) =>
           ctx.lookupValue(symbol).map(value => reduceExpr(value, fuel - 1)).getOrElse(callee)
         case TypedAst.Expr.Var(symbol) =>
           ctx.lookupDefinition(symbol) match
@@ -547,7 +514,7 @@ object TypeChecker:
           callee
 
   /** Checks whether unfolding would get stuck on a non-constructor match scrutinee. */
-  private def shouldDeferUnfold(definition: TypedAst.Expr, appliedArg: TypedAst.Expr)(using ctx: Context): Boolean =
+  private def shouldDeferUnfold(definition: TypedAst.Expr, appliedArg: TypedAst.Expr): Boolean =
     definition match
       case TypedAst.Expr.Lambda(param, body, _) =>
         val inspectsParam = hasMatchOnParam(body, param.id)
@@ -558,7 +525,7 @@ object TypeChecker:
   /** Checks whether a body contains a match that scrutinizes the given parameter id. */
   private def hasMatchOnParam(body: TypedAst.Expr, paramId: Int): Boolean =
     body match
-      case TypedAst.Expr.Match(TypedAst.Expr.Var(local: TypedAst.LocalSymbol), _, _) if local.id == paramId =>
+      case TypedAst.Expr.Match(TypedAst.Expr.Var(local: LocalSymbol), _, _) if local.id == paramId =>
         true
       case TypedAst.Expr.Lambda(_, nestedBody, _) =>
         hasMatchOnParam(nestedBody, paramId)
@@ -568,20 +535,13 @@ object TypeChecker:
         false
 
   /** Checks whether an expression has a constructor at its application head. */
-  private def hasConstructorHead(expr: TypedAst.Expr)(using ctx: Context): Boolean =
+  private def hasConstructorHead(expr: TypedAst.Expr): Boolean =
     decomposeApplication(expr)._1 match
       case TypedAst.Expr.Var(symbol) =>
-        classifyHead(symbol).contains(DefEqHeadKind.Constructor) || symbolLooksLikeCtor(symbol)
+        classifyHead(symbol).contains(DefEqHeadKind.Constructor)
       case _ =>
         false
 
-  /** Approximates constructor symbols for unresolved global-name variants. */
-  private def symbolLooksLikeCtor(symbol: TypedAst.Symbol): Boolean =
-    symbol match
-      case TypedAst.GlobalNameSymbol(name, _) =>
-        name.headOption.exists(_.isUpper)
-      case _ =>
-        false
 
   /** Reduces a match expression when the scrutinee head is a constructor. */
   private def reduceMatchExpr(scrutinee: TypedAst.Expr, cases: List[TypedAst.MatchCase], source: SourceRange, fuel: Int)
@@ -589,11 +549,12 @@ object TypeChecker:
     selectMatchCase(scrutinee, cases) match
       case Some(body) => reduceExpr(body, fuel)
       case None =>
-        val reducedCases = cases.map(c => TypedAst.MatchCase(c.pattern, reduceExpr(c.body, fuel))(c.source))
-        TypedAst.Expr.Match(scrutinee, TypedAst.Expr.UnknownType()(source), reducedCases)(source)
+        // TODO should we reduce also the cases?
+        // val reducedCases = cases.map(c => TypedAst.MatchCase(c.pattern, reduceExpr(c.body, fuel))(c.source))
+        TypedAst.Expr.Match(scrutinee, TypedAst.Expr.UnknownType()(source), cases)(source)
 
   /** Selects and specializes the first matching branch for a reduced scrutinee. */
-  private def selectMatchCase(scrutinee: TypedAst.Expr, cases: List[TypedAst.MatchCase])(using ctx: Context): Option[TypedAst.Expr] =
+  private def selectMatchCase(scrutinee: TypedAst.Expr, cases: List[TypedAst.MatchCase]): Option[TypedAst.Expr] =
     val (head, args) = decomposeApplication(scrutinee)
     head match
       case TypedAst.Expr.Var(symbol) if hasConstructorLikeHead(symbol, cases) =>
@@ -604,7 +565,7 @@ object TypeChecker:
         None
 
   /** Checks whether a scrutinee symbol can participate in constructor-pattern reduction. */
-  private def hasConstructorLikeHead(symbol: TypedAst.Symbol, cases: List[TypedAst.MatchCase])(using ctx: Context): Boolean =
+  private def hasConstructorLikeHead(symbol: Symbol, cases: List[TypedAst.MatchCase]): Boolean =
     classifyHead(symbol).contains(DefEqHeadKind.Constructor) ||
       cases.exists {
         case TypedAst.MatchCase(TypedAst.Pattern.Ctor(ctorSymbol, _), _) => symbolsEqual(symbol, ctorSymbol)
@@ -612,7 +573,7 @@ object TypeChecker:
       }
 
   /** Matches one typed pattern against a constructor-reduced scrutinee. */
-  private def matchPattern(pattern: TypedAst.Pattern, scrutinee: TypedAst.Expr, constructorArgs: List[TypedAst.Expr]): Option[Map[TypedAst.LocalSymbol, TypedAst.Expr]] =
+  private def matchPattern(pattern: TypedAst.Pattern, scrutinee: TypedAst.Expr, constructorArgs: List[TypedAst.Expr]): Option[Map[LocalSymbol, TypedAst.Expr]] =
     pattern match
       case TypedAst.Pattern.Wildcard() => Some(Map.empty)
       case TypedAst.Pattern.Binder(symbol) => Some(Map(symbol -> scrutinee))
@@ -624,7 +585,7 @@ object TypeChecker:
         val (head, scrutineeArgs) = decomposeApplication(scrutinee)
         head match
           case TypedAst.Expr.Var(headSymbol) if symbolsEqual(headSymbol, symbol) && args.length == scrutineeArgs.length =>
-            args.zip(scrutineeArgs).foldLeft(Option(Map.empty[TypedAst.LocalSymbol, TypedAst.Expr])) {
+            args.zip(scrutineeArgs).foldLeft(Option(Map.empty[LocalSymbol, TypedAst.Expr])) {
               case (Some(acc), (argPattern, argValue)) =>
                 matchPattern(argPattern, argValue, constructorArgs).map(acc ++ _)
               case (None, _) => None
@@ -632,7 +593,7 @@ object TypeChecker:
           case _ => None
 
   /** Applies pattern bindings by substituting each binder with the matched value. */
-  private def applyBindings(body: TypedAst.Expr, bindings: Map[TypedAst.LocalSymbol, TypedAst.Expr]): TypedAst.Expr =
+  private def applyBindings(body: TypedAst.Expr, bindings: Map[LocalSymbol, TypedAst.Expr]): TypedAst.Expr =
     bindings.foldLeft(body) { case (current, (symbol, value)) => substitute(current, symbol, value) }
 
   /** Reduces a term to weak head normal form. */
@@ -771,9 +732,9 @@ object TypeChecker:
       case _ => Set.empty
 
   /** Substitutes a local symbol with a value in a term. */
-  private[typing] def substitute(term: TypedAst.Expr, symbol: TypedAst.LocalSymbol, value: TypedAst.Expr): TypedAst.Expr =
+  private[typing] def substitute(term: TypedAst.Expr, symbol: LocalSymbol, value: TypedAst.Expr): TypedAst.Expr =
     term match
-      case TypedAst.Expr.Var(sym: TypedAst.LocalSymbol) if sym.id == symbol.id => value
+      case TypedAst.Expr.Var(sym: LocalSymbol) if sym.id == symbol.id => value
       case TypedAst.Expr.App(callee, arg, tpe) =>
         TypedAst.Expr.App(substitute(callee, symbol, value), substitute(arg, symbol, value), tpe)(term.source)
       case TypedAst.Expr.AppImplicit(callee, arg, tpe) =>
@@ -790,11 +751,11 @@ object TypeChecker:
       case TypedAst.Expr.Lit(_) | TypedAst.Expr.Var(_) | TypedAst.Expr.Sort() | TypedAst.Expr.Meta(_, _) | TypedAst.Expr.UnknownType() =>
         term
 
-  private def substituteInLocalSymbol(s: LocalSymbol, symbol: TypedAst.LocalSymbol, value: TypedAst.Expr): LocalSymbol =
+  private def substituteInLocalSymbol(s: LocalSymbol, symbol: LocalSymbol, value: TypedAst.Expr): LocalSymbol =
     LocalSymbol(s.name, substitute(s.tpe, symbol, value), s.id)
 
   /** Exposes substitution for tests. */
-  def substituteForTest(term: TypedAst.Expr, symbol: TypedAst.LocalSymbol, value: TypedAst.Expr): TypedAst.Expr =
+  def substituteForTest(term: TypedAst.Expr, symbol: LocalSymbol, value: TypedAst.Expr): TypedAst.Expr =
     substitute(term, symbol, value)
 
   /** Exposes bounded reduction for tests. */
@@ -830,12 +791,42 @@ object TypeChecker:
 //    given ids: IdSupply = IdSupply()
 //    check(expr, expectedType)
 
+  private[typing] def collectReferencedSymbols(expr: TypedAst.Expr): Set[Symbol] =
+    expr match {
+      case Expr.Lit(value) => Set()
+      case Expr.Var(symbol) => Set(symbol)
+      case Expr.AppImplicit(callee, arg, tpe) =>
+        collectReferencedSymbols(callee) ++ collectReferencedSymbols(arg)
+      case Expr.App(callee, arg, tpe) =>
+        collectReferencedSymbols(callee) ++ collectReferencedSymbols(arg)
+      case Expr.Pi(dom, cod, isImplicit) =>
+        collectReferencedSymbols(cod) -- Set(dom)
+      case Expr.Sort() => Set()
+      case Expr.Lambda(param, body, tpe) =>
+        collectReferencedSymbols(body) -- Set(param)
+      case Expr.LetIn(symbol, isConstant, declaredType, value, body) =>
+        collectReferencedSymbols(value) ++ (collectReferencedSymbols(body) -- Set(symbol))
+      case Expr.Meta(index, tpe) => Set()
+      case Expr.UnknownType() => Set()
+      case Expr.Match(scrutinee, motive, cases) =>
+        collectReferencedSymbols(scrutinee) ++ cases.flatMap(c => 
+          collectReferencedSymbols(c.body) ++ collectReferencedSymbolsInPattern(c.pattern))
+    }
+
+  private[typing] def collectReferencedSymbolsInPattern(expr: TypedAst.Pattern): Set[Symbol] =
+    expr match {
+      case Pattern.Wildcard() => Set()
+      case Pattern.Lit(value) => Set()
+      case Pattern.Binder(symbol) => Set()
+      case Pattern.Ctor(symbol, args) => Set(symbol) ++ args.flatMap(arg => collectReferencedSymbolsInPattern(arg))
+    }
+
   // Renders typed expressions in a compact user-facing format for diagnostics.
   private[typing] def prettyExpr(expr: TypedAst.Expr): String =
     expr match
       case TypedAst.Expr.UnknownType() => "_"
       case TypedAst.Expr.Sort() => "Type"
-      case TypedAst.Expr.Var(symbol) => symbol.name
+      case TypedAst.Expr.Var(symbol) => symbol.toString
       case TypedAst.Expr.Lit(ast.Literal.IntLit(_)) => "Int"
       case TypedAst.Expr.Lit(ast.Literal.BoolLit(_)) => "Bool"
       case TypedAst.Expr.Lit(ast.Literal.StringLit(_)) => "String"
@@ -844,10 +835,21 @@ object TypeChecker:
       case TypedAst.Expr.Pi(dom, cod, false) => s"${dom.name}: ${prettyExpr(dom.tpe)} -> ${prettyExpr(cod)}"
       case TypedAst.Expr.App(callee, arg, _) => s"${prettyExpr(callee)}(${prettyExpr(arg)})"
       case TypedAst.Expr.AppImplicit(callee, arg, _) => s"${prettyExpr(callee)}[${prettyExpr(arg)}]"
-      case TypedAst.Expr.Lambda(param, _, _) => s"(\\${param.name} => ...)"
-      case TypedAst.Expr.LetIn(symbol, _, _, _, _) => s"(let ${symbol.name} = ...)"
-      case TypedAst.Expr.Match(_, _, _) => "match"
+      case TypedAst.Expr.Lambda(param, t, body) => s"(lambda (${param.name}: $t)  => $body)"
+      case TypedAst.Expr.LetIn(symbol, _, t, v, body) => s"(let ${symbol.name}: $t = $v in $body)"
+      case TypedAst.Expr.Match(s, m, cs) => s"(match ${prettyExpr(s)} with motive ${prettyExpr(m)} ${cs.map(prettyCase).mkString(" ")})"
       case m@TypedAst.Expr.Meta(index, tpe) => s"?${m.name}_$index : ${prettyExpr(tpe)}"
+
+  private def prettyCase(m: MatchCase): String =
+    s"case ${prettyPattern(m.pattern)} => ${m.body}"
+
+  private def prettyPattern(pattern: Pattern): String =
+    pattern match {
+      case Pattern.Wildcard() => "_"
+      case Pattern.Lit(value) => value.toString
+      case Pattern.Binder(symbol) => symbol.name
+      case Pattern.Ctor(symbol, args) => s"${symbol.name}(${args.map(prettyPattern).mkString(", ")})"
+    }
 
   /** Determines the type of a literal value. */
   private[typing] def literalType(value: ast.Literal, ctx: TypeContext): TypedAst.Expr =
@@ -857,7 +859,7 @@ object TypeChecker:
       case ast.Literal.StringLit(_) => "String"
       case ast.Literal.UnitLit() => "Unit"
     ctx.globals.names.get(typeName)
-      .map(sym => TypedAst.Expr.Var(GlobalSymbolSymbol(sym.name, sym.file, sym))(value.source))
+      .map(sym => TypedAst.Expr.Var(sym)(value.source))
       .getOrElse(TypedAst.Expr.UnknownType()(value.source))
 
   /** Checks a pattern against the expected scrutinee type. */
@@ -886,7 +888,7 @@ object TypeChecker:
             PatternCheckResult(typed, Map(), refinement, ctorErrors)
           case None =>
             // Falls back to a local binder if no constructor with this name is visible.
-            val symbol = TypedAst.LocalSymbol(name, expectedType, ids.freshLocalId())
+            val symbol = LocalSymbol(name, expectedType, ids.freshLocalId())
             val typed = TypedAst.Pattern.Binder(symbol)(pattern.source)
             PatternCheckResult(typed, Map(name -> LocalBinding(symbol, None)), Map(), List())
       case ast.Pattern.Ctor(name, args) =>
@@ -912,7 +914,7 @@ object TypeChecker:
               errors ++ ctorErrors
             )
           case None =>
-            val symbol = TypedAst.CtorSymbol(name, TypedAst.Expr.UnknownType()(pattern.source))
+            val symbol = ErrorSymbols.constructor(name)
             PatternCheckResult(
               TypedAst.Pattern.Ctor(symbol, Nil)(pattern.source),
               Map(),
@@ -944,13 +946,14 @@ object TypeChecker:
       }
       ctx.copy(locals = rewrittenLocals)
 
-  private def globalSymbolToCtorSymbol(s: GlobalSymbol, source: SourceRange): (CtorSymbol, List[TypeError]) =
-    s.symbolSignature match
-      case minifumo.typing.SymbolSignature.Def(tpe) =>
-        (CtorSymbol(s.name, tpe), List())
-      case minifumo.typing.SymbolSignature.Datatype(implicitParams) =>
-        val e = TypeError(s"expected a constructor symbol, but found data type ${s.name}", source)
-        (CtorSymbol(s.name, Expr.UnknownType()(SourceRange.empty)), List(e))
+  private def globalSymbolToCtorSymbol(s: GlobalSymbol, source: SourceRange): (CtorSymbol, List[TypeError]) = {
+    // TODO remove errors return, it's always empty
+    s match
+      case c: CtorSymbol =>
+        (c, List())
+      case _ =>
+        (ErrorSymbols.constructor(s.name), List(TypeError(s"Symbol $s is not a constructor", source)))
+  }
 
   // Collects explicit field types and result type from a constructor signature.
   private def decomposeCtorType(ctorType: TypedAst.Expr): (List[TypedAst.Expr], TypedAst.Expr) =
@@ -967,7 +970,7 @@ object TypeChecker:
   // Collects parameter symbol ids that appear in a type expression.
   private def collectParamIds(expr: TypedAst.Expr): Set[Int] =
     expr match
-      case TypedAst.Expr.Var(param: TypedAst.LocalSymbol) => Set(param.id)
+      case TypedAst.Expr.Var(param: LocalSymbol) => Set(param.id)
       case TypedAst.Expr.App(callee, arg, tpe) => collectParamIds(callee) ++ collectParamIds(arg) ++ collectParamIds(tpe)
       case TypedAst.Expr.AppImplicit(callee, arg, tpe) => collectParamIds(callee) ++ collectParamIds(arg) ++ collectParamIds(tpe)
       case TypedAst.Expr.Pi(dom, cod, _) => Set(dom.id) ++ collectParamIds(dom.tpe) ++ collectParamIds(cod)
@@ -984,7 +987,7 @@ object TypeChecker:
       acc: Map[Int, TypedAst.Expr]
     ): Map[Int, TypedAst.Expr] =
     (template, expected) match
-      case (TypedAst.Expr.Var(param: TypedAst.LocalSymbol), other) if paramIds.contains(param.id) =>
+      case (TypedAst.Expr.Var(param: LocalSymbol), other) if paramIds.contains(param.id) =>
         acc.get(param.id) match
           case Some(existing) if existing == other => acc
           case Some(_) => acc
@@ -995,13 +998,19 @@ object TypeChecker:
       case (TypedAst.Expr.App(tc, ta, _), TypedAst.Expr.App(ec, ea, _)) =>
         val cAcc = collectTypeParamSubst(tc, ec, paramIds, acc)
         collectTypeParamSubst(ta, ea, paramIds, cAcc)
+      case (TypedAst.Expr.App(tc, ta, _), TypedAst.Expr.AppImplicit(ec, ea, _)) =>
+        val cAcc = collectTypeParamSubst(tc, ec, paramIds, acc)
+        collectTypeParamSubst(ta, ea, paramIds, cAcc)
+      case (TypedAst.Expr.AppImplicit(tc, ta, _), TypedAst.Expr.App(ec, ea, _)) =>
+        val cAcc = collectTypeParamSubst(tc, ec, paramIds, acc)
+        collectTypeParamSubst(ta, ea, paramIds, cAcc)
       case _ =>
         acc
 
   // Replaces constructor type parameters with inferred concrete types from the scrutinee.
   private[typing] def substituteTypeParams(expr: TypedAst.Expr, subst: Map[Int, TypedAst.Expr]): TypedAst.Expr =
     expr match
-      case TypedAst.Expr.Var(param: TypedAst.LocalSymbol) =>
+      case TypedAst.Expr.Var(param: LocalSymbol) =>
         subst.getOrElse(param.id, expr)
       case TypedAst.Expr.App(callee, arg, tpe) =>
         TypedAst.Expr.App(substituteTypeParams(callee, subst), substituteTypeParams(arg, subst), substituteTypeParams(tpe, subst))(expr.source)
@@ -1028,88 +1037,15 @@ object TypeChecker:
     val subst = collectTypeParamSubst(resultType, expectedType, paramIds, Map())
     fieldTypes.map(fieldType => substituteTypeParams(fieldType, subst))
 
-
-  /** Caches unfoldable function bodies and loads external typed files on demand. */
-  private[typing] final case class DefinitionCache(currentFile: Path, symbolCache: NameCache & SymbolCache):
-    private val localDefinitions: mutable.Map[String, TypedAst.Expr] = mutable.Map.empty
-    private val externalDefinitions: mutable.Map[String, Map[String, TypedAst.Expr]] = mutable.Map.empty
-    private val loadingFiles: mutable.Set[String] = mutable.Set.empty
-
-    /** Records a newly checked top-level item for local unfolding. */
-    def recordTopLevel(item: TypedAst.TopLevel): Unit =
-      item match
-        case funDecl: TypedAst.TopLevel.FunDecl =>
-          localDefinitions.update(funDecl.sig.symbol.name, buildFunctionLambda(funDecl))
-        case _ => ()
-
-    /** Returns an unfoldable expression for a symbol if available. */
-    def definitionFor(symbol: TypedAst.Symbol): Option[TypedAst.Expr] =
-      symbol match
-        case TypedAst.GlobalSymbolSymbol(name, file, _) =>
-          definitionForName(name, file)
-        case TypedAst.GlobalNameSymbol(name, file) =>
-          definitionForName(name, file)
-        case _ =>
-          None
-
-    /** Resolves a definition by global name and owning file. */
-    private def definitionForName(name: String, file: Path): Option[TypedAst.Expr] =
-      if sameFile(file, currentFile) then
-        localDefinitions.get(name)
-      else
-        val fileKey = normalizeFileKey(file)
-        val fileDefs = externalDefinitions.getOrElseUpdate(fileKey, loadFileDefinitions(fileKey))
-        fileDefs.get(name)
-
-    /** Checks whether two file paths refer to the same source file. */
-    private def sameFile(left: Path, right: Path): Boolean =
-      normalizeFileKey(left) == normalizeFileKey(right)
-
-
-    /** Normalizes a symbol file path into a cache key understood by symbol caches. */
-    private def normalizeFileKey(file: Path): String =
-      val raw = file.toString
-      if raw.endsWith("standard.minifumo") then
-        "standard.minifumo"
-      else
-        symbolCache match
-          case projectCache: ProjectSymbolCache if file.isAbsolute => projectCache.fromPath(file)
-          case _ => raw
-
-    /** Loads and caches typed function bodies for one file with cycle detection. */
-    private def loadFileDefinitions(fileKey: String): Map[String, TypedAst.Expr] =
-      if loadingFiles.contains(fileKey) then
-        Map.empty
-      else
-        symbolCache match
-          case projectCache: ProjectSymbolCache =>
-            loadingFiles.add(fileKey)
-            try
-              val (typedProgram, _) = projectCache.typedAst(fileKey)
-              typedProgram.items.collect {
-                case funDecl: TypedAst.TopLevel.FunDecl =>
-                  funDecl.sig.symbol.name -> buildFunctionLambda(funDecl)
-              }.toMap
-            finally
-              loadingFiles.remove(fileKey): Unit
-          case _ =>
-            Map.empty
-
-
-  private object DefinitionCache:
-    private object EmptySymbolCache extends NameCache with SymbolCache:
-      override def globalNames(path: String): Map[String, GlobalName] = Map.empty
-      override def globalSymbols(path: String): Map[String, GlobalSymbol] = Map.empty
-
-    /** Provides a no-op definition cache for contexts without unfolding support. */
-    val empty: DefinitionCache = DefinitionCache(Paths.get(""), EmptySymbolCache)
-
-  /** Converts a typed function declaration into a lambda term for unfolding. */
-  private def buildFunctionLambda(funDecl: TypedAst.TopLevel.FunDecl): TypedAst.Expr =
-    val params = funDecl.sig.typeParams ++ funDecl.sig.params
-    params.foldRight(funDecl.body) { (param, body) =>
-      TypedAst.Expr.Lambda(param, body, TypedAst.Expr.UnknownType()(body.source))(body.source)
+  /** Rebuilds a function definition as nested lambdas from its checked signature binders. */
+  private def funDeclToLambdaFromSignature(funDecl: TypedAst.TopLevel.FunDecl): TypedAst.Expr =
+    val allParams = funDecl.sig.typeParams.map((_, true)) ++ funDecl.sig.params.map((_, false))
+    val (lambdaExpr, _) = allParams.reverse.foldLeft((funDecl.body, funDecl.sig.returnType)) {
+      case ((currentBody, currentType), (param, isImplicit)) =>
+        val lambdaType = TypedAst.Expr.Pi(param, currentType, isImplicit)(funDecl.source)
+        (TypedAst.Expr.Lambda(param, currentBody, lambdaType)(funDecl.source), lambdaType)
     }
+    lambdaExpr
 
   def formatError(path: String, sourceLines: Vector[String], error: TypeError): String =
     val lineNr = error.source.start.line
@@ -1134,4 +1070,4 @@ object TypeChecker:
     case Constructor, TypeConstructor
 
   /** Captures an application head and all explicit/implicit arguments. */
-  private final case class HeadedExpr(head: TypedAst.Symbol, kind: DefEqHeadKind, args: List[TypedAst.Expr])
+  private final case class HeadedExpr(head: Symbol, kind: DefEqHeadKind, args: List[TypedAst.Expr])

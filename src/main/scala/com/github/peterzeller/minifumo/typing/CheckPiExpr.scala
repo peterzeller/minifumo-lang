@@ -9,7 +9,7 @@ object CheckPiExpr:
   def infer(expr: ast.Expr.Pi)(using ids: IdSupply, ctx: TypeContext): (TypedAst.Expr, TypedAst.Expr, List[TypeError]) =
     val localSymbols = ctx.locals.view.mapValues(_.symbol).toMap
     val dom = signatureExpr(expr.param.tpe, ctx.globals, localSymbols)
-    val sym = TypedAst.LocalSymbol(expr.param.name, dom, ids.freshLocalId())
+    val sym = LocalSymbol(expr.param.name, dom, ids.freshLocalId())
     val cod = signatureExpr(expr.body, ctx.globals, localSymbols + (expr.param.name -> sym))
     val piExpr = TypedAst.Expr.Pi(sym, cod, isImplicit = false)(expr.source)
     (piExpr, TypedAst.Expr.Sort()(expr.source), List())
