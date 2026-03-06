@@ -1,0 +1,20 @@
+// Computes the sum 0 + 1 + ... + n by structural recursion.
+fun natSumTo(n: Nat): Nat
+    match n
+        case Zero
+            Zero
+        case Suc(k)
+            natAdd(Suc(k), natSumTo(k))
+
+// Computes the triangular-number closed form n * (n + 1) / 2.
+fun natTriangleClosedForm(n: Nat): Nat
+    natDiv(natMul(n, Suc(n)), Suc(Suc(Zero)))
+
+// Proves by induction on n that sum_{i=0}^n i equals n * (n + 1) / 2.
+export fun nat_sum_induction(n: Nat): Eq[Nat, natSumTo(n), natTriangleClosedForm(n)]
+    match n
+        case Zero
+            refl
+        case Suc(k)
+            let ih: Eq[Nat, natSumTo(k), natTriangleClosedForm(k)] = nat_sum_induction(k)
+            congrArg[Nat, Nat, natSumTo(k), natTriangleClosedForm(k)]((x) => natAdd(Suc(k), x), ih)
