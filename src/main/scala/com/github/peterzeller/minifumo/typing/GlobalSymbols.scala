@@ -3,20 +3,16 @@ package com.github.peterzeller.minifumo.typing
 import com.github.peterzeller.minifumo.ast
 import com.github.peterzeller.minifumo.ast.TopLevel.DataDecl
 import com.github.peterzeller.minifumo.ast.{SourceRange, TopLevel}
-import com.github.peterzeller.minifumo.parser.{SyntaxError, parseFile}
+import com.github.peterzeller.minifumo.parser.SyntaxError
 import com.github.peterzeller.minifumo.typing.TypeChecker.{GlobalEnv, MetaStore, TypeContext, TypeError, checkProgram}
 import com.github.peterzeller.minifumo.typing.TypedAst.Expr.Pi
 import com.github.peterzeller.minifumo.typing.TypedAst.Expr
 
-import java.nio.file.{Path, Paths}
 import scala.collection.mutable.ListBuffer
 import com.github.peterzeller.minifumo.builtins.Standard
 import com.github.peterzeller.minifumo.common.MinifumoErrorWithPath
 import com.github.peterzeller.minifumo.parser.parseInput
 import com.github.peterzeller.minifumo.typing.TypedAst.TopLevel.FunDecl
-
-import scala.annotation.tailrec
-
 
 case class GlobalSymbols(
   symbols: Map[String, GlobalSymbol] = Map()
@@ -411,20 +407,10 @@ trait SymbolCache:
   def globalSymbols(path: String): Map[String, GlobalSymbol]
   def globalEnv(path: String): GlobalEnv
 
-// find the folder that contains minifumo.yml
-@tailrec
-def findProjectRoot(path: Path): Path =
-  if path.toFile.isDirectory then
-    if path.resolve("minifumo.yml").toFile.exists() then
-      return path
-  val parent = path.getParent
-  if parent == path then
-    throw new RuntimeException("could not minifumo project root")
-  findProjectRoot(path.getParent)
 
 
 
-class ProjectSymbolCache(projectRoot: Path, val ids: TypeChecker.IdSupply) extends NameCache with SymbolCache:
+class ProjectSymbolCache(val io: GlobalSymbolsIo, val ids: TypeChecker.IdSupply) extends NameCache with SymbolCache:
   private var inputs: Map[String, String] = Map(
     "standard.minifumo" -> Standard.loadStandardSource()
   )
@@ -437,17 +423,6 @@ class ProjectSymbolCache(projectRoot: Path, val ids: TypeChecker.IdSupply) exten
   def addInput(name: String, input: String): Unit =
     inputs += name -> input
 
-  def toPath(importPath: String): Path =
-    if importPath.endsWith("standard.minifumo") then
-      return Paths.get("standard.minifumo")
-    projectRoot.resolve(importPath)
-
-  def fromPath(p: Path): String =
-    projectRoot.relativize(p).normalize().toString
-
-  def makeRelative(path: Path): String =
-    fromPath(path)
-
 
   def getAst(path: String): (ast.ProgramFile, List[SyntaxError]) =
     astCache.get(path) match
@@ -458,7 +433,7 @@ class ProjectSymbolCache(projectRoot: Path, val ids: TypeChecker.IdSupply) exten
             case Some(input) =>
               parseInput(input)
             case None =>
-              parseFile(toPath(path))
+              parseInput(io.readInput(path))
         val r = (ast, syntaxErrors)
         astCache += path -> r
         r
@@ -515,6 +490,6 @@ class ProjectSymbolCache(projectRoot: Path, val ids: TypeChecker.IdSupply) exten
         r
 
   def allErrors: List[MinifumoErrorWithPath] =
-    val syntaxErrors = astCache.flatMap(p =>  p._2._2.map(MinifumoErrorWithPath(toPath(p._1), _)))
-    val typeErrors = astCache.keysIterator.flatMap(p => typedAst(p)._2.map(MinifumoErrorWithPath(toPath(p), _)))
+    val syntaxErrors = astCache.flatMap(p =>  p._2._2.map(MinifumoErrorWithPath(p._1, _)))
+    val typeErrors = astCache.keysIterator.flatMap(p => typedAst(p)._2.map(MinifumoErrorWithPath(p, _)))
     (syntaxErrors ++ typeErrors).toList

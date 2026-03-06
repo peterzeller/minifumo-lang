@@ -2,9 +2,8 @@
 import com.github.peterzeller.minifumo.parser.parseInput
 import com.github.peterzeller.minifumo.interpreter.Interpreter
 import com.github.peterzeller.minifumo.builtins.Standard
-import com.github.peterzeller.minifumo.typing.{ProjectSymbolCache, TypeChecker}
+import com.github.peterzeller.minifumo.typing.{GlobalSymbolsIo, ProjectSymbolCache, TypeChecker}
 
-import java.nio.file.Path
 // https://scalameta.org/munit/docs/getting-started.html
 class MySuite extends munit.FunSuite {
   // Builds a Nat value for testing.
@@ -30,7 +29,7 @@ class MySuite extends munit.FunSuite {
     """.stripMargin
     val (ast, _) = parseInput(input)
     val dummyPath: String = "dummy.minifumo"
-    val dummyCache = new ProjectSymbolCache(Path.of("."), TypeChecker.IdSupply())
+    val dummyCache = new ProjectSymbolCache(GlobalSymbolsIo.create("."), TypeChecker.IdSupply())
     dummyCache.addInput(dummyPath, input)
     val (typed, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
     assertEquals(errors, List())
@@ -48,7 +47,7 @@ class MySuite extends munit.FunSuite {
     """.stripMargin
     val (ast, _) = parseInput(input)
     val dummyPath: String = "dummy.minifumo"
-    val dummyCache = new ProjectSymbolCache(Path.of("."), TypeChecker.IdSupply())
+    val dummyCache = new ProjectSymbolCache(GlobalSymbolsIo.create("."), TypeChecker.IdSupply())
     dummyCache.addInput(dummyPath, input)
         val (typed, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
     assertEquals(errors, List())
@@ -70,7 +69,7 @@ class MySuite extends munit.FunSuite {
     """.stripMargin
     val (ast, _) = parseInput(input)
     val dummyPath: String = "dummy.minifumo"
-    val dummyCache = new ProjectSymbolCache(Path.of("."), TypeChecker.IdSupply())
+    val dummyCache = new ProjectSymbolCache(GlobalSymbolsIo.create("."), TypeChecker.IdSupply())
     dummyCache.addInput(dummyPath, input)
     val (typed, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
     assertEquals(errors, List())
@@ -87,7 +86,7 @@ class MySuite extends munit.FunSuite {
     """.stripMargin
     val (ast, _) = parseInput(input)
     val dummyPath: String = "dummy.minifumo"
-    val dummyCache = new ProjectSymbolCache(Path.of("."), TypeChecker.IdSupply())
+    val dummyCache = new ProjectSymbolCache(GlobalSymbolsIo.create("."), TypeChecker.IdSupply())
     dummyCache.addInput(dummyPath, input)
     val (_, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
     assert(errors.exists(_.message.contains("Constructor MakeBad must return Bad")))
@@ -115,7 +114,7 @@ class MySuite extends munit.FunSuite {
     """.stripMargin
     val (ast, _) = parseInput(input)
     val dummyPath: String = "dummy.minifumo"
-    val dummyCache = new ProjectSymbolCache(Path.of("."), TypeChecker.IdSupply())
+    val dummyCache = new ProjectSymbolCache(GlobalSymbolsIo.create("."), TypeChecker.IdSupply())
     dummyCache.addInput(dummyPath, input)
     val (_, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
     assertEquals(errors, List())
@@ -139,7 +138,7 @@ class MySuite extends munit.FunSuite {
         |            value
     """.stripMargin
     val (ast, _) = parseInput(input)
-    val dummyCache = new ProjectSymbolCache(Path.of("."), TypeChecker.IdSupply())
+    val dummyCache = new ProjectSymbolCache(GlobalSymbolsIo.create("."), TypeChecker.IdSupply())
     val dummyPath = "test.minifumo"
     dummyCache.addInput(dummyPath, input)
     val (_, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
@@ -149,7 +148,7 @@ class MySuite extends munit.FunSuite {
   test("standard library compiles without type errors") {
     // Type-checks the bundled standard library in isolation.
     val standardPath = "standard.minifumo"
-    val standardCache = new ProjectSymbolCache(Path.of("."), TypeChecker.IdSupply())
+    val standardCache = new ProjectSymbolCache(GlobalSymbolsIo.create("."), TypeChecker.IdSupply())
     val (_, errors) = TypeChecker.checkProgram(
       standardPath,
       Standard.standardProgram,
@@ -174,7 +173,7 @@ class MySuite extends munit.FunSuite {
           |""".stripMargin
       val (ast, _) = parseInput(input)
       val dummyPath: String = "dummy.minifumo"
-      val dummyCache = new ProjectSymbolCache(Path.of("."), TypeChecker.IdSupply())
+      val dummyCache = new ProjectSymbolCache(GlobalSymbolsIo.create("."), TypeChecker.IdSupply())
       dummyCache.addInput(dummyPath, input)
       val (_, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
       assertEquals(errors, List())

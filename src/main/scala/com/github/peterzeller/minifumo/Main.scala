@@ -6,7 +6,7 @@ import com.github.peterzeller.minifumo.builtins.Standard
 import com.github.peterzeller.minifumo.common.{MinifumoError, MinifumoErrorWithPath}
 import com.github.peterzeller.minifumo.interpreter.Interpreter
 import com.github.peterzeller.minifumo.parser.SyntaxError
-import com.github.peterzeller.minifumo.typing.{ProjectSymbolCache, TypeChecker, findProjectRoot}
+import com.github.peterzeller.minifumo.typing.{GlobalSymbolsIo, ProjectSymbolCache, TypeChecker}
 
 import java.nio.file.{Files, Path, Paths}
 import scala.jdk.CollectionConverters.*
@@ -71,13 +71,14 @@ object Main:
   // Runs a program file and returns either error messages or the evaluated value.
   def runFile(path: Path): Either[List[MinifumoErrorWithPath], Interpreter.Value] =
     val idSupply = TypeChecker.IdSupply()
-    val globalNames = new ProjectSymbolCache(findProjectRoot(path), idSupply)
-    val (_, syntaxErrors) = globalNames.getAst(globalNames.fromPath(path))
+    val io = GlobalSymbolsIo(GlobalSymbolsIo.findProjectRoot(path))
+    val globalNames = new ProjectSymbolCache(io, idSupply)
+    val (_, syntaxErrors) = globalNames.getAst(globalNames.io.fromPath(path))
     if syntaxErrors.nonEmpty then
-      Left(syntaxErrors.map(MinifumoErrorWithPath(path, _)))
+      Left(syntaxErrors.map(MinifumoErrorWithPath(path.toString, _)))
     else
       // val (typedProgram, typeErrors) = TypeChecker.checkProgram(path, program, globalNames, true)
-      val (typedProgram, _) = globalNames.typedAst(globalNames.fromPath(path))
+      val (typedProgram, _) = globalNames.typedAst(globalNames.io.fromPath(path))
       val allErrors = globalNames.allErrors
 
       if allErrors.nonEmpty then
@@ -89,9 +90,10 @@ object Main:
   def checkDirectory(path: Path): List[MinifumoErrorWithPath] =
     val idSupply = TypeChecker.IdSupply()
     if !Files.exists(path) then
-      List(MinifumoErrorWithPath(path, SyntaxError(SourcePos(0,0), "Directory not found")))
+      List(MinifumoErrorWithPath(path.toString, SyntaxError(SourcePos(0,0), "Directory not found")))
     else
-      val globalNames = new ProjectSymbolCache(findProjectRoot(path), idSupply)
+      val io = GlobalSymbolsIo(GlobalSymbolsIo.findProjectRoot(path))
+      val globalNames = new ProjectSymbolCache(io, idSupply)
       Try {
         Using.resource(Files.list(path)) { stream =>
           stream.iterator().asScala.toList
@@ -100,39 +102,40 @@ object Main:
             .sortBy(_.toString)
             .flatMap(checkFile(_, globalNames))
         }
-      }.getOrElse(List(MinifumoErrorWithPath(path, SyntaxError(SourcePos(0,0), "Could not read path"))))
+      }.getOrElse(List(MinifumoErrorWithPath(path.toString, SyntaxError(SourcePos(0,0), "Could not read path"))))
 
   // Checks a single file for syntax and type errors, including imports.
   def checkFile(path: Path): List[MinifumoErrorWithPath] =
     val idSupply = TypeChecker.IdSupply()
-    val globalNames = new ProjectSymbolCache(findProjectRoot(path), idSupply)
+    val io = GlobalSymbolsIo(GlobalSymbolsIo.findProjectRoot(path))
+    val globalNames = new ProjectSymbolCache(io, idSupply)
     checkFile(path, globalNames)
 
   // Checks a file using shared caches to avoid reparsing across a project.
   private def checkFile(path: Path, info: ProjectSymbolCache): List[MinifumoErrorWithPath] =
     val (program, syntaxErrors) = loadProgram(path, info)
     if syntaxErrors.nonEmpty then
-      syntaxErrors.map(MinifumoErrorWithPath(path, _))
+      syntaxErrors.map(MinifumoErrorWithPath(path.toString, _))
     else
-      val (_, errors) = TypeChecker.checkProgram(info.fromPath(path), program, info, true, info.ids)
+      val (_, errors) = TypeChecker.checkProgram(info.io.fromPath(path), program, info, true, info.ids)
       if errors.isEmpty then
         Nil
       else
-        errors.map(MinifumoErrorWithPath(path, _))
+        errors.map(MinifumoErrorWithPath(path.toString, _))
 
   // Represents an empty program when parsing fails.
   ProgramFile(List(), List())(SourceRange(SourcePos(0, 0), SourcePos(0, 0)))
 
   // Loads and caches syntax parsing results for a file path.
   private def loadProgram(path: Path, info: ProjectSymbolCache): (ProgramFile, List[SyntaxError]) =
-    info.getAst(info.makeRelative(path))
+    info.getAst(info.io.makeRelative(path))
 
   // Renders a source range for error reporting.
   
 
 
   // Formats a list of errors for reporting.
-  def renderTypeErrors(path: Path, errors: List[MinifumoError]): List[String] =
+  def renderTypeErrors(path: String, errors: List[MinifumoError]): List[String] =
     renderTypeErrors(errors.map(MinifumoErrorWithPath(path, _)))
 
   def renderTypeErrors(errors: List[MinifumoErrorWithPath]): List[String] =
@@ -151,7 +154,7 @@ object Main:
     errors.map { errorWithPath =>
       val error = errorWithPath.err
       val lineIndex = error.source.start.line - 1
-      val lines = getLines(errorWithPath.p)
+      val lines = getLines(Path.of(errorWithPath.p))
       if lineIndex >= 0 && lineIndex < lines.length then
         val sourceLine = lines(lineIndex)
         val startColumn = math.max(1, error.source.start.column)

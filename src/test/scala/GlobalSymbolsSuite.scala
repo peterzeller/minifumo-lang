@@ -4,7 +4,6 @@ import com.github.peterzeller.minifumo.ast
 import com.github.peterzeller.minifumo.typing.TypeChecker.checkProgram
 import com.github.peterzeller.minifumo.parser.parseInput
 
-import java.nio.file.Paths
 
 class GlobalSymbolsSuite extends munit.FunSuite:
   // Parses a program from a string for global symbol tests.
@@ -98,7 +97,7 @@ class GlobalSymbolsSuite extends munit.FunSuite:
     assertEquals(parseErrors, List())
 
     val dummyPath = "eq_test.minifumo"
-    val cache = ProjectSymbolCache(Paths.get("."), ids)
+    val cache = ProjectSymbolCache(GlobalSymbolsIo.create("."), ids)
     cache.addInput(dummyPath, input)
     val (_, errors) = checkProgram(dummyPath, program, cache, importStandard = true, ids)
     assertEquals(errors, List())

@@ -2,7 +2,7 @@ package com.github.peterzeller.minifumo.backends.lean
 
 import com.github.peterzeller.minifumo.ast.SourceRange
 import com.github.peterzeller.minifumo.common.{MinifumoError, MinifumoErrorWithPath}
-import com.github.peterzeller.minifumo.typing.{ProjectSymbolCache, TypeChecker, findProjectRoot}
+import com.github.peterzeller.minifumo.typing.{GlobalSymbolsIo, ProjectSymbolCache, TypeChecker}
 
 import java.nio.file.{Files, Path}
 import scala.collection.mutable
@@ -22,11 +22,12 @@ object LeanBackend:
 
   // Compiles one Minifumo entry file or directory to Lean and runs Lean checks.
   def compileAndCheck(entry: Path, outputDir: Path): Either[List[MinifumoErrorWithPath], CompilationResult] =
-    val root = findProjectRoot(entry)
+    val root = GlobalSymbolsIo.findProjectRoot(entry)
+    val io = GlobalSymbolsIo(root)
     val idSupply = TypeChecker.IdSupply()
-    val cache = new ProjectSymbolCache(root, idSupply)
+    val cache = new ProjectSymbolCache(io, idSupply)
     val entryFile = if Files.isDirectory(entry) then root.resolve("main.minifumo") else entry
-    val entryImportPath = cache.fromPath(entryFile)
+    val entryImportPath = entryFile.toString
     val projectFiles = collectReachableFiles(entryImportPath, cache)
 
     projectFiles.foreach(cache.typedAst)
