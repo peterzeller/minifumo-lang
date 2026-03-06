@@ -1,0 +1,23 @@
+// Builds a Nat value that represents two.
+fun twoNat(): Nat
+    Suc(Suc(Zero))
+
+// Builds an Int value from a Nat value.
+fun twoInt(): Int
+    MakeInt(True, twoNat())
+
+// Flips a Bool value.
+fun flip(value: Bool): Bool
+    if value
+        False
+    else
+        True
+
+// Builds a List[Int] with two elements.
+fun sampleList(): List[Int]
+    Cons(twoInt(), Cons(MakeInt(True, Suc(Suc(Suc(Zero)))), Nil))
+
+// Runs the data-type example and prints values.
+fun main(): Unit
+    println(twoInt(), showInt())
+    println(flip(True), showBool())

@@ -1,0 +1,21 @@
+// Defines the right-associated normal form used in an induction proof.
+fun natAddAssocRhs(x: Nat, y: Nat, z: Nat): Nat
+    match x
+        case Zero
+            natAdd(y, z)
+        case Suc(n)
+            Suc(natAddAssocRhs(n, y, z))
+
+// Proves by induction that natAdd(x, natAdd(y, z)) equals natAddAssocRhs(x, y, z).
+fun addAssocByInduction(x: Nat, y: Nat, z: Nat): Eq[Nat, natAdd(x, natAdd(y, z)), natAddAssocRhs(x, y, z)]
+    match x
+        case Zero
+            refl
+        case Suc(n)
+            let ih: Eq[Nat, natAdd(n, natAdd(y, z)), natAddAssocRhs(n, y, z)] = addAssocByInduction(n, y, z)
+            congrArg[Nat, Nat, natAdd(n, natAdd(y, z)), natAddAssocRhs(n, y, z)]((value) => Suc(value), ih)
+
+// Runs the induction proof example and prints a status line.
+fun main(): Unit
+    let _proof = addAssocByInduction(Suc(Suc(Zero)), Suc(Zero), Suc(Suc(Suc(Zero))))
+    printlnString("induction proof constructed")

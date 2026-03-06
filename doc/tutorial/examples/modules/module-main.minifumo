@@ -1,0 +1,5 @@
+import addOne from "doc/tutorial/examples/modules/math-utils.minifumo"
+
+// Imports and uses an exported function from another module.
+fun main(): Unit
+    println(addOne(41), showInt())
