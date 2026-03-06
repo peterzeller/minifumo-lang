@@ -1,6 +1,5 @@
-import com.github.peterzeller.minifumo.builtins.Standard
+
 import com.github.peterzeller.minifumo.interpreter.Interpreter
-import com.github.peterzeller.minifumo.parser.parseInput
 import com.github.peterzeller.minifumo.typing.{GlobalName, GlobalSymbol, NameCache, SymbolCache, TypeChecker}
 
 
@@ -14,9 +13,7 @@ class WebRuntimeStandardLibrarySuite extends munit.FunSuite:
       Interpreter.Value.AdtVal("Suc", List(natValue(value - 1)))
 
   // Builds an Int runtime value for interpreter assertions.
-  private def intValue(value: Int): Interpreter.Value =
-    val sign = if value >= 0 then Interpreter.Value.AdtVal("True", Nil) else Interpreter.Value.AdtVal("False", Nil)
-    Interpreter.Value.AdtVal("MakeInt", List(sign, natValue(math.abs(value))))
+  
 
   // Creates an empty symbol cache that mirrors the browser compiler setup.
   private object EmptyCache extends NameCache with SymbolCache:
