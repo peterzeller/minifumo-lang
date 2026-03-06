@@ -19,30 +19,37 @@ class MySuite extends munit.FunSuite {
     val sign = if value >= 0 then Interpreter.Value.AdtVal("True", Nil) else Interpreter.Value.AdtVal("False", Nil)
     Interpreter.Value.AdtVal("MakeInt", List(sign, natValue(math.abs(value))))
 
-  private val dummyPath: String = "dummy.minifumo"
-  private val dummyCache = new ProjectSymbolCache(Path.of("."), TypeChecker.IdSupply())
-
   test("interpreter evals main with a simple function call") {
-    val (ast, _) = parseInput("""
-      |fun id(x: Int): Int
-      |    x
-      |
-      |fun main(): Int
-      |    id(3)
-    """.stripMargin)
-        val (typed, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
+    val input =
+      """
+        |fun id(x: Int): Int
+        |    x
+        |
+        |fun main(): Int
+        |    id(3)
+    """.stripMargin
+    val (ast, _) = parseInput(input)
+    val dummyPath: String = "dummy.minifumo"
+    val dummyCache = new ProjectSymbolCache(Path.of("."), TypeChecker.IdSupply())
+    dummyCache.addInput(dummyPath, input)
+    val (typed, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
     assertEquals(errors, List())
     val result = Interpreter.evalProg(typed, dummyCache, "main")
     assertEquals(result, intValue(3))
   }
 
   test("type checker can type ints") {
-    val (ast, _) = parseInput("""
-      |fun main(): Int
-      |    let x = 1
-      |    let y = 2
-      |    y
-    """.stripMargin)
+    val input =
+      """
+        |fun main(): Int
+        |    let x = 1
+        |    let y = 2
+        |    y
+    """.stripMargin
+    val (ast, _) = parseInput(input)
+    val dummyPath: String = "dummy.minifumo"
+    val dummyCache = new ProjectSymbolCache(Path.of("."), TypeChecker.IdSupply())
+    dummyCache.addInput(dummyPath, input)
         val (typed, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
     assertEquals(errors, List())
     val result = Interpreter.evalProg(typed, dummyCache, "main")
@@ -50,16 +57,21 @@ class MySuite extends munit.FunSuite {
   }
 
   test("type checker can handle pattern matching on local data") {
-    val (ast, _) = parseInput("""
-      |data Maybe = MyNone | MySome(value: Int)
-      |
-      |fun main(): Int
-      |    match MySome(42)
-      |        case MyNone
-      |            0
-      |        case MySome(value)
-      |            value
-    """.stripMargin)
+    val input =
+      """
+        |data Maybe = MyNone | MySome(value: Int)
+        |
+        |fun main(): Int
+        |    match MySome(42)
+        |        case MyNone
+        |            0
+        |        case MySome(value)
+        |            value
+    """.stripMargin
+    val (ast, _) = parseInput(input)
+    val dummyPath: String = "dummy.minifumo"
+    val dummyCache = new ProjectSymbolCache(Path.of("."), TypeChecker.IdSupply())
+    dummyCache.addInput(dummyPath, input)
     val (typed, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
     assertEquals(errors, List())
     val result = Interpreter.evalProg(typed, dummyCache, "main")
@@ -68,16 +80,21 @@ class MySuite extends munit.FunSuite {
 
 
   test("constructor result type must match enclosing datatype") {
-    val (ast, _) = parseInput("""
-      |data Bad =
-      |   MakeBad: Int
-    """.stripMargin)
+    val input =
+      """
+        |data Bad =
+        |   MakeBad: Int
+    """.stripMargin
+    val (ast, _) = parseInput(input)
+    val dummyPath: String = "dummy.minifumo"
+    val dummyCache = new ProjectSymbolCache(Path.of("."), TypeChecker.IdSupply())
+    dummyCache.addInput(dummyPath, input)
     val (_, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
     assert(errors.exists(_.message.contains("Constructor MakeBad must return Bad")))
   }
 
   test("dependent match refines expected branch types for headOrUnit") {
-    val (ast, _) = parseInput("""
+    val input = """
       |fun HeadOrUnit[T: Type](n: Nat): Type
       |    match n
       |        case Zero
@@ -95,27 +112,36 @@ class MySuite extends munit.FunSuite {
       |            ()
       |        case SizedCons(head, _)
       |            head
-    """.stripMargin)
+    """.stripMargin
+    val (ast, _) = parseInput(input)
+    val dummyPath: String = "dummy.minifumo"
+    val dummyCache = new ProjectSymbolCache(Path.of("."), TypeChecker.IdSupply())
+    dummyCache.addInput(dummyPath, input)
     val (_, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
     assertEquals(errors, List())
   }
 
   test("dependent recursion with dependent match typechecks") {
-    val (ast, _) = parseInput("""
-      |fun RecResult[T: Type](n: Nat): Type
-      |    match n
-      |        case Zero
-      |            Unit
-      |        case Suc(_)
-      |            T
-      |
-      |fun recTest[T: Type](n: Nat, value: T): RecResult[T](n)
-      |    match n
-      |        case Zero
-      |            ()
-      |        case Suc(k)
-      |            value
-    """.stripMargin)
+    val input =
+      """
+        |fun RecResult[T: Type](n: Nat): Type
+        |    match n
+        |        case Zero
+        |            Unit
+        |        case Suc(_)
+        |            T
+        |
+        |fun recTest[T: Type](n: Nat, value: T): RecResult[T](n)
+        |    match n
+        |        case Zero
+        |            ()
+        |        case Suc(k)
+        |            value
+    """.stripMargin
+    val (ast, _) = parseInput(input)
+    val dummyCache = new ProjectSymbolCache(Path.of("."), TypeChecker.IdSupply())
+    val dummyPath = "test.minifumo"
+    dummyCache.addInput(dummyPath, input)
     val (_, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
     assertEquals(errors, List())
   }
@@ -135,18 +161,23 @@ class MySuite extends munit.FunSuite {
   }
 
     test("meta logical operators are distinct from boolean operators") {
-    val (ast, _) = parseInput("""
-      |fun boolAnd(a: Bool, b: Bool): Bool
-      |    a and b
-      |
-      |fun metaAnd(p: Type, q: Type): And
-      |    p AND q
-      |
-      |fun metaOr(p: Type, q: Type): Or
-      |    p OR q
-      |""".stripMargin)
-    val (_, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
-    assertEquals(errors, List())
+      val input =
+        """
+          |fun boolAnd(a: Bool, b: Bool): Bool
+          |    a and b
+          |
+          |fun metaAnd(p: Type, q: Type): And
+          |    p AND q
+          |
+          |fun metaOr(p: Type, q: Type): Or
+          |    p OR q
+          |""".stripMargin
+      val (ast, _) = parseInput(input)
+      val dummyPath: String = "dummy.minifumo"
+      val dummyCache = new ProjectSymbolCache(Path.of("."), TypeChecker.IdSupply())
+      dummyCache.addInput(dummyPath, input)
+      val (_, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
+      assertEquals(errors, List())
   }
 
 

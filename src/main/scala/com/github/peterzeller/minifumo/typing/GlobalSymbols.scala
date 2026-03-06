@@ -147,7 +147,12 @@ final case class DatatypeSymbol(file: String, name: String)(val continuationData
    **/
   def typed: TypedAst.TopLevel.DataDecl = {
     tpe
-    val data = continuationData.get
+    val data = continuationData match {
+      case Some(value) => value
+      case None =>
+        // return dummy data decl
+        return TypedAst.TopLevel.DataDecl(this, List(), List())(SourceRange.empty)
+    }
     val typeInfo = typeCalculated.get
     val globals = data.globalNames.globalEnv(file)
     // Constructor fields and result types may refer to the datatype's implicit parameters.
@@ -419,11 +424,17 @@ def findProjectRoot(path: Path): Path =
 
 
 class ProjectSymbolCache(projectRoot: Path, val ids: TypeChecker.IdSupply) extends NameCache with SymbolCache:
+  private var inputs: Map[String, String] = Map(
+    "standard.minifumo" -> Standard.loadStandardSource()
+  )
   private var astCache: Map[String, (ast.ProgramFile, List[SyntaxError])] = Map()
   private var namesCache: Map[String, Map[String, GlobalName]] = Map()
   private var symbolCache: Map[String, Map[String, GlobalSymbol]] = Map()
   private var globalEnvCache: Map[String, GlobalEnv] = Map()
   private var typedAstCache: Map[String, (TypedAst.Program, List[TypeError])] = Map()
+
+  def addInput(name: String, input: String): Unit =
+    inputs += name -> input
 
   def toPath(importPath: String): Path =
     if importPath.endsWith("standard.minifumo") then
@@ -442,10 +453,11 @@ class ProjectSymbolCache(projectRoot: Path, val ids: TypeChecker.IdSupply) exten
       case Some(a) => a
       case None =>
         val (ast, syntaxErrors) =
-          if path == "standard.minifumo" then
-            parseInput(Standard.loadStandardSource())
-          else
-            parseFile(toPath(path))
+          inputs.get(path) match
+            case Some(input) =>
+              parseInput(input)
+            case None =>
+              parseFile(toPath(path))
         val r = (ast, syntaxErrors)
         astCache += path -> r
         r

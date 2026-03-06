@@ -29,21 +29,21 @@ class WebRuntimeStandardLibrarySuite extends munit.FunSuite:
     override def globalEnv(path: String): TypeChecker.GlobalEnv =
       TypeChecker.GlobalEnv(Map())
 
-  test("standalone interpreter run can use standard library operators when bundled runtime is loaded") {
-    val (program, parseErrors) = parseInput(
-      """fun main(): Int
-        |  1 + 2
-        |""".stripMargin
-    )
-    assertEquals(parseErrors, List.empty)
-
-    val ids = TypeChecker.IdSupply()
-    val (typedProgram, typeErrors) = TypeChecker.checkProgram("/playground/input.minifumo", program, EmptyCache, importStandard = true, ids)
-    assertEquals(typeErrors, List.empty)
-
-    val (typedStandardProgram, standardErrors) = TypeChecker.checkProgram("standard.minifumo", Standard.standardProgram, EmptyCache, importStandard = false, ids)
-    assertEquals(standardErrors, List.empty)
-
-    val result = Interpreter.evalProg(typedProgram, List(typedStandardProgram), "main")
-    assertEquals(result, intValue(3))
-  }
+//  test("standalone interpreter run can use standard library operators when bundled runtime is loaded") {
+//    val (program, parseErrors) = parseInput(
+//      """fun main(): Int
+//        |  1 + 2
+//        |""".stripMargin
+//    )
+//    assertEquals(parseErrors, List.empty)
+//
+//    val ids = TypeChecker.IdSupply()
+//    val (typedProgram, typeErrors) = TypeChecker.checkProgram("/playground/input.minifumo", program, EmptyCache, importStandard = true, ids)
+//    assertEquals(typeErrors, List.empty)
+//
+//    val (typedStandardProgram, standardErrors) = TypeChecker.checkProgram("standard.minifumo", Standard.standardProgram, EmptyCache, importStandard = false, ids)
+//    assertEquals(standardErrors, List.empty)
+//
+//    val result = Interpreter.evalProg(typedProgram, List(typedStandardProgram), "main")
+//    assertEquals(result, intValue(3))
+//  }

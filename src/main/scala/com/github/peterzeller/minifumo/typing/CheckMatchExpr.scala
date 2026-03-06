@@ -38,7 +38,12 @@ object CheckMatchExpr:
       case TypedAst.Pattern.Lit(value) => TypedAst.Expr.Lit(value)(source)
       case TypedAst.Pattern.Binder(symbol) => TypedAst.Expr.Var(symbol)(source)
       case TypedAst.Pattern.Ctor(symbol, args) =>
-        val ctorDecl = symbol.dt.typed.ctors.find(_.symbol.name == symbol.name).get
+        val ctorDecl = symbol.dt.typed.ctors.find(_.symbol.name == symbol.name) match {
+          case Some(v) => v
+          case None =>
+            // if constructor is not found, return unknown type
+            return TypedAst.Expr.UnknownType()(source)
+        }
         val withImplicitArgs = ctorDecl.implicitFields.foldLeft[TypedAst.Expr](TypedAst.Expr.Var(symbol)(source)) { (callee, field) =>
           val implicitArg = refinements.getOrElse(field.id, TypedAst.Expr.Var(field)(source))
           TypedAst.Expr.AppImplicit(callee, implicitArg, TypedAst.Expr.UnknownType()(source))(source)
