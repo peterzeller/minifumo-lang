@@ -98,7 +98,9 @@ final case class BuiltinValueSymbol(name: String, tpe: Expr) extends TermSymbol 
 final case class ErrorSymbol(name: String, tpe: Expr) extends Symbol
 
 object DatatypeSymbol:
-    case class TypeCalculated(params: List[LocalSymbol], tpe: Expr)
+    case class TypeCalculated(implicitParams: List[LocalSymbol], explicitParams: List[LocalSymbol], tpe: Expr):
+      /** Returns all datatype parameters preserving declaration order. */
+      def params: List[LocalSymbol] = implicitParams ++ explicitParams
 
 
 final case class DatatypeSymbol(file: String, name: String)(val continuationData: Option[DatatypeSymbolContinuationData]) extends GlobalSymbol:
@@ -134,8 +136,16 @@ final case class DatatypeSymbol(file: String, name: String)(val continuationData
         ctx = ctx.withLocal(pSym)
         pSym
 
-    val t = buildPiType(implicitParams, List(), Expr.Sort()(SourceRange.empty))
-    typeCalculated = Some(DatatypeSymbol.TypeCalculated(implicitParams, t))
+    val explicitParams: List[LocalSymbol] =
+      for p <- data.declAst.params yield
+        val (t, errors) = TypeChecker.checkAndElaborate(p.tpe, TypedAst.Expr.Sort()(SourceRange.empty))(using ctx, metas, data.idSupply)
+        allErrors ++= errors
+        val pSym = LocalSymbol(p.name, t, data.idSupply.freshLocalId())
+        ctx = ctx.withLocal(pSym)
+        pSym
+
+    val t = buildPiType(implicitParams, explicitParams, Expr.Sort()(SourceRange.empty))
+    typeCalculated = Some(DatatypeSymbol.TypeCalculated(implicitParams, explicitParams, t))
     t
 
 
@@ -187,10 +197,12 @@ final case class DatatypeSymbol(file: String, name: String)(val continuationData
               r
           }
         val referencedLocals: Set[Symbol] = TypeChecker.collectReferencedSymbols(returnType) ++ fields.flatMap(f => TypeChecker.collectReferencedSymbols(f.tpe))
-        val implicitFields = typeInfo.params.filter(referencedLocals.contains)
-        
-        val tpe = buildPiType(implicitFields, fields, returnType)
-        TypedAst.CtorDecl(ctorSym, implicitFields, fields, returnType, tpe)(ctor.source)
+        val implicitFields = typeInfo.implicitParams.filter(referencedLocals.contains)
+        val explicitParamFields = typeInfo.explicitParams.filter(referencedLocals.contains)
+        val allExplicitFields = explicitParamFields ++ fields
+
+        val tpe = buildPiType(implicitFields, allExplicitFields, returnType)
+        TypedAst.CtorDecl(ctorSym, implicitFields, allExplicitFields, returnType, tpe)(ctor.source)
 
 
     TypedAst.TopLevel.DataDecl(
@@ -314,7 +326,7 @@ object GlobalSymbols:
 
   private def topLevelToGlobalNames(file: String, onlyExported: Boolean)(t: ast.TopLevel): Iterable[(String, GlobalName)] =
     t match
-      case ast.TopLevel.DataDecl(name, _, ctors, exported) if exported || !onlyExported =>
+      case ast.TopLevel.DataDecl(name, _, _, ctors, exported) if exported || !onlyExported =>
         val dataTypeName = List(name -> GlobalName(file, name))
         val constructorNames = ctors.map(ctor => ctor.name -> GlobalName(file, ctor.name))
         dataTypeName ++ constructorNames
@@ -357,9 +369,10 @@ object GlobalSymbols:
 
   private def topLevelToGlobalSymbols(file: String, onlyExported: Boolean, globalNames: NameCache & SymbolCache, idSupply: TypeChecker.IdSupply)(t: ast.TopLevel): Iterable[(String, SourceRange, GlobalSymbol)] =
     t match
-      case d@ast.TopLevel.DataDecl(name, implicitParams, ctors, exported) if exported || !onlyExported =>
+      case d@ast.TopLevel.DataDecl(name, implicitParams, params, ctors, exported) if exported || !onlyExported =>
         ListBuffer[TypeError]()
         val symbols = ListBuffer[(String, SourceRange, GlobalSymbol)]()
+        val _ = params
         // add the type symbol
         val dtSymbol = DatatypeSymbol(file, name)(Some(DatatypeSymbolContinuationData(d, globalNames, idSupply)))
         symbols.addOne((name, t.source, dtSymbol))

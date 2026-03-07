@@ -55,6 +55,18 @@ class GlobalSymbolsSuite extends munit.FunSuite:
     assertEquals(imports.keySet, Set("foo"))
   }
 
+
+  test("parser supports datatypes with implicit and explicit parameters") {
+    val (program, parseErrors) = parseInput("""
+      |data Eq[T: Type](a: T, b: T) =
+      |   refl: Eq[T](a, a)
+    """.stripMargin)
+    assertEquals(parseErrors, List())
+    val dataDecl = program.items.collectFirst { case d: ast.TopLevel.DataDecl => d }.getOrElse(fail("Expected a data declaration"))
+    assertEquals(dataDecl.implicitParams.map(_.name), List("T"))
+    assertEquals(dataDecl.params.map(_.name), List("a", "b"))
+  }
+
   test("parser supports explicit constructor result types") {
     val (program, parseErrors) = parseInput("""
       |data List[T: Type] =
