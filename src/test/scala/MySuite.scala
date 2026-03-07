@@ -145,6 +145,21 @@ class MySuite extends munit.FunSuite {
     assertEquals(errors, List())
   }
 
+
+
+  test("proposition contexts accept boolean expressions") {
+    val input =
+      """
+        |fun intLeReflexiveChain(x: Int): x <= x ==> x <= x
+        |    (h) => h
+        |""".stripMargin
+    val (ast, _) = parseInput(input)
+    val dummyPath = "bool-prop.minifumo"
+    val dummyCache = new ProjectSymbolCache(GlobalSymbolsIo.create("."), TypeChecker.IdSupply())
+    dummyCache.addInput(dummyPath, input)
+    val (_, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
+    assertEquals(errors, List())
+  }
   test("standard library compiles without type errors") {
     // Type-checks the bundled standard library in isolation.
     val standardPath = "standard.minifumo"
