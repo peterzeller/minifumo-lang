@@ -197,12 +197,10 @@ final case class DatatypeSymbol(file: String, name: String)(val continuationData
               r
           }
         val referencedLocals: Set[Symbol] = TypeChecker.collectReferencedSymbols(returnType) ++ fields.flatMap(f => TypeChecker.collectReferencedSymbols(f.tpe))
-        val implicitFields = typeInfo.implicitParams.filter(referencedLocals.contains)
-        val explicitParamFields = typeInfo.explicitParams.filter(referencedLocals.contains)
-        val allExplicitFields = explicitParamFields ++ fields
+        val implicitFields = (typeInfo.implicitParams ++ typeInfo.explicitParams).filter(referencedLocals.contains)
 
-        val tpe = buildPiType(implicitFields, allExplicitFields, returnType)
-        TypedAst.CtorDecl(ctorSym, implicitFields, allExplicitFields, returnType, tpe)(ctor.source)
+        val tpe = buildPiType(implicitFields, fields, returnType)
+        TypedAst.CtorDecl(ctorSym, implicitFields, fields, returnType, tpe)(ctor.source)
 
 
     TypedAst.TopLevel.DataDecl(

@@ -7,11 +7,11 @@ fun natAddAssocRhs(x: Nat, y: Nat, z: Nat): Nat
             Suc(natAddAssocRhs(n, y, z))
 
 // Proves by induction that natAdd(x, natAdd(y, z)) equals the recursive associativity normal form.
-export fun add_assoc(x: Nat, y: Nat, z: Nat): Eq[Nat, natAdd(x, natAdd(y, z)), natAddAssocRhs(x, y, z)]
+export fun add_assoc(x: Nat, y: Nat, z: Nat): Eq[Nat](natAdd(x, natAdd(y, z)), natAddAssocRhs(x, y, z))
     match x
         case Zero
             refl
         case Suc(n)
-            let ih: Eq[Nat, natAdd(n, natAdd(y, z)), natAddAssocRhs(n, y, z)] = add_assoc(n, y, z)
+            let ih: Eq[Nat](natAdd(n, natAdd(y, z)), natAddAssocRhs(n, y, z)) = add_assoc(n, y, z)
             congrArg[Nat, Nat, natAdd(n, natAdd(y, z)), natAddAssocRhs(n, y, z)]((k) => Suc(k), ih)
 

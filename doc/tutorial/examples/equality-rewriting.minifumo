@@ -1,19 +1,19 @@
 // Shifts both sides of a Nat equality by one successor using congrArg.
-fun succCongruence[x: Nat, y: Nat](proof: Eq[Nat, x, y]): Eq[Nat, Suc(x), Suc(y)]
+fun succCongruence[x: Nat, y: Nat](proof: Eq[Nat](x, y)): Eq[Nat](Suc(x), Suc(y))
     congrArg[Nat, Nat, x, y]((value) => Suc(value), proof)
 
 // Rewrites a dependent motive using subst.
-fun transportSelf[x: Nat, y: Nat](proof: Eq[Nat, x, y]): Eq[Nat, x, y]
-    subst[Nat, x, y, (n) => Eq[Nat, x, n]](proof, refl[Nat][x])
+fun transportSelf[x: Nat, y: Nat](proof: Eq[Nat](x, y)): Eq[Nat](x, y)
+    subst[Nat, x, y, (n) => Eq[Nat](x, n)](proof, refl[Nat][x])
 
 // Uses congr to combine function and argument rewriting.
-fun succCongruenceViaCongr[x: Nat, y: Nat](proof: Eq[Nat, x, y]): Eq[Nat, Suc(x), Suc(y)]
-    let sameFunction: Eq[Nat -> Nat, (value: Nat) => Suc(value), (value: Nat) => Suc(value)] =
+fun succCongruenceViaCongr[x: Nat, y: Nat](proof: Eq[Nat](x, y)): Eq[Nat](Suc(x), Suc(y))
+    let sameFunction: Eq[Nat -> Nat]((value: Nat) => Suc(value), (value: Nat) => Suc(value)) =
         refl[Nat -> Nat][(value: Nat) => Suc(value)]
     congr[Nat, Nat, (value: Nat) => Suc(value), (value: Nat) => Suc(value), x, y](sameFunction, proof)
 
 // Runs the equality rewriting example and prints a status line.
 fun main(): Unit
-    let eq11: Eq[Nat, Suc(Zero), Suc(Zero)] = refl[Nat][Suc(Zero)]
+    let eq11: Eq[Nat](Suc(Zero), Suc(Zero)) = refl[Nat][Suc(Zero)]
     let _proof = succCongruence[Suc(Zero), Suc(Zero)](eq11)
     printlnString("equality rewriting checks passed")

@@ -102,7 +102,7 @@ class GlobalSymbolsSuite extends munit.FunSuite:
       |export fun eqExampleF(x: Int, y: Int, z: Int): Int
       |  opPlus(opPlus(x, y), z)
       |
-      |export fun example(x: Int, eq: Eq[Int, x, 4]): Eq[Int, eqExampleF(x, 3, 4), eqExampleF(4, 3, 4)]
+      |export fun example(x: Int, eq: Eq[Int](x, 4)): Eq[Int](eqExampleF(x, 3, 4), eqExampleF(4, 3, 4))
       |  congrArg[Int, Int, x, 4]((n) => eqExampleF(n, 3, 4), eq)
     """.stripMargin
     val (program, parseErrors) = parseInput(input)
