@@ -39,13 +39,7 @@ object TypeChecker:
           case decl: ast.TopLevel.DataDecl =>
             val ctorReturnTypeErrors = validateCtorReturnTypes(decl, globals, idSupply, itemMetaStore)
             errors.addAll(ctorReturnTypeErrors)
-            val sym = globals.names.get(decl.name) match {
-              case Some(d: DatatypeSymbol) =>
-                d
-              case _ =>
-                // TODO can this happen?
-                ???
-            }
+            val sym = requireDatatypeSymbol(globals, decl.name, decl.source, errors)
             val res = sym.typed
             errors.addAll(sym.allErrors)
             res
@@ -148,7 +142,7 @@ object TypeChecker:
         case symbol: TermSymbol =>
           symbol match {
             case LocalSymbol(name, tpe, id) =>
-              // TODO should we be able to unfold definition of local variable?
+              // Local bindings currently represent assumptions and lambda/let binders, not globally unfoldable definitions.
               None
             case BuiltinValueSymbol(name, tpe) =>
               None
@@ -208,13 +202,11 @@ object TypeChecker:
   private[typing] def buildDataDecl(
       decl: ast.TopLevel.DataDecl,
       globals: GlobalEnv): TypedAst.TopLevel.DataDecl = {
-    globals.names.get(decl.name) match {
+    globals.names.get(decl.name) match
       case Some(d: DatatypeSymbol) =>
         d.typed
       case _ =>
-        // TODO can this happen?
-        ???
-    }
+        TypedAst.TopLevel.DataDecl(ErrorSymbols.datatype(decl.name), List(), List())(decl.source)
   }
 
   
@@ -281,7 +273,7 @@ object TypeChecker:
 
   /** Translates a signature expression to a typed expression. */
   private[typing] def signatureExpr(expr: ast.Expr, globals: GlobalEnv, locals: Map[String, TermSymbol])(implicit ids: TypeChecker.IdSupply): TypedAst.Expr = {
-    // TODO can't we just use the normal expression typing method?
+    // Signature lowering stays syntax-directed so symbols can be linked before full checking/elaboration.
     expr match
       case ast.Expr.Lit(value) => TypedAst.Expr.Lit(value)(expr.source)
       case ast.Expr.Var(name) =>
@@ -549,9 +541,8 @@ object TypeChecker:
     selectMatchCase(scrutinee, cases) match
       case Some(body) => reduceExpr(body, fuel)
       case None =>
-        // TODO should we reduce also the cases?
-        // val reducedCases = cases.map(c => TypedAst.MatchCase(c.pattern, reduceExpr(c.body, fuel))(c.source))
-        TypedAst.Expr.Match(scrutinee, TypedAst.Expr.UnknownType()(source), cases)(source)
+        val reducedCases = cases.map(c => TypedAst.MatchCase(c.pattern, reduceExpr(c.body, fuel))(c.source))
+        TypedAst.Expr.Match(scrutinee, TypedAst.Expr.UnknownType()(source), reducedCases)(source)
 
   /** Selects and specializes the first matching branch for a reduced scrutinee. */
   private def selectMatchCase(scrutinee: TypedAst.Expr, cases: List[TypedAst.MatchCase]): Option[TypedAst.Expr] =
@@ -946,14 +937,30 @@ object TypeChecker:
       }
       ctx.copy(locals = rewrittenLocals)
 
+  /** Converts a visible global symbol into a constructor symbol and reports misuse as a type error. */
   private def globalSymbolToCtorSymbol(s: GlobalSymbol, source: SourceRange): (CtorSymbol, List[TypeError]) = {
-    // TODO remove errors return, it's always empty
     s match
       case c: CtorSymbol =>
         (c, List())
       case _ =>
         (ErrorSymbols.constructor(s.name), List(TypeError(s"Symbol $s is not a constructor", source)))
   }
+
+  /** Fetches a datatype symbol and records an error when the global binding has an unexpected shape. */
+  private def requireDatatypeSymbol(
+      globals: GlobalEnv,
+      name: String,
+      source: SourceRange,
+      errors: ListBuffer[TypeError]
+    ): DatatypeSymbol =
+    globals.names.get(name) match
+      case Some(d: DatatypeSymbol) => d
+      case Some(other) =>
+        errors.addOne(TypeError(s"Element ${other.name} is not a datatype", source))
+        ErrorSymbols.datatype(name)
+      case None =>
+        errors.addOne(TypeError(s"Unknown datatype ${name}", source))
+        ErrorSymbols.datatype(name)
 
   // Collects explicit field types and result type from a constructor signature.
   private def decomposeCtorType(ctorType: TypedAst.Expr): (List[TypedAst.Expr], TypedAst.Expr) =

@@ -19,7 +19,7 @@ case class GlobalSymbols(
 )
 
 
-// TODO do we need a global name or can we directly use a symbol?
+// Stores an import target as (file, exported symbol name) before symbol resolution.
 case class GlobalName(file: String, name: String)
 
 enum GlobalSymbolState:
@@ -93,7 +93,7 @@ sealed trait GlobalSymbol extends Symbol:
 
 final case class LocalSymbol(name: String, tpe: Expr, id: Int) extends TermSymbol
 
-final case class BuiltinValueSymbol(name: String, tpe: Expr) extends TermSymbol // TODO do we need this?
+final case class BuiltinValueSymbol(name: String, tpe: Expr) extends TermSymbol
 
 final case class ErrorSymbol(name: String, tpe: Expr) extends Symbol
 
@@ -234,7 +234,7 @@ final case class FunctionSymbol(
    val continuationData: Option[FunctionSymbolContinuationData],
 ) extends GlobalSymbol:
 
-  // TODO add caching for results
+  // Uses `state` to cache signature and body computation across accesses.
   var allErrors: Vector[TypeError] = Vector()
   var state: FunctionSymbolCheckState = FunctionSymbolCheckState.Init
 
@@ -419,6 +419,7 @@ class ProjectSymbolCache(val io: GlobalSymbolsIo, val ids: TypeChecker.IdSupply)
   private var symbolCache: Map[String, Map[String, GlobalSymbol]] = Map()
   private var globalEnvCache: Map[String, GlobalEnv] = Map()
   private var typedAstCache: Map[String, (TypedAst.Program, List[TypeError])] = Map()
+  private var globalEnvInProgress: Set[String] = Set()
 
   def addInput(name: String, input: String): Unit =
     inputs += name -> input
@@ -455,27 +456,33 @@ class ProjectSymbolCache(val io: GlobalSymbolsIo, val ids: TypeChecker.IdSupply)
         symbolCache += path -> r
         r
 
+  /** Builds the global environment for one file while guarding against import cycles. */
   def globalEnv(path: String): GlobalEnv =
     globalEnvCache.get(path) match
       case Some(m) => m
+      case None if globalEnvInProgress.contains(path) =>
+        GlobalEnv(Map())
       case None =>
-        val ast = getAst(path)._1
-        var (r, _) = GlobalSymbols.buildGlobalSymbols(path, ast, this, false, ids)
-        // add imports to global env
-        val (imports, _) = GlobalSymbols.resolveImports(ast, this)
-        // resolve imported names to symbols
-        // TODO do we need to make sure there are no cycles here?
-        for (name, gName) <- imports do {
-          val symbols = globalSymbols(gName.file)
-          val symbol = symbols.get(gName.name).get
-          r += name -> symbol
-        }
-        // and we also need to include the standard library
-        if path != "standard.minifumo" then
-          r ++= globalEnv("standard.minifumo").names
-        val e = GlobalEnv(r)
-        globalEnvCache += path -> e
-        e
+        globalEnvInProgress += path
+        try
+          val ast = getAst(path)._1
+          var (r, _) = GlobalSymbols.buildGlobalSymbols(path, ast, this, false, ids)
+          // add imports to global env
+          val (imports, _) = GlobalSymbols.resolveImports(ast, this)
+          // resolve imported names to symbols
+          for (name, gName) <- imports do {
+            val symbols = globalSymbols(gName.file)
+            val symbol = symbols.get(gName.name).get
+            r += name -> symbol
+          }
+          // and we also need to include the standard library
+          if path != "standard.minifumo" then
+            r ++= globalEnv("standard.minifumo").names
+          val e = GlobalEnv(r)
+          globalEnvCache += path -> e
+          e
+        finally
+          globalEnvInProgress -= path
 
 
   def allPaths: Set[String] = astCache.keySet + "standard.minifumo"
