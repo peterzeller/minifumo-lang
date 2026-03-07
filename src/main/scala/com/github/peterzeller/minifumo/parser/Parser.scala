@@ -427,13 +427,13 @@ private class HandwrittenParser(tokens: Vector[Token]):
       case TokenKind.GE => opCall("opLe", List(right, left), src)
       case _ => opCall(binaryOpName(op.text), List(left, right), src)
 
-  /** Desugars a meta AND expression into the And constructor. */
+  /** Desugars a meta AND expression into the proposition type `And[left, right]`. */
   private def makeMetaAnd(left: Expr, right: Expr, source: SourceRange): Expr =
-    makeCall(Expr.Var("MakeAnd")(source), List(left, right), source)
+    curriedCall(Expr.Var("And")(source), List(left, right), Nil)
 
-  /** Desugars a meta OR expression into the Or constructor pair value. */
+  /** Desugars a meta OR expression into the proposition type `Or[left, right]`. */
   private def makeMetaOr(left: Expr, right: Expr, source: SourceRange): Expr =
-    makeCall(Expr.Var("MakeOr")(source), List(left, right), source)
+    curriedCall(Expr.Var("Or")(source), List(left, right), Nil)
 
   /** Desugars a meta NOT expression into implication to FalseProp. */
   private def makeMetaNot(expr: Expr, source: SourceRange): Expr =

@@ -180,10 +180,10 @@ class MySuite extends munit.FunSuite {
           |fun boolAnd(a: Bool, b: Bool): Bool
           |    a and b
           |
-          |fun metaAnd(p: Type, q: Type): And
+          |fun metaAnd(p: Type, q: Type): Type
           |    p AND q
           |
-          |fun metaOr(p: Type, q: Type): Or
+          |fun metaOr(p: Type, q: Type): Type
           |    p OR q
           |""".stripMargin
       val (ast, _) = parseInput(input)
