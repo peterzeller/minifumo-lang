@@ -43,7 +43,7 @@ export data TrueProp = TrueIntro
 
 export data FalseProp =
 
-export data And[left: Type, right: Type] = MakeAnd
+export data And[left: Type, right: Type] = MakeAnd(left: left, right: right)
 
 export data Or[left: Type, right: Type] = OrLeft(left: left) | OrRight(right: right)
 
