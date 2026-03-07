@@ -24,12 +24,12 @@ fun natGaussClosedFormRec(n: Nat): Nat
             natAdd(Suc(k), natGaussClosedFormRec(k))
 
 // Proves by induction that natSumTo(n) equals n * (n + 1) / 2.
-export fun nat_sum_equals_gauss(n: Nat): Eq[Nat, natSumTo(n), natGaussClosedFormRec(n)]
+export fun nat_sum_equals_gauss(n: Nat): Eq[Nat](natSumTo(n), natGaussClosedFormRec(n))
     match n
         case Zero
             refl
         case Suc(k)
-            let ih: Eq[Nat, natSumTo(k), natGaussClosedFormRec(k)] = nat_sum_equals_gauss(k)
+            let ih: Eq[Nat](natSumTo(k), natGaussClosedFormRec(k)) = nat_sum_equals_gauss(k)
             congrArg[Nat, Nat, natSumTo(k), natGaussClosedFormRec(k)](
                 (acc) => natAdd(Suc(k), acc),
                 ih

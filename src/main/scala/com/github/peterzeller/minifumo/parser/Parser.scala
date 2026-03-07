@@ -71,13 +71,14 @@ private class HandwrittenParser(tokens: Vector[Token]):
   /** Parses a data declaration and constructors. */
   private def parseDataDecl(exported: Boolean, start: Token): TopLevel =
     val name = consume(TokenKind.ID, "Expected type name.")
-    val tParams = parseImplicitParamsFun()
+    val implicitParams = parseImplicitParamsFun()
+    val params = parseExplicitParamsFun()
     consume(TokenKind.EQ, "Expected '=' in data declaration.")
     val ctors = scala.collection.mutable.ListBuffer.empty[CtorDecl]
     if check(TokenKind.ID) then
       ctors += parseCtorDecl()
       while matchKind(TokenKind.BAR) do ctors += parseCtorDecl()
-    TopLevel.DataDecl(name.text, tParams, ctors.toList, exported)(merge(start, previous))
+    TopLevel.DataDecl(name.text, implicitParams, params, ctors.toList, exported)(merge(start, previous))
 
   /** Parses one constructor declaration with optional fields. */
   private def parseCtorDecl(): CtorDecl =
@@ -131,6 +132,14 @@ private class HandwrittenParser(tokens: Vector[Token]):
     if matchKind(TokenKind.BRACKET_LEFT) then
       val params = commaSeparated(TokenKind.BRACKET_RIGHT)(parseFunParam)
       consume(TokenKind.BRACKET_RIGHT, "Expected ']' after implicit parameters.")
+      params
+    else Nil
+
+  /** Parses parenthesized explicit parameters. */
+  private def parseExplicitParamsFun(): List[FunParam] =
+    if matchKind(TokenKind.PAREN_LEFT) then
+      val params = commaSeparated(TokenKind.PAREN_RIGHT)(parseFunParam)
+      consume(TokenKind.PAREN_RIGHT, "Expected ')' after explicit parameters.")
       params
     else Nil
 

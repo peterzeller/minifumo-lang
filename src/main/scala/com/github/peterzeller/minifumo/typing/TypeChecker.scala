@@ -231,7 +231,7 @@ object TypeChecker:
     var localCtx = TypeContext(globals, Map())
     val localTypeParams = ListBuffer[LocalSymbol]()
 
-    for param <- decl.implicitParams do
+    for param <- decl.implicitParams ++ decl.params do
       val (paramType, paramErrors) = check(param.tpe, Sort()(SourceRange.empty))(using localCtx, metas, idSupply)
       errors.addAll(paramErrors)
       val localSymbol = LocalSymbol(param.name, paramType, idSupply.freshLocalId())
