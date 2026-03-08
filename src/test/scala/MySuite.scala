@@ -146,6 +146,22 @@ class MySuite extends munit.FunSuite {
   }
 
 
+
+
+  test("proposition contexts accept boolean expressions") {
+    val input =
+      """
+        |fun intLeReflexiveChain(x: Int): x <= x ==> x <= x
+        |    (h) => h
+        |""".stripMargin
+    val (ast, _) = parseInput(input)
+    val dummyPath = "bool-prop.minifumo"
+    val dummyCache = new ProjectSymbolCache(GlobalSymbolsIo.create("."), TypeChecker.IdSupply())
+    dummyCache.addInput(dummyPath, input)
+    val (_, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
+    assertEquals(errors, List())
+  }
+
   test("Eq refl pattern with explicit datatype params matches at runtime") {
     val input =
       """
@@ -187,10 +203,10 @@ class MySuite extends munit.FunSuite {
           |fun boolAnd(a: Bool, b: Bool): Bool
           |    a and b
           |
-          |fun metaAnd(p: Type, q: Type): And
+          |fun metaAnd(p: Type, q: Type): Type
           |    p AND q
           |
-          |fun metaOr(p: Type, q: Type): Or
+          |fun metaOr(p: Type, q: Type): Type
           |    p OR q
           |""".stripMargin
       val (ast, _) = parseInput(input)

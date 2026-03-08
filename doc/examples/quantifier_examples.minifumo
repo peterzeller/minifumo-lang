@@ -13,3 +13,43 @@ fun forallMultipleBinders(): Type
 
 fun forallExistsNested(): Type
   forall x: Int :: exists y: Int :: y > x
+
+// Proves forward associativity for conjunction.
+fun andAssocForward[p: Type, q: Type, r: Type](h: And[p, And[q, r]]): And[And[p, q], r]
+  match h
+    case MakeAnd(pProof, qrProof)
+      match qrProof
+        case MakeAnd(qProof, rProof)
+          MakeAnd(MakeAnd(pProof, qProof), rProof)
+
+// Proves reverse associativity for conjunction.
+fun andAssocReverse[p: Type, q: Type, r: Type](h: And[And[p, q], r]): And[p, And[q, r]]
+  match h
+    case MakeAnd(pqProof, rProof)
+      match pqProof
+        case MakeAnd(pProof, qProof)
+          MakeAnd(pProof, MakeAnd(qProof, rProof))
+
+// Proves forward associativity for disjunction.
+fun orAssocForward[p: Type, q: Type, r: Type](h: Or[p, Or[q, r]]): Or[Or[p, q], r]
+  match h
+    case OrLeft(pProof)
+      OrLeft(OrLeft(pProof))
+    case OrRight(qrProof)
+      match qrProof
+        case OrLeft(qProof)
+          OrLeft(OrRight(qProof))
+        case OrRight(rProof)
+          OrRight(rProof)
+
+// Proves reverse associativity for disjunction.
+fun orAssocReverse[p: Type, q: Type, r: Type](h: Or[Or[p, q], r]): Or[p, Or[q, r]]
+  match h
+    case OrLeft(pqProof)
+      match pqProof
+        case OrLeft(pProof)
+          OrLeft(pProof)
+        case OrRight(qProof)
+          OrRight(OrLeft(qProof))
+    case OrRight(rProof)
+      OrRight(OrRight(rProof))

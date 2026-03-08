@@ -667,11 +667,14 @@ object TypeChecker:
       else TypeError(s"Expected ${prettyExpr(expectedNorm)} but got ${prettyExpr(adaptedType)}\nIn expression ${prettyExpr(adaptedExpr)}", expr.source) :: adaptedErrs
     (adaptedExpr, errs2)
 
-  /** Rewrites a proposition `p` into the type expression `Eq(p, True)`. */
+  /** Rewrites a proposition `p` into the type expression `Eq[Bool, p, True]`. */
   private def wrapBoolAsEqTrue(expr: ast.Expr): ast.Expr =
     val eqRef = ast.Expr.Var("Eq")(expr.source)
+    val boolRef = ast.Expr.Var("Bool")(expr.source)
     val trueRef = ast.Expr.Var("True")(expr.source)
-    ast.Expr.Call(ast.Expr.Call(eqRef, expr)(expr.source), trueRef)(expr.source)
+    val eqBool = ast.Expr.CallImplicit(eqRef, boolRef)(expr.source)
+    val eqBoolExpr = ast.Expr.Call(eqBool, expr)(expr.source)
+    ast.Expr.Call(eqBoolExpr, trueRef)(expr.source)
 
   /** Inserts synthetic implicit arguments and placeholder metas before explicit arguments. */
   private def insertImplicitArgs(
