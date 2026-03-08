@@ -3,6 +3,7 @@
   "displayName": "Minifumo",
   "description": "Code extension for the Minifumo language, a language for playing with dependent types and proofs.",
   "version": "0.0.1",
+  "icon": "assets/icon.png",
   "main": "./dist/extension-node.js",
   "browser": "./dist/extension-browser.js",
   "engines": {
