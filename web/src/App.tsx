@@ -196,6 +196,11 @@ function TutorialBlockView({
             </a>
           )
         }
+
+        if (part.isInlineCode) {
+          return <code key={`${part.text}-${index}`} className="tutorialInlineCode">{part.text}</code>
+        }
+
         return <span key={`${part.text}-${index}`}>{part.text}</span>
       })}
     </p>

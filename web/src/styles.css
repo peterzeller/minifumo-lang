@@ -198,6 +198,15 @@ button:disabled {
   text-decoration: underline;
 }
 
+.tutorialInlineCode {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  font-size: 0.9em;
+  background: rgba(148, 163, 184, 0.2);
+  border: 1px solid var(--panel-border);
+  border-radius: 0.25rem;
+  padding: 0.05rem 0.3rem;
+}
+
 .tutorialExample {
   margin-top: 0.75rem;
 }
