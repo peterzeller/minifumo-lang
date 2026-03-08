@@ -231,7 +231,7 @@ object TypeChecker:
     var localCtx = TypeContext(globals, Map())
     val localTypeParams = ListBuffer[LocalSymbol]()
 
-    for param <- decl.implicitParams do
+    for param <- decl.implicitParams ++ decl.params do
       val (paramType, paramErrors) = check(param.tpe, Sort()(SourceRange.empty))(using localCtx, metas, idSupply)
       errors.addAll(paramErrors)
       val localSymbol = LocalSymbol(param.name, paramType, idSupply.freshLocalId())
@@ -673,8 +673,8 @@ object TypeChecker:
     val boolRef = ast.Expr.Var("Bool")(expr.source)
     val trueRef = ast.Expr.Var("True")(expr.source)
     val eqBool = ast.Expr.CallImplicit(eqRef, boolRef)(expr.source)
-    val eqBoolExpr = ast.Expr.CallImplicit(eqBool, expr)(expr.source)
-    ast.Expr.CallImplicit(eqBoolExpr, trueRef)(expr.source)
+    val eqBoolExpr = ast.Expr.Call(eqBool, expr)(expr.source)
+    ast.Expr.Call(eqBoolExpr, trueRef)(expr.source)
 
   /** Inserts synthetic implicit arguments and placeholder metas before explicit arguments. */
   private def insertImplicitArgs(

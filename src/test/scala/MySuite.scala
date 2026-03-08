@@ -147,6 +147,7 @@ class MySuite extends munit.FunSuite {
 
 
 
+
   test("proposition contexts accept boolean expressions") {
     val input =
       """
@@ -160,6 +161,28 @@ class MySuite extends munit.FunSuite {
     val (_, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
     assertEquals(errors, List())
   }
+
+  test("Eq refl pattern with explicit datatype params matches at runtime") {
+    val input =
+      """
+        |fun pickWithEq(x: Int, proof: Eq[Int](x, x)): Int
+        |    match proof
+        |        case refl
+        |            x
+        |
+        |fun main(): Int
+        |    pickWithEq(4, refl[Int][4])
+    """.stripMargin
+    val (ast, _) = parseInput(input)
+    val dummyPath: String = "dummy.minifumo"
+    val dummyCache = new ProjectSymbolCache(GlobalSymbolsIo.create("."), TypeChecker.IdSupply())
+    dummyCache.addInput(dummyPath, input)
+    val (typed, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
+    assertEquals(errors, List())
+    val result = Interpreter.evalProg(typed, dummyCache, "main")
+    assertEquals(result, intValue(4))
+  }
+
   test("standard library compiles without type errors") {
     // Type-checks the bundled standard library in isolation.
     val standardPath = "standard.minifumo"

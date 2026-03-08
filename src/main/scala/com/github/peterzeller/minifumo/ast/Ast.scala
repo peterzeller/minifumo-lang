@@ -42,6 +42,7 @@ enum TopLevel:
   case DataDecl(
     name: String,
     implicitParams: List[FunParam],
+    params: List[FunParam],
     ctors: List[CtorDecl],
     exported: Boolean
   )(val source: SourceRange)

@@ -55,6 +55,18 @@ class GlobalSymbolsSuite extends munit.FunSuite:
     assertEquals(imports.keySet, Set("foo"))
   }
 
+
+  test("parser supports datatypes with implicit and explicit parameters") {
+    val (program, parseErrors) = parseInput("""
+      |data Eq[T: Type](a: T, b: T) =
+      |   refl: Eq[T](a, a)
+    """.stripMargin)
+    assertEquals(parseErrors, List())
+    val dataDecl = program.items.collectFirst { case d: ast.TopLevel.DataDecl => d }.getOrElse(fail("Expected a data declaration"))
+    assertEquals(dataDecl.implicitParams.map(_.name), List("T"))
+    assertEquals(dataDecl.params.map(_.name), List("a", "b"))
+  }
+
   test("parser supports explicit constructor result types") {
     val (program, parseErrors) = parseInput("""
       |data List[T: Type] =
@@ -90,7 +102,7 @@ class GlobalSymbolsSuite extends munit.FunSuite:
       |export fun eqExampleF(x: Int, y: Int, z: Int): Int
       |  opPlus(opPlus(x, y), z)
       |
-      |export fun example(x: Int, eq: Eq[Int, x, 4]): Eq[Int, eqExampleF(x, 3, 4), eqExampleF(4, 3, 4)]
+      |export fun example(x: Int, eq: Eq[Int](x, 4)): Eq[Int](eqExampleF(x, 3, 4), eqExampleF(4, 3, 4))
       |  congrArg[Int, Int, x, 4]((n) => eqExampleF(n, 3, 4), eq)
     """.stripMargin
     val (program, parseErrors) = parseInput(input)

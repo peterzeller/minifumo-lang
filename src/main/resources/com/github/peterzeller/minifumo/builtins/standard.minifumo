@@ -36,8 +36,8 @@ export data OpAnd[T: Type] = MakeOpAnd(opAnd: T -> T -> T)
 
 export data OpOr[T: Type] = MakeOpOr(opOr: T -> T -> T)
 
-export data Eq[T: Type, a: T, b: T] =
-   refl: Eq[T, a, a]
+export data Eq[T: Type](a: T, b: T) =
+   refl: Eq[T](a, a)
 
 export data TrueProp = TrueIntro
 
@@ -60,18 +60,18 @@ export data Map[M: Type, K: Type, V: Type] = MakeMap(put: M -> K -> V -> M, look
 export data Set[S: Type, T: Type] = MakeSet(contains: S -> T -> Bool, add: S -> T -> S)
 
 // Substitutes equal values into a dependent motive.
-export fun subst[T: Type, x: T, y: T, motive: T -> Type](h: Eq[T, x, y], hx: motive(x)): motive(y)
+export fun subst[T: Type, x: T, y: T, motive: T -> Type](h: Eq[T](x, y), hx: motive(x)): motive(y)
     match h
         case refl
             hx
 
 // Rewrites function application arguments using equality.
-export fun congrArg[T: Type, U: Type, x: T, y: T](f: T -> U, h: Eq[T, x, y]): Eq[U, f(x), f(y)]
-    subst[T, x, y, (z) => Eq[U, f(x), f(z)]](h, refl[U][f(x)])
+export fun congrArg[T: Type, U: Type, x: T, y: T](f: T -> U, h: Eq[T](x, y)): Eq[U](f(x), f(y))
+    subst[T, x, y, (z) => Eq[U](f(x), f(z))](h, refl[U][f(x)])
 
 // Rewrites function application with equal functions and equal arguments.
-export fun congr[T: Type, U: Type, f: T -> U, g: T -> U, x: T, y: T](hf: Eq[T -> U, f, g], hx: Eq[T, x, y]): Eq[U, f(x), g(y)]
-    subst[T -> U, f, g, (k) => Eq[U, k(x), g(y)]](hf, congrArg[T, U, x, y](f, hx))
+export fun congr[T: Type, U: Type, f: T -> U, g: T -> U, x: T, y: T](hf: Eq[T -> U](f, g), hx: Eq[T](x, y)): Eq[U](f(x), g(y))
+    subst[T -> U, f, g, (k) => Eq[U](k(x), g(y))](hf, congrArg[T, U, x, y](f, hx))
 
 // Returns the negation of the Bool value.
 fun opNot(value: Bool): Bool
