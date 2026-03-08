@@ -100,7 +100,12 @@ object TypeChecker:
     for p <- typedImplicitParams.reverseIterator do
       fnType = TypedAst.Expr.Pi(p, fnType, true)(p.tpe.source.merge(fnType.source))
 
-    (TypedAst.FunSig(sym, typedImplicitParams.toList, typedParams.toList, returnType), mEnv, errors.toList)
+    val rawSig = TypedAst.FunSig(sym, typedImplicitParams.toList, typedParams.toList, returnType)
+    val (_, signatureErrors) = finalizeTopLevelExpr(rawSig.functionType)(using mEnv, metas)
+    val instantiatedSig = instantiateFunSig(rawSig)
+    val instantiatedCtx = instantiateTypeContext(mEnv)
+
+    (instantiatedSig, instantiatedCtx, errors.toList ++ signatureErrors)
   }
 
   /** Provides a lookup interface for local and global symbols during type checking. */
@@ -278,6 +283,30 @@ object TypeChecker:
       TypeError(message, constraint.source)
     }.distinctBy(err => (err.source.start.line, err.message))
     (instantiate(expr), metaErrors ++ constraintErrors)
+
+  /** Instantiates all local symbol types and values in a type-checking context. */
+  private[typing] def instantiateTypeContext(ctx: TypeContext)(implicit metas: MetaContext): TypeContext =
+    val instantiatedLocals = ctx.locals.map { (name, binding) =>
+      val newSymbol = instantiateTermSymbol(binding.symbol)
+      val newValue = binding.value.map(instantiate)
+      name -> LocalBinding(newSymbol, newValue)
+    }
+    TypeContext(ctx.globals, instantiatedLocals)
+
+  /** Instantiates all parameter and return types in a typed function signature. */
+  private[typing] def instantiateFunSig(sig: TypedAst.FunSig)(implicit metas: MetaContext): TypedAst.FunSig =
+    TypedAst.FunSig(
+      sig.symbol,
+      sig.typeParams.map(instantiateLocalSymbol),
+      sig.params.map(instantiateLocalSymbol),
+      instantiate(sig.returnType)
+    )
+
+  /** Instantiates a term symbol while preserving symbol identity. */
+  private[typing] def instantiateTermSymbol(symbol: TermSymbol)(implicit metas: MetaContext): TermSymbol =
+    symbol match
+      case local: LocalSymbol => instantiateLocalSymbol(local)
+      case BuiltinValueSymbol(name, tpe) => BuiltinValueSymbol(name, instantiate(tpe))
 
   /** Translates a signature expression to a typed expression. */
   private[typing] def signatureExpr(expr: ast.Expr, globals: GlobalEnv, locals: Map[String, TermSymbol])(implicit ids: TypeChecker.IdSupply): TypedAst.Expr = {

@@ -162,10 +162,10 @@ class MySuite extends munit.FunSuite {
     assertEquals(errors, List())
   }
 
-  test("Eq refl pattern with explicit datatype params matches at runtime") {
+  test("Eq refl pattern with omitted implicit datatype params matches at runtime") {
     val input =
       """
-        |fun pickWithEq(x: Int, proof: Eq[Int](x, x)): Int
+        |fun pickWithEq(x: Int, proof: Eq(x, x)): Int
         |    match proof
         |        case refl
         |            x
@@ -175,6 +175,32 @@ class MySuite extends munit.FunSuite {
     """.stripMargin
     val (ast, _) = parseInput(input)
     val dummyPath: String = "dummy.minifumo"
+    val dummyCache = new ProjectSymbolCache(GlobalSymbolsIo.create("."), TypeChecker.IdSupply())
+    dummyCache.addInput(dummyPath, input)
+    val (typed, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
+    assertEquals(errors, List())
+    val result = Interpreter.evalProg(typed, dummyCache, "main")
+    assertEquals(result, intValue(4))
+  }
+
+
+
+  test("datatype constructors can omit implicit datatype args in return types") {
+    val input =
+      """
+        |data Eq2[T: Type](a: T, b: T) =
+        |   refl2: Eq2(a, a)
+        |
+        |fun pickWithEq2(x: Int, proof: Eq2(x, x)): Int
+        |    match proof
+        |        case refl2
+        |            x
+        |
+        |fun main(): Int
+        |    pickWithEq2(4, refl2[Int][4])
+    """.stripMargin
+    val (ast, _) = parseInput(input)
+    val dummyPath: String = "dummy-eq2.minifumo"
     val dummyCache = new ProjectSymbolCache(GlobalSymbolsIo.create("."), TypeChecker.IdSupply())
     dummyCache.addInput(dummyPath, input)
     val (typed, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
