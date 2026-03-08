@@ -78,6 +78,48 @@ class MySuite extends munit.FunSuite {
   }
 
 
+
+
+  test("match completeness reports missing top-level constructor cases") {
+    val input =
+      """
+        |data Maybe = MyNone | MySome(value: Int)
+        |
+        |fun main(value: Maybe): Int
+        |    match value
+        |        case MySome(_)
+        |            1
+    """.stripMargin
+    val (ast, _) = parseInput(input)
+    val dummyPath = "missing-top-level-case.minifumo"
+    val dummyCache = new ProjectSymbolCache(GlobalSymbolsIo.create("."), TypeChecker.IdSupply())
+    dummyCache.addInput(dummyPath, input)
+    val (_, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
+    assert(errors.exists(_.message.contains("Non-exhaustive match")))
+    assert(errors.exists(_.message.contains("MyNone")))
+  }
+
+  test("match completeness reports missing nested constructor cases") {
+    val input =
+      """
+        |data Nat = Zero | Suc(pred: Nat)
+        |data PairNat = PairNat(left: Nat, right: Nat)
+        |
+        |fun main(p: PairNat): Int
+        |    match p
+        |        case PairNat(Zero, _)
+        |            0
+        |        case PairNat(Suc(_), Zero)
+        |            1
+    """.stripMargin
+    val (ast, _) = parseInput(input)
+    val dummyPath = "missing-nested-case.minifumo"
+    val dummyCache = new ProjectSymbolCache(GlobalSymbolsIo.create("."), TypeChecker.IdSupply())
+    dummyCache.addInput(dummyPath, input)
+    val (_, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
+    assert(errors.exists(_.message.contains("Non-exhaustive match")))
+  }
+
   test("constructor result type must match enclosing datatype") {
     val input =
       """
