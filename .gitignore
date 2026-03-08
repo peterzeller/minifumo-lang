@@ -33,3 +33,7 @@ metals.sbt
 # Generated frontend compiler artifacts
 web/src/generated/*
 !web/src/generated/minifumo-compiler.d.ts
+vscode-extension/node_modules
+web/node_modules
+web/dist
+web/tsconfig.app.tsbuildinfo

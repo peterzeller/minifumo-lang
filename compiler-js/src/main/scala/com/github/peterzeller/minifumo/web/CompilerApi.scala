@@ -16,9 +16,16 @@ object CompilerApi:
 
   private val inMemoryFile: String = "/playground/input.minifumo"
 
+  /** Represents one structured compiler or runtime error sent to JavaScript callers. */
+  class CompileError(val message: String, val line: Int, val column: Int, val endColumn: Int) extends js.Object
+
+  /** Represents the compile/eval result payload sent to JavaScript callers. */
+  class CompileResult(val success: Boolean, val output: String, val errors: js.Array[CompileError], val typed: Boolean, val executed: Boolean)
+      extends js.Object
+
   /** Compiles source code and optionally runs a named function from the resulting program. */
   @JSExport
-  def compileAndRun(source: String, functionName: String = "main", runFunction: Boolean = true): js.Object =
+  def compileAndRun(source: String, functionName: String = "main", runFunction: Boolean = true): CompileResult =
     val ids = TypeChecker.IdSupply()
     val symbolCache = ProjectSymbolCache(new GlobalSymbolsIo("."), ids)
     symbolCache.addInput(inMemoryFile, source)
@@ -81,39 +88,17 @@ object CompilerApi:
     typedStandard
 
   // Converts syntax errors into structured data for frontend rendering.
-  private def errorFromSyntax(error: com.github.peterzeller.minifumo.parser.SyntaxError): js.Object =
-    js.Dynamic.literal(
-      message = error.message,
-      line = error.pos.line,
-      column = error.pos.column,
-      endColumn = error.pos.column + 1
-    )
+  private def errorFromSyntax(error: com.github.peterzeller.minifumo.parser.SyntaxError): CompileError =
+    new CompileError(error.message, error.pos.line, error.pos.column, error.pos.column + 1)
 
   // Converts type errors into structured data for frontend rendering.
-  private def errorFromType(error: TypeChecker.TypeError): js.Object =
-    js.Dynamic.literal(
-      message = error.message,
-      line = error.source.start.line,
-      column = error.source.start.column,
-      endColumn = error.source.end.column
-    )
+  private def errorFromType(error: TypeChecker.TypeError): CompileError =
+    new CompileError(error.message, error.source.start.line, error.source.start.column, error.source.end.column)
 
   // Converts generic thrown exceptions into a consistent frontend error object.
-  private def genericError(error: Throwable): js.Object =
-    js.Dynamic.literal(
-      message = Option(error.getMessage).getOrElse(error.toString),
-      line = 1,
-      column = 1,
-      endColumn = 1
-    )
+  private def genericError(error: Throwable): CompileError =
+    new CompileError(Option(error.getMessage).getOrElse(error.toString), 1, 1, 1)
 
   // Builds a frontend-friendly compile response payload.
-  private def compileResult(success: Boolean, output: String, errors: js.Array[js.Object], typed: Boolean, executed: Boolean): js.Object =
-    js.Dynamic.literal(
-      success = success,
-      output = output,
-      errors = errors,
-      typed = typed,
-      executed = executed
-    )
-
+  private def compileResult(success: Boolean, output: String, errors: js.Array[CompileError], typed: Boolean, executed: Boolean): CompileResult =
+    new CompileResult(success, output, errors, typed, executed)
