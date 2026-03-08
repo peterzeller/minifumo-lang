@@ -198,6 +198,10 @@ private class HandwrittenParser(tokens: Vector[Token]):
   private def parseMatchExpr(start: Token): Expr =
     val scrutinee = parseExpr()
     consume(TokenKind.NL, "Expected newline before match cases.")
+    if !check(TokenKind.BEGIN) then
+      // empty match expression
+      return Expr.Match(scrutinee, List())(merge(start, previous.source))
+
     consume(TokenKind.BEGIN, "Expected begin for match cases.")
     val cases = scala.collection.mutable.ListBuffer.empty[MatchCase]
     while !check(TokenKind.END) && !isAtEnd do
