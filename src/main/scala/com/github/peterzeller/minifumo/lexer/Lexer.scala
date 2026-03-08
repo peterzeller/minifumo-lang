@@ -97,6 +97,7 @@ object Lexer:
         val tok =
           if s"$ch${peek(1)}${peek(2)}${peek(3)}" == "<==>" then Some((TokenKind.IFF, 4))
           else if s"$ch${peek(1)}${peek(2)}" == "==>" then Some((TokenKind.IMPLIES, 3))
+          else if s"$ch${peek(1)}${peek(2)}" == "???" then Some((TokenKind.HOLE, 3))
           else if s"$ch${peek(1)}" == "=>" then Some((TokenKind.FAT_ARROW, 2))
           else if s"$ch${peek(1)}" == "->" then Some((TokenKind.ARROW, 2))
           else if s"$ch${peek(1)}" == "<=" then Some((TokenKind.LE, 2))
@@ -182,9 +183,8 @@ object Lexer:
           state match
             case State.INIT =>
               if token.kind == TokenKind.NL then
-                if !lastCharWasWrap then
-                  firstNewline = Some(token)
-                  state = State.NEWLINES
+                firstNewline = Some(token)
+                state = State.NEWLINES
               else if token.kind != TokenKind.SPACETAB then
                 lastCharWasWrap = isWrapEndLine(token.kind)
                 result += Right(token)

@@ -146,11 +146,16 @@ private class HandwrittenParser(tokens: Vector[Token]):
   /** Parses an indented suite and desugars it to one expression. */
   private def parseSuite(): Expr =
     consume(TokenKind.NL, "Expected newline before suite.")
+    if isAtEnd || check(TokenKind.FUN) || check(TokenKind.DATA) || check(TokenKind.IMPORT) || check(TokenKind.END) then
+      return Expr.Hole()(previous.source)
     consume(TokenKind.BEGIN, "Expected begin of indented suite.")
     val exprs = scala.collection.mutable.ListBuffer.empty[Expr]
-    while !check(TokenKind.END) && !isAtEnd do
+    while !check(TokenKind.END) && !isAtEnd && !isSuiteRecoveryPoint() do
       while matchKind(TokenKind.NL) do ()
-      if !check(TokenKind.END) then exprs += parseExpr()
+      if !check(TokenKind.END) && !isSuiteRecoveryPoint() then
+        exprs += parseExpr()
+      else if isSuiteRecoveryPoint() then
+        synchronizeSuite()
       while matchKind(TokenKind.NL) do ()
     consume(TokenKind.END, "Expected end of suite.")
     desugarBlock(exprs.toList)
@@ -193,6 +198,10 @@ private class HandwrittenParser(tokens: Vector[Token]):
   private def parseMatchExpr(start: Token): Expr =
     val scrutinee = parseExpr()
     consume(TokenKind.NL, "Expected newline before match cases.")
+    if !check(TokenKind.BEGIN) then
+      // empty match expression
+      return Expr.Match(scrutinee, List())(merge(start, previous.source))
+
     consume(TokenKind.BEGIN, "Expected begin for match cases.")
     val cases = scala.collection.mutable.ListBuffer.empty[MatchCase]
     while !check(TokenKind.END) && !isAtEnd do
@@ -349,6 +358,7 @@ private class HandwrittenParser(tokens: Vector[Token]):
     else if matchKind(TokenKind.BOOL) then Expr.Lit(Literal.BoolLit(previous.text == "true")(previous.source))(previous.source)
     else if matchKind(TokenKind.STRING) then Expr.Lit(Literal.StringLit(unquote(previous.text))(previous.source))(previous.source)
     else if matchKind(TokenKind.AXIOM) then Expr.Axiom()(previous.source)
+    else if matchKind(TokenKind.HOLE) then Expr.Hole()(previous.source)
     else if check(TokenKind.PAREN_LEFT) && isParenLambdaStart() then parseLambda(true)
     else if matchKind(TokenKind.ID) then Expr.Var(previous.text)(previous.source)
     else if matchKind(TokenKind.PAREN_LEFT) then
@@ -389,7 +399,9 @@ private class HandwrittenParser(tokens: Vector[Token]):
         ps
       else List(parseLambdaParam())
     consume(TokenKind.FAT_ARROW, "Expected '=>' after lambda parameters.")
-    val body = parseExpr()
+    val body =
+      if check(TokenKind.NL) then parseSuite()
+      else parseExpr()
     params.foldRight(body) { (p, acc) => Expr.Lambda(p, acc)(merge(p.source, acc.source)) }
 
   /** Parses one lambda parameter with optional type annotation. */
@@ -525,26 +537,43 @@ private class HandwrittenParser(tokens: Vector[Token]):
 
   /** Synchronizes after an error to likely top-level restart points. */
   private def synchronizeTopLevel(): Unit =
+    while !isAtEnd && !isTopLevelSyncPoint() do
+      advanceUnit()
+    while check(TokenKind.NL) && !lookAhead(1).exists(t => isTopLevelSyncPoint(t.kind)) do
+      advanceUnit()
+
+  /** Returns true for tokens that can safely restart top-level parsing. */
+  private def isTopLevelSyncPoint(kind: TokenKind = current.kind): Boolean =
+    Set(TokenKind.NL, TokenKind.END, TokenKind.FUN, TokenKind.DATA, TokenKind.IMPORT).contains(kind)
+
+  /** Returns true when suite parsing should recover to surrounding structure. */
+  private def isSuiteRecoveryPoint(): Boolean =
+    check(TokenKind.FUN) || check(TokenKind.DATA) || check(TokenKind.IMPORT)
+
+  /** Skips tokens until the parser can continue after a broken suite expression. */
+  private def synchronizeSuite(): Unit =
     while !isAtEnd && !Set(TokenKind.NL, TokenKind.END, TokenKind.FUN, TokenKind.DATA, TokenKind.IMPORT).contains(current.kind) do
       advanceUnit()
-    while matchKind(TokenKind.NL) do ()
 
   /** Reports a parser error at a token position. */
   private def error(token: Token, message: String): Unit =
-    errors.lastOption match
-      case Some(err) =>
-        if err.source.start == token.source.start then
-          // advance parser to avoid getting stuck on same error
-          advanceUnit()
-      case None =>  
+    if tooManyErrorsAtToken(token, 20) then
+      // advance parser to avoid getting stuck on same error
+      advanceUnit()
     errors += SyntaxError(token.source.start, message)
+
+  private def tooManyErrorsAtToken(token: Token, maxErrs: Int): Boolean =
+    val errorsAtToken = errors.reverseIterator.filter(err => err.source.start == token.source.start).take(maxErrs)
+    errorsAtToken.length >= maxErrs
 
   /** Consumes one token of the expected kind, with soft recovery on mismatch. */
   private def consume(kind: TokenKind, message: String): Token =
     if check(kind) then advance()
-    else
+    else {
       error(current, message)
-      advance()
+      current // or advance()
+    }
+
 
   /** Returns whether the current token is of the given kind. */
   private def check(kind: TokenKind): Boolean = !isAtEnd && current.kind == kind
