@@ -149,7 +149,7 @@ object LeanEmitter:
             s"| ${ctorName} : ${dataName}${renderTypeParamArgs(typeParams, mangle)}"
           else
             val fields = ctor.fields
-              .map(field => emitExpr(field.tpe, mangle, Map.empty, currentModule, localDefinitions, moduleNameByFile))
+              .map(field => s"(${emitExpr(field.tpe, mangle, Map.empty, currentModule, localDefinitions, moduleNameByFile)})")
               .mkString(" -> ")
             s"| ${ctorName} : ${fields} -> ${dataName}${renderTypeParamArgs(typeParams, mangle)}"
         val lines = Vector(s"inductive ${dataName} ${params} : Type where") ++ ctorLines.toVector :+ ""
