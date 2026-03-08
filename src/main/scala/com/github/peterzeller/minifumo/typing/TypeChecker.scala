@@ -347,6 +347,8 @@ object TypeChecker:
         TypedAst.Expr.Pi(domSym, cod, isImplicit = false)(expr.source)
       case ast.Expr.Hole() =>
         TypedAst.Expr.UnknownType()(expr.source)
+      case ast.Expr.Axiom() =>
+        TypedAst.Expr.Axiom()(expr.source)
       case _ =>
         TypedAst.Expr.UnknownType()(expr.source)
   }
@@ -784,7 +786,7 @@ object TypeChecker:
       case TypedAst.Expr.Match(scrutinee, motive, cases) =>
         val newCases = cases.map(c => TypedAst.MatchCase(c.pattern, substitute(c.body, symbol, value))(c.source))
         TypedAst.Expr.Match(substitute(scrutinee, symbol, value), substitute(motive, symbol, value), newCases)(term.source)
-      case TypedAst.Expr.Lit(_) | TypedAst.Expr.Var(_) | TypedAst.Expr.Sort() | TypedAst.Expr.Meta(_, _) | TypedAst.Expr.UnknownType() =>
+      case TypedAst.Expr.Lit(_) | TypedAst.Expr.Var(_) | TypedAst.Expr.Sort() | TypedAst.Expr.Meta(_, _) | TypedAst.Expr.UnknownType() | TypedAst.Expr.Axiom() =>
         term
 
   private def substituteInLocalSymbol(s: LocalSymbol, symbol: LocalSymbol, value: TypedAst.Expr): LocalSymbol =
@@ -844,6 +846,7 @@ object TypeChecker:
         collectReferencedSymbols(value) ++ (collectReferencedSymbols(body) -- Set(symbol))
       case Expr.Meta(index, tpe) => Set()
       case Expr.UnknownType() => Set()
+      case Expr.Axiom() => Set()
       case Expr.Match(scrutinee, motive, cases) =>
         collectReferencedSymbols(scrutinee) ++ cases.flatMap(c => 
           collectReferencedSymbols(c.body) ++ collectReferencedSymbolsInPattern(c.pattern))
@@ -861,6 +864,7 @@ object TypeChecker:
   private[typing] def prettyExpr(expr: TypedAst.Expr): String =
     expr match
       case TypedAst.Expr.UnknownType() => "_"
+      case TypedAst.Expr.Axiom() => "axiom"
       case TypedAst.Expr.Sort() => "Type"
       case TypedAst.Expr.Var(symbol) => symbol.toString
       case TypedAst.Expr.Lit(ast.Literal.IntLit(_)) => "Int"

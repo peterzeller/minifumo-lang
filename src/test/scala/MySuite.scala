@@ -249,6 +249,24 @@ class MySuite extends munit.FunSuite {
     val result = Interpreter.evalProg(typed, dummyCache, "main")
     assertEquals(result, intValue(9))
   }
+  
+  test("axiom expression type checks against any expected term") {
+    val input =
+      """
+        |fun chooseInt(): Int
+        |    axiom
+        |
+        |fun chooseEq(): Eq[Int](1, 1)
+        |    axiom
+      """.stripMargin
+    val (ast, _) = parseInput(input)
+    val dummyPath = "axiom-test.minifumo"
+    val dummyCache = new ProjectSymbolCache(GlobalSymbolsIo.create("."), TypeChecker.IdSupply())
+    dummyCache.addInput(dummyPath, input)
+    val (_, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
+    assertEquals(errors, List())
+  }
+
   test("standard library compiles without type errors") {
     // Type-checks the bundled standard library in isolation.
     val standardPath = "standard.minifumo"

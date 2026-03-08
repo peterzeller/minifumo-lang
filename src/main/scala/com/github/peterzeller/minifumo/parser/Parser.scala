@@ -340,6 +340,7 @@ private class HandwrittenParser(tokens: Vector[Token]):
     if matchKind(TokenKind.INT) then Expr.Lit(Literal.IntLit(previous.text)(previous.source))(previous.source)
     else if matchKind(TokenKind.BOOL) then Expr.Lit(Literal.BoolLit(previous.text == "true")(previous.source))(previous.source)
     else if matchKind(TokenKind.STRING) then Expr.Lit(Literal.StringLit(unquote(previous.text))(previous.source))(previous.source)
+    else if matchKind(TokenKind.AXIOM) then Expr.Axiom()(previous.source)
     else if check(TokenKind.PAREN_LEFT) && isParenLambdaStart() then parseLambda(true)
     else if matchKind(TokenKind.ID) then Expr.Var(previous.text)(previous.source)
     else if matchKind(TokenKind.PAREN_LEFT) then
