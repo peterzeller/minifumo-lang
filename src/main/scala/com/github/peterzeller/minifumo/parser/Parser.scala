@@ -214,7 +214,15 @@ private class HandwrittenParser(tokens: Vector[Token]):
       consume(TokenKind.COLONCOLON, "Expected '::' in quantifier expression.")
       val result = parseExpr()
       desugarQuantifier(isForall, params, result)
-    else parseMetaImplies()
+    else parseMetaIff()
+
+  /** Parses left-associative meta iff expressions with Dafny-like low precedence. */
+  private def parseMetaIff(): Expr =
+    var left = parseMetaImplies()
+    while matchKind(TokenKind.IFF) do
+      val right = parseMetaImplies()
+      left = makeMetaIff(left, right, merge(left.source, right.source))
+    left
 
   /** Parses one or more quantifier binders separated by commas. */
   private def parseQuantifierParams(): List[PiParam] =
@@ -438,6 +446,10 @@ private class HandwrittenParser(tokens: Vector[Token]):
   /** Desugars a meta OR expression into the proposition type `Or[left, right]`. */
   private def makeMetaOr(left: Expr, right: Expr, source: SourceRange): Expr =
     curriedCall(Expr.Var("Or")(source), List(left, right), Nil)
+
+  /** Desugars a meta IFF expression into the proposition type `Iff[left, right]`. */
+  private def makeMetaIff(left: Expr, right: Expr, source: SourceRange): Expr =
+    curriedCall(Expr.Var("Iff")(source), List(left, right), Nil)
 
   /** Desugars a meta NOT expression into implication to FalseProp. */
   private def makeMetaNot(expr: Expr, source: SourceRange): Expr =

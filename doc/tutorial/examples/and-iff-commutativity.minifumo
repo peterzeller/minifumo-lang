@@ -1,0 +1,15 @@
+// Proves conjunction commutativity from left to right.
+fun andCommForward[p: Type, q: Type](h: And[p, q]): And[q, p]
+  match h
+    case MakeAnd(pProof, qProof)
+      MakeAnd(qProof, pProof)
+
+// Proves conjunction commutativity from right to left.
+fun andCommBackward[p: Type, q: Type](h: And[q, p]): And[p, q]
+  match h
+    case MakeAnd(qProof, pProof)
+      MakeAnd(pProof, qProof)
+
+// Packages both directions of conjunction commutativity as an iff proof.
+fun andCommIff[p: Type, q: Type](): And[p, q] <==> And[q, p]
+  MakeIff(andCommForward[p, q], andCommBackward[p, q])
