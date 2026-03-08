@@ -150,10 +150,12 @@ private class HandwrittenParser(tokens: Vector[Token]):
       return Expr.Hole()(previous.source)
     consume(TokenKind.BEGIN, "Expected begin of indented suite.")
     val exprs = scala.collection.mutable.ListBuffer.empty[Expr]
-    while !check(TokenKind.END) && !isAtEnd do
+    while !check(TokenKind.END) && !isAtEnd && !isSuiteRecoveryPoint() do
       while matchKind(TokenKind.NL) do ()
-      if !check(TokenKind.END) && !isSuiteRecoveryPoint() then exprs += parseExpr()
-      else if isSuiteRecoveryPoint() then synchronizeSuite()
+      if !check(TokenKind.END) && !isSuiteRecoveryPoint() then
+        exprs += parseExpr()
+      else if isSuiteRecoveryPoint() then
+        synchronizeSuite()
       while matchKind(TokenKind.NL) do ()
     consume(TokenKind.END, "Expected end of suite.")
     desugarBlock(exprs.toList)
@@ -551,20 +553,23 @@ private class HandwrittenParser(tokens: Vector[Token]):
 
   /** Reports a parser error at a token position. */
   private def error(token: Token, message: String): Unit =
-    errors.lastOption match
-      case Some(err) =>
-        if err.source.start == token.source.start then
-          // advance parser to avoid getting stuck on same error
-          advanceUnit()
-      case None =>  
+    if tooManyErrorsAtToken(token, 20) then
+      // advance parser to avoid getting stuck on same error
+      advanceUnit()
     errors += SyntaxError(token.source.start, message)
+
+  private def tooManyErrorsAtToken(token: Token, maxErrs: Int): Boolean =
+    val errorsAtToken = errors.reverseIterator.filter(err => err.source.start == token.source.start).take(maxErrs)
+    errorsAtToken.length >= maxErrs
 
   /** Consumes one token of the expected kind, with soft recovery on mismatch. */
   private def consume(kind: TokenKind, message: String): Token =
     if check(kind) then advance()
-    else
+    else {
       error(current, message)
-      advance()
+      current // or advance()
+    }
+
 
   /** Returns whether the current token is of the given kind. */
   private def check(kind: TokenKind): Boolean = !isAtEnd && current.kind == kind

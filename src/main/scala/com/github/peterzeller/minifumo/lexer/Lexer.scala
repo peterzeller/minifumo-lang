@@ -183,9 +183,8 @@ object Lexer:
           state match
             case State.INIT =>
               if token.kind == TokenKind.NL then
-                if !lastCharWasWrap then
-                  firstNewline = Some(token)
-                  state = State.NEWLINES
+                firstNewline = Some(token)
+                state = State.NEWLINES
               else if token.kind != TokenKind.SPACETAB then
                 lastCharWasWrap = isWrapEndLine(token.kind)
                 result += Right(token)
