@@ -37,3 +37,4 @@ vscode-extension/node_modules
 web/node_modules
 web/dist
 web/tsconfig.app.tsbuildinfo
+vscode-extension/dist

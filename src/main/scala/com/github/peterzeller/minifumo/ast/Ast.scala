@@ -30,6 +30,8 @@ case class SourceRange(start: SourcePos, end: SourcePos):
 object SourceRange:
   def empty: SourceRange = SourceRange(SourcePos(0,0),SourcePos(0,0))
 
+case class SourceRangeWithFile(file: String, range: SourceRange)
+
 
 
 case class ProgramFile(imports: List[ImportStatement], items: List[TopLevel])(val source: SourceRange)

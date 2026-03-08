@@ -4,23 +4,49 @@ import com.github.peterzeller.minifumo.ast
 import com.github.peterzeller.minifumo.ast.{Literal, SourceRange}
 import com.github.peterzeller.minifumo.typing.TypedAst.Expr.{Pi, Sort, UnknownType}
 
+sealed trait TypedAst:
+  def source: SourceRange
+  def children: List[TypedAst]
 
 object TypedAst:
-  case class Program(items: List[TopLevel])(val source: SourceRange)
+  case class Program(items: List[TopLevel])(val source: SourceRange) extends com.github.peterzeller.minifumo.typing.TypedAst:
+    /** Returns top-level declarations in source order. */
+    override def children: List[com.github.peterzeller.minifumo.typing.TypedAst] = items
 
-  enum TopLevel:
+  enum TopLevel extends com.github.peterzeller.minifumo.typing.TypedAst:
     case DataDecl(symbol: DatatypeSymbol, typeParams: List[LocalSymbol], ctors: List[CtorDecl])(val source: SourceRange)
     case FunDecl(
         sig: FunSig,
         body: Expr
       )(val source: SourceRange)
 
+    /** Returns child nodes for cursor-descent traversal. */
+    override def children: List[com.github.peterzeller.minifumo.typing.TypedAst] =
+      this match
+        case DataDecl(_, typeParams, ctors) =>
+          typeParams.map(_.tpe) ++ ctors
+        case FunDecl(sig, body) =>
+          List(sig, body)
+
   case class FunSig(
     symbol: FunctionSymbol,
     typeParams: List[LocalSymbol],
     params: List[LocalSymbol],
     returnType: Expr,
-  ):
+  ) extends com.github.peterzeller.minifumo.typing.TypedAst:
+    /** Returns the merged source range of all signature parts. */
+    override def source: SourceRange =
+      def earlier(left: ast.SourcePos, right: ast.SourcePos): ast.SourcePos =
+        val lineCmp = left.line.compare(right.line)
+        if lineCmp < 0 || (lineCmp == 0 && left.column <= right.column) then left else right
+      val paramSources = (typeParams ++ params).map(_.tpe.source)
+      val start = paramSources.foldLeft(returnType.source.start)((minStart, s) => earlier(s.start, minStart))
+      SourceRange(start, returnType.source.end)
+
+    /** Returns parameter types and return type as children. */
+    override def children: List[com.github.peterzeller.minifumo.typing.TypedAst] =
+      typeParams.map(_.tpe) ++ params.map(_.tpe) :+ returnType
+
     /** Calculate the function type of the function signature */
     lazy val functionType: Expr =
       var r = returnType
@@ -32,8 +58,12 @@ object TypedAst:
 
 
   final case class CtorDecl(symbol: CtorSymbol, implicitFields: List[LocalSymbol], fields: List[LocalSymbol], returnType: Expr, tpe: Expr)(val source: SourceRange)
+      extends com.github.peterzeller.minifumo.typing.TypedAst:
+    /** Returns constructor field types, return type, and full constructor type. */
+    override def children: List[com.github.peterzeller.minifumo.typing.TypedAst] =
+      implicitFields.map(_.tpe) ++ fields.map(_.tpe) ++ List(returnType, tpe)
 
-  enum Expr:
+  enum Expr extends com.github.peterzeller.minifumo.typing.TypedAst:
     def source: SourceRange
 
     case Lit(value: ast.Literal)(val source: SourceRange)
@@ -57,6 +87,26 @@ object TypedAst:
     // placeholder when typing is unknown
     case UnknownType()(val source: SourceRange)
     case Match(scrutinee: Expr, motive: Expr, cases: List[MatchCase])(val source: SourceRange)
+
+    /** Returns child nodes for cursor-descent traversal. */
+    override def children: List[com.github.peterzeller.minifumo.typing.TypedAst] =
+      this match
+        case Lit(_) | Var(_) | Sort() | UnknownType() =>
+          Nil
+        case AppImplicit(callee, arg, tpe) =>
+          List(callee, arg, tpe)
+        case App(callee, arg, tpe) =>
+          List(callee, arg, tpe)
+        case Pi(dom, cod, _) =>
+          List(dom.tpe, cod)
+        case Lambda(param, body, tpe) =>
+          List(param.tpe, body, tpe)
+        case LetIn(_, _, declaredType, value, body) =>
+          List(declaredType, value, body)
+        case Meta(_, tpe) =>
+          List(tpe)
+        case Match(scrutinee, motive, cases) =>
+          List(scrutinee, motive) ++ cases
 
     // Some basic checks to catch some errors early
     this match {
@@ -88,10 +138,20 @@ object TypedAst:
         case Expr.Match(scrutinee, motive, cases) => None
       }
 
-  final case class MatchCase(pattern: Pattern, body: Expr)(val source: SourceRange)
+  final case class MatchCase(pattern: Pattern, body: Expr)(val source: SourceRange) extends com.github.peterzeller.minifumo.typing.TypedAst:
+    /** Returns pattern and case body. */
+    override def children: List[com.github.peterzeller.minifumo.typing.TypedAst] = List(pattern, body)
 
-  enum Pattern:
+  enum Pattern extends com.github.peterzeller.minifumo.typing.TypedAst:
     case Wildcard()(val source: SourceRange)
     case Lit(value: ast.Literal)(val source: SourceRange)
     case Binder(symbol: LocalSymbol)(val source: SourceRange)
     case Ctor(symbol: CtorSymbol, args: List[Pattern])(val source: SourceRange)
+
+    /** Returns child nodes for cursor-descent traversal. */
+    override def children: List[com.github.peterzeller.minifumo.typing.TypedAst] =
+      this match
+        case Wildcard() | Lit(_) | Binder(_) =>
+          Nil
+        case Ctor(_, args) =>
+          args

@@ -19,6 +19,18 @@ export interface CompileResult {
   executed: boolean
 }
 
+/**
+ * Represents one go-to-definition target returned by Scala.js.
+ */
+export interface DefinitionLocation {
+  file: string
+  line: number
+  column: number
+  endLine: number
+  endColumn: number
+}
+
 export const MinifumoCompiler: {
   compileAndRun(source: string, functionName?: string, runFunction?: boolean): CompileResult
+  definitionAt(source: string, line: number, column: number, currentFile?: string): DefinitionLocation | undefined
 }
