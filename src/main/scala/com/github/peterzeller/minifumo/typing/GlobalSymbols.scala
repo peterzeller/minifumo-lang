@@ -145,8 +145,13 @@ final case class DatatypeSymbol(file: String, name: String)(val continuationData
         pSym
 
     val t = buildPiType(implicitParams, explicitParams, Expr.Sort()(SourceRange.empty))
-    typeCalculated = Some(DatatypeSymbol.TypeCalculated(implicitParams, explicitParams, t))
-    t
+    val (_, signatureErrors) = TypeChecker.finalizeTopLevelExpr(t)(using ctx, metas)
+    allErrors ++= signatureErrors
+    val instantiatedImplicitParams = implicitParams.map(p => TypeChecker.instantiateLocalSymbol(p)(using metas))
+    val instantiatedExplicitParams = explicitParams.map(p => TypeChecker.instantiateLocalSymbol(p)(using metas))
+    val instantiatedType = TypeChecker.instantiate(t)(using metas)
+    typeCalculated = Some(DatatypeSymbol.TypeCalculated(instantiatedImplicitParams, instantiatedExplicitParams, instantiatedType))
+    instantiatedType
 
 
   /** Calculates the typed toplevel declaration
@@ -197,10 +202,16 @@ final case class DatatypeSymbol(file: String, name: String)(val continuationData
               r
           }
         val referencedLocals: Set[Symbol] = TypeChecker.collectReferencedSymbols(returnType) ++ fields.flatMap(f => TypeChecker.collectReferencedSymbols(f.tpe))
-        val implicitFields = (typeInfo.implicitParams ++ typeInfo.explicitParams).filter(referencedLocals.contains)
+        val implicitFields = GlobalSymbols.selectRequiredDatatypeParams(typeInfo.params, referencedLocals)
 
         val tpe = buildPiType(implicitFields, fields, returnType)
-        TypedAst.CtorDecl(ctorSym, implicitFields, fields, returnType, tpe)(ctor.source)
+        val (_, constructorErrors) = TypeChecker.finalizeTopLevelExpr(tpe)(using ctx, metas)
+        allErrors ++= constructorErrors
+        val instantiatedImplicitFields = implicitFields.map(p => TypeChecker.instantiateLocalSymbol(p)(using metas))
+        val instantiatedFields = fields.map(p => TypeChecker.instantiateLocalSymbol(p)(using metas))
+        val instantiatedReturnType = TypeChecker.instantiate(returnType)(using metas)
+        val instantiatedType = TypeChecker.instantiate(tpe)(using metas)
+        TypedAst.CtorDecl(ctorSym, instantiatedImplicitFields, instantiatedFields, instantiatedReturnType, instantiatedType)(ctor.source)
 
 
     TypedAst.TopLevel.DataDecl(
@@ -312,11 +323,24 @@ enum SymbolSignature:
   case Datatype(implicitParams: List[LocalSymbol])
 
 object GlobalSymbols:
-  // Collects variable names referenced from a constructor signature expression.
-  
+  // Collects local symbols referenced by an expression list.
+  private def collectReferencedLocalSymbols(expressions: Iterable[TypedAst.Expr]): Set[LocalSymbol] =
+    expressions.flatMap(TypeChecker.collectReferencedSymbols).collect { case local: LocalSymbol => local }.toSet
 
-  // Keeps only datatype implicit parameters that are needed by one constructor signature.
-  
+  // Keeps only datatype parameters required by constructor signatures, including transitive type dependencies.
+  def selectRequiredDatatypeParams(params: List[LocalSymbol], referencedSymbols: Set[Symbol]): List[LocalSymbol] =
+    var required = params.filter(referencedSymbols.contains).toSet
+    var changed = true
+    while changed do
+      changed = false
+      for param <- params do
+        if required.contains(param) then
+          val directDependencies = collectReferencedLocalSymbols(List(param.tpe))
+          val newDependencies = params.filter(p => directDependencies.contains(p)).filterNot(required.contains)
+          if newDependencies.nonEmpty then
+            required ++= newDependencies
+            changed = true
+    params.filter(required.contains)
 
   // build a map of global names in a program file
   def buildGlobalNames(file: String, prog: ast.ProgramFile, onlyExported: Boolean): Map[String, GlobalName] =
