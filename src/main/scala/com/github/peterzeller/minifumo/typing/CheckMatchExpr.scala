@@ -25,7 +25,8 @@ object CheckMatchExpr:
       val branchExpected0 = TypedAst.Expr.App(motive, patternTerm, TypedAst.Expr.UnknownType()(body.source))(body.source)
       val branchExpectedType = whnf(substituteTypeParams(branchExpected0, patternResult.refinements))
       val (typedBody, bodyErrs) = TypeChecker.check(body, branchExpectedType)(using caseCtx, metas, ids)
-      (TypedAst.MatchCase(patternResult.typedPattern, typedBody)(body.source), patternResult.errors ++ bodyErrs)
+      val caseSource = pattern.source.merge(body.source)
+      (TypedAst.MatchCase(patternResult.typedPattern, typedBody)(caseSource), patternResult.errors ++ bodyErrs)
     }
     val typedMatch = TypedAst.Expr.Match(scrutineeExpr, motive, typedCases.map(_._1))(expr.source)
     val errors = typedCases.flatMap(_._2)

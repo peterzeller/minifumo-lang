@@ -2,8 +2,9 @@ package com.github.peterzeller.minifumo.web
 
 import com.github.peterzeller.minifumo.builtins.Standard
 import com.github.peterzeller.minifumo.interpreter.Interpreter
+import com.github.peterzeller.minifumo.ast.SourcePos
 import com.github.peterzeller.minifumo.parser.parseInput
-import com.github.peterzeller.minifumo.typing.{GlobalSymbolsIo, ProjectSymbolCache, TypeChecker}
+import com.github.peterzeller.minifumo.typing.{DefinitionLookup, GlobalSymbolsIo, ProjectSymbolCache, TypeChecker}
 
 import scala.scalajs.js
 import scala.scalajs.js.JSConverters.*
@@ -22,6 +23,9 @@ object CompilerApi:
   /** Represents the compile/eval result payload sent to JavaScript callers. */
   class CompileResult(val success: Boolean, val output: String, val errors: js.Array[CompileError], val typed: Boolean, val executed: Boolean)
       extends js.Object
+
+  /** Represents one go-to-definition target location sent to JavaScript callers. */
+  class DefinitionLocation(val file: String, val line: Int, val column: Int, val endLine: Int, val endColumn: Int) extends js.Object
 
   /** Compiles source code and optionally runs a named function from the resulting program. */
   @JSExport
@@ -76,6 +80,35 @@ object CompilerApi:
           typed = false,
           executed = false
         )
+
+  /** Resolves the definition location at the given 1-based source position. */
+  @JSExport
+  def definitionAt(source: String, line: Int, column: Int, currentFile: String = inMemoryFile): js.UndefOr[DefinitionLocation] =
+    val ids = TypeChecker.IdSupply()
+    val symbolCache = ProjectSymbolCache(new GlobalSymbolsIo("."), ids)
+    symbolCache.addInput(currentFile, source)
+    try
+      val (program, syntaxErrors) = parseInput(source)
+      if syntaxErrors.nonEmpty then
+        js.undefined
+      else
+        val (typedProgram, _) = TypeChecker.checkProgram(currentFile, program, symbolCache, importStandard = true, ids)
+        DefinitionLookup
+          .definitionAt(typedProgram, SourcePos(line, column), currentFile)
+          .map(location =>
+            new DefinitionLocation(
+              location.file,
+              location.range.start.line,
+              location.range.start.column,
+              location.range.end.line,
+              location.range.end.column
+            )
+          )
+          .orUndefined
+    catch
+      // Keeps go-to-definition resilient by hiding internal compiler failures from callers.
+      case NonFatal(_) =>
+        js.undefined
 
   // Type-checks the bundled standard library once for runtime evaluation support.
   private lazy val typedStandardProgram =
