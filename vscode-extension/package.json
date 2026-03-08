@@ -6,6 +6,11 @@
   "icon": "assets/icon.png",
   "main": "./dist/extension-node.js",
   "browser": "./dist/extension-browser.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/peterzeller/minifumo-lang"
+  },
+  "license": "Apache-2.0",
   "engines": {
     "vscode": "^1.109.0"
   },
