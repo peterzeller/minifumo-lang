@@ -15,6 +15,7 @@ object TypeCheckerExprDispatcher:
         case c @ ast.Expr.CallImplicit(_, _) => CheckCallImplicitExpr.infer(c)
         case l @ ast.Expr.Lambda(_, _) => CheckLambdaExpr.infer(l)
         case l @ ast.Expr.LetIn(_, _, _, _) => CheckLetExpr.infer(l)
+        case f @ ast.Expr.FieldAccess(_, _) => CheckFieldAccessExpr.infer(f)
         case p @ ast.Expr.Pi(_, _) => CheckPiExpr.infer(p)
         case m @ ast.Expr.Match(_, _) => CheckMatchExpr.infer(m)
         case h @ ast.Expr.Hole() => CheckHoleExpr.infer(h)

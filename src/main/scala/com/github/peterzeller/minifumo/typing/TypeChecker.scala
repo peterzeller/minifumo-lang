@@ -24,6 +24,8 @@ object TypeChecker:
   def checkProgram(path: String, program: ast.ProgramFile, globalNames: NameCache & SymbolCache, importStandard: Boolean, idSupply: TypeChecker.IdSupply): (TypedAst.Program, List[TypeError]) =
     try
       val errors = ListBuffer[TypeError]()
+      val syntheticAccessors = GlobalSymbols.syntheticAccessorDecls(program.items)
+      val augmentedProgram = ast.ProgramFile(program.imports, program.items ++ syntheticAccessors)(program.source)
       var (symbolMap, importErrors) = GlobalSymbols.buildGlobalSymbols(path, program, globalNames, false, idSupply)
       if importStandard then
         // import the standard library symbols into the program file scope
@@ -33,7 +35,7 @@ object TypeChecker:
       errors.addAll(importErrors)
       val globals = GlobalEnv(names = symbolMap)
       val typedItems = ListBuffer[TypedAst.TopLevel]()
-      for item <- program.items do
+      for item <- augmentedProgram.items do
         val itemMetaStore = MetaStore()
         val typedItem = item match
           case decl: ast.TopLevel.DataDecl =>
@@ -332,6 +334,8 @@ object TypeChecker:
         val calleeExpr = signatureExpr(callee, globals, locals)
         val argExpr = signatureExpr(arg, globals, locals)
         TypedAst.Expr.App(calleeExpr, argExpr, TypedAst.Expr.UnknownType()(expr.source))(expr.source)
+      case ast.Expr.FieldAccess(_, _) =>
+        TypedAst.Expr.UnknownType()(expr.source)
       case ast.Expr.CallImplicit(callee, arg) =>
         val calleeExpr = signatureExpr(callee, globals, locals)
         val argExpr = signatureExpr(arg, globals, locals)

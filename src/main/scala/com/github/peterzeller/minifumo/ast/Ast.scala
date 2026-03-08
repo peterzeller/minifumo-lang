@@ -89,6 +89,8 @@ enum Expr:
   // Calls with multiple arguments are nested Call nodes (curried).
   // For example, f(x, y) is represented as Call(Call(Var("f"), Var("x")), Var("y"))
   case Call(callee: Expr, arg: Expr)(val source: SourceRange)
+  // Field access syntax, for example p.left.
+  case FieldAccess(receiver: Expr, fieldName: String)(val source: SourceRange)
   // Anonymous function (lambda expression), for example (x: Int) => x + 1
   case Lambda(param: LambdaParam, body: Expr)(val source: SourceRange)
   // Let expressions, for example let x: Int = 5 in x + 1
@@ -121,6 +123,8 @@ enum Expr:
         s"$callee[$arg]"
       case Expr.Call(callee, arg) =>
         s"$callee($arg)"
+      case Expr.FieldAccess(receiver, fieldName) =>
+        s"$receiver.$fieldName"
       case Expr.Lambda(param, body) =>
         s"(fun $param => $body)"
       case Expr.Pi(param, body) =>
