@@ -54,6 +54,55 @@ class DefinitionLookupSuite extends munit.FunSuite:
       case other => fail(s"Expected local variable node, got $other")
   }
 
+
+  test("definitionAt resolves receiver symbol in field access expressions") {
+    val sourceWithCursor =
+      """data Box = MkBox(value: Int)
+        |
+        |fun main(foo: Box): Int
+        |  fo|o.value
+        |""".stripMargin
+    val (source, cursor) = extractCursor(sourceWithCursor)
+    val typedProgram = checkTyped(source)
+    val paramPos = posOfFirst(source, "foo: Box")
+
+    val definition = DefinitionLookup.definitionAt(typedProgram, cursor, testFile)
+    assert(definition.nonEmpty)
+    assertEquals(definition.get.file, testFile)
+    assert(definition.get.range.contains(paramPos))
+
+    val node = DefinitionLookup.findElementAtCursor(typedProgram, cursor)
+    assert(node.nonEmpty)
+    node.get match
+      case Expr.Var(_: LocalSymbol) => ()
+      case other => fail(s"Expected local variable node for field access receiver, got $other")
+  }
+
+  test("definitionAt resolves field accessor symbol in field access expressions") {
+    val sourceWithCursor =
+      """data Box = MkBox(value: Int)
+        |
+        |fun main(foo: Box): Int
+        |  foo.va|lue
+        |""".stripMargin
+    val (source, cursor) = extractCursor(sourceWithCursor)
+    val typedProgram = checkTyped(source)
+    val accessorPos = posOfFirst(source, "value: Int")
+
+    val definition = DefinitionLookup.definitionAt(typedProgram, cursor, testFile)
+    assert(definition.nonEmpty)
+    assertEquals(definition.get.file, testFile)
+    assert(definition.get.range.contains(accessorPos))
+
+    val node = DefinitionLookup.findElementAtCursor(typedProgram, cursor)
+    assert(node.nonEmpty)
+    node.get match
+      case Expr.App(Expr.Var(symbol: FunctionSymbol), _, _) =>
+        assertEquals(symbol.name, "Box_value")
+      case Expr.Var(symbol: FunctionSymbol) =>
+        assertEquals(symbol.name, "Box_value")
+      case other => fail(s"Expected generated field accessor function node, got $other")
+  }
   test("definitionAt resolves constructor references in patterns from cursor fixture") {
     val sourceWithCursor =
       """data Box = MkBox(value: Int)

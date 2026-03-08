@@ -11,13 +11,11 @@ export fun appendSizedList[T: Type, N: Nat, M: Nat](xs: SizedList[T, N], ys: Siz
 
 /*
 export fun sizedListToString[T: Type, PeterN: Nat](s: Show[T], list: SizedList[T, PeterN]): String
-    match s
-        case MakeShow(showFn)
-            match list
-                case SizedNil
-                    ""
-                case SizedCons(head, tail)
-                    stringAppend(showFn(head), stringAppend(", ", sizedListToString(s, tail)))
+    match list
+        case SizedNil
+            ""
+        case SizedCons(head, tail)
+            stringAppend(s.show(head), stringAppend(", ", sizedListToString(s, tail)))
 
 fun main(): Unit
   let as = SizedCons[Int][Suc(Zero)](1, SizedCons[Int][Zero](2, SizedNil[Int]))

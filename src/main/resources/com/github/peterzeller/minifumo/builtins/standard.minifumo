@@ -93,75 +93,51 @@ fun opNot(value: Bool): Bool
 
 // Returns True when both Bool values are equal.
 fun boolEq(a: Bool, b: Bool): Bool
-    match eqBool()
-        case MakeEq(eqFn)
-            eqFn(a, b)
+    eqBool().eq(a, b)
 
 // Returns True when both Int values are equal.
 fun eq(a: Int, b: Int): Bool
-    match eqInt()
-        case MakeEq(eqFn)
-            eqFn(a, b)
+    eqInt().eq(a, b)
 
 // Negates an Int value.
 fun opNeg(value: Int): Int
-    match opNegInt()
-        case MakeOpNeg(opNegFn)
-            opNegFn(value)
+    opNegInt().opNeg(value)
 
 // Adds two Int values together.
 fun opPlus(a: Int, b: Int): Int
-    match opPlusInt()
-        case MakeOpPlus(opPlusFn)
-            opPlusFn(a, b)
+    opPlusInt().opPlus(a, b)
 
 // Subtracts the second Int from the first.
 fun opMinus(a: Int, b: Int): Int
-    match opMinusInt()
-        case MakeOpMinus(opMinusFn)
-            opMinusFn(a, b)
+    opMinusInt().opMinus(a, b)
 
 // Multiplies two Int values.
 fun opTimes(a: Int, b: Int): Int
-    match opTimesInt()
-        case MakeOpTimes(opTimesFn)
-            opTimesFn(a, b)
+    opTimesInt().opTimes(a, b)
 
 // Divides the first Int by the second.
 fun opDiv(a: Int, b: Int): Int
-    match opDivInt()
-        case MakeOpDiv(opDivFn)
-            opDivFn(a, b)
+    opDivInt().opDiv(a, b)
 
 // Computes the remainder of the first Int divided by the second.
 fun opMod(a: Int, b: Int): Int
-    match opModInt()
-        case MakeOpMod(opModFn)
-            opModFn(a, b)
+    opModInt().opMod(a, b)
 
 // Returns True if the first Int is less than the second.
 fun opLt(a: Int, b: Int): Bool
-    match opLtInt()
-        case MakeOpLt(opLtFn)
-            opLtFn(a, b)
+    opLtInt().opLt(a, b)
 
 // Returns True if the first Int is less than or equal to the second.
 fun opLe(a: Int, b: Int): Bool
-    match opLeInt()
-        case MakeOpLe(opLeFn)
-            opLeFn(a, b)
+    opLeInt().opLe(a, b)
 
 // Computes the logical and of two Bool values.
 fun opAnd(a: Bool, b: Bool): Bool
-    match opAndBool()
-        case MakeOpAnd(opAndFn)
-            opAndFn(a, b)
+    opAndBool().opAnd(a, b)
 
 // Computes the logical or of two Bool values.
 fun opOr(a: Bool, b: Bool): Bool
-    match opOrBool()
-        case MakeOpOr(opOrFn)
-            opOrFn(a, b)
+    opOrBool().opOr(a, b)
 
 // Returns True when the Nat is Zero.
 fun natIsZero(n: Nat): Bool
@@ -460,37 +436,33 @@ fun listSetNat[T: Type](values: List[T], index: Nat, value: T): List[T]
 
 // Checks whether a list contains the given value.
 fun listContains[T: Type](values: List[T], value: T, eq: HasEq[T]): Bool
-    match eq
-        case MakeEq(eqFn)
-            match values
-                case Nil
-                    False
-                case Cons(head, tail)
-                    if eqFn(value, head)
-                        True
-                    else
-                        listContains(tail, value, eq)
+    match values
+        case Nil
+            False
+        case Cons(head, tail)
+            if eq.eq(value, head)
+                True
+            else
+                listContains(tail, value, eq)
 
 // Returns True when two lists are equal.
 fun listEq[T: Type](left: List[T], right: List[T], eq: HasEq[T]): Bool
-    match eq
-        case MakeEq(eqFn)
-            match left
+    match left
+        case Nil
+            match right
                 case Nil
-                    match right
-                        case Nil
-                            True
-                        case Cons(_, _)
-                            False
-                case Cons(leftHead, leftTail)
-                    match right
-                        case Nil
-                            False
-                        case Cons(rightHead, rightTail)
-                            if eqFn(leftHead, rightHead)
-                                listEq(leftTail, rightTail, eq)
-                            else
-                                False
+                    True
+                case Cons(_, _)
+                    False
+        case Cons(leftHead, leftTail)
+            match right
+                case Nil
+                    False
+                case Cons(rightHead, rightTail)
+                    if eq.eq(leftHead, rightHead)
+                        listEq(leftTail, rightTail, eq)
+                    else
+                        False
 
 // Returns True when the first list of Char is less than the second.
 fun charListLt(left: List[Char], right: List[Char]): Bool
@@ -577,22 +549,18 @@ fun stringLe(a: String, b: String): Bool
 
 // Converts a list into a String using Cons/Nil notation.
 fun listToString[T: Type](s: Show[T], values: List[T]): String
-    match s
-        case MakeShow(showFn)
-            match values
-                case Nil
-                    "Nil"
-                case Cons(head, tail)
-                    stringAppend(
-                        "Cons(",
-                        stringAppend(showFn(head), stringAppend(", ", stringAppend(listToString(s, tail), ")")))
-                    )
+    match values
+        case Nil
+            "Nil"
+        case Cons(head, tail)
+            stringAppend(
+                "Cons(",
+                stringAppend(s.show(head), stringAppend(", ", stringAppend(listToString(s, tail), ")")))
+            )
 
 // Defines a stub println that returns Unit.
 fun println[T: Type](value: T, s: Show[T]): Unit
-    match s
-        case MakeShow(showFn)
-            printlnString(showFn(value))
+    printlnString(s.show(value))
 
 fun printlnString(value: String): Unit
     MakeUnit
@@ -694,9 +662,7 @@ fun showString(): Show[String]
 
 // Converts a value to a String using the supplied Show instance.
 fun show[T: Type](value: T, s: Show[T]): String
-    match s
-        case MakeShow(showFn)
-            showFn(value)
+    s.show(value)
 
 // Negates an Int value.
 fun opNegIntFn(value: Int): Int
@@ -863,39 +829,31 @@ fun listSet[T: Type](eq: HasEq[T]): Set[List[T], T]
 
 // Inserts a key/value pair into the tree.
 fun treePut[K: Type, V: Type](tree: Tree[K, V], key: K, value: V, lt: OpLt[K], eq: HasEq[K]): Tree[K, V]
-    match lt
-        case MakeOpLt(ltFn)
-            match eq
-                case MakeEq(eqFn)
-                    match tree
-                        case Leaf
-                            Node(key, value, Leaf, Leaf)
-                        case Node(k, v, left, right)
-                            if eqFn(key, k)
-                                Node(k, value, left, right)
-                            else
-                                if ltFn(key, k)
-                                    Node(k, v, treePut(left, key, value, lt, eq), right)
-                                else
-                                    Node(k, v, left, treePut(right, key, value, lt, eq))
+    match tree
+        case Leaf
+            Node(key, value, Leaf, Leaf)
+        case Node(k, v, left, right)
+            if eq.eq(key, k)
+                Node(k, value, left, right)
+            else
+                if lt.opLt(key, k)
+                    Node(k, v, treePut(left, key, value, lt, eq), right)
+                else
+                    Node(k, v, left, treePut(right, key, value, lt, eq))
 
 // Looks up a key in the tree.
 fun treeLookup[K: Type, V: Type](tree: Tree[K, V], key: K, lt: OpLt[K], eq: HasEq[K]): Option[V]
-    match lt
-        case MakeOpLt(ltFn)
-            match eq
-                case MakeEq(eqFn)
-                    match tree
-                        case Leaf
-                            None
-                        case Node(k, v, left, right)
-                            if eqFn(key, k)
-                                Some(v)
-                            else
-                                if ltFn(key, k)
-                                    treeLookup(left, key, lt, eq)
-                                else
-                                    treeLookup(right, key, lt, eq)
+    match tree
+        case Leaf
+            None
+        case Node(k, v, left, right)
+            if eq.eq(key, k)
+                Some(v)
+            else
+                if lt.opLt(key, k)
+                    treeLookup(left, key, lt, eq)
+                else
+                    treeLookup(right, key, lt, eq)
 
 // Builds a tree map instance.
 // Inserts a key/value pair into a tree map.

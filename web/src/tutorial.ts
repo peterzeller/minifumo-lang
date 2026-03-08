@@ -8,6 +8,7 @@ interface TutorialLink {
 interface TutorialParagraphPart {
   text: string
   link?: TutorialLink
+  isInlineCode?: boolean
 }
 
 export interface TutorialParagraph {
@@ -117,6 +118,11 @@ function parseParagraphParts(tokens: Tokens.Generic[] | undefined, pagePath: str
   const parts: TutorialParagraphPart[] = []
 
   for (const token of tokens) {
+    if (token.type === 'codespan') {
+      parts.push({ text: token.text, isInlineCode: true })
+      continue
+    }
+
     if (token.type === 'link') {
       parts.push(linkTokenToParagraphPart(token as Tokens.Link, pagePath))
       continue
