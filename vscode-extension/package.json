@@ -1,0 +1,25 @@
+{
+  "name": "minifumo",
+  "displayName": "Minifumo",
+  "description": "Code extension for the Minifumo language, a language for playing with dependent types and proofs.",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.109.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [{
+      "id": "minifumo",
+      "aliases": ["Minifumo", "minifumo"],
+      "extensions": [".minifumo"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "minifumo",
+      "scopeName": "source.minifumo",
+      "path": "./syntaxes/minifumo.tmLanguage.json"
+    }]
+  }
+}
