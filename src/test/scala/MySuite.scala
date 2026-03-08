@@ -302,6 +302,38 @@ class MySuite extends munit.FunSuite {
   }
 
 
+  test("meta iff operator parses and type checks") {
+    val input =
+      """
+        |fun iffType(p: Type, q: Type): Type
+        |    p <==> q
+        |
+        |fun iffValue(p: Type, q: Type, pq: p ==> q, qp: q ==> p): Iff[p, q]
+        |    MakeIff[p, q](pq, qp)
+        |""".stripMargin
+    val (ast, _) = parseInput(input)
+    val dummyPath = "meta-iff.minifumo"
+    val dummyCache = new ProjectSymbolCache(GlobalSymbolsIo.create("."), TypeChecker.IdSupply())
+    dummyCache.addInput(dummyPath, input)
+    val (_, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
+    assertEquals(errors, List())
+  }
+
+  test("meta iff has lower precedence than implies") {
+    val input =
+      """
+        |fun iffPrecedence(p: Type, q: Type, r: Type): Type
+        |    p ==> q <==> r
+        |""".stripMargin
+    val (ast, _) = parseInput(input)
+    val dummyPath = "meta-iff-precedence.minifumo"
+    val dummyCache = new ProjectSymbolCache(GlobalSymbolsIo.create("."), TypeChecker.IdSupply())
+    dummyCache.addInput(dummyPath, input)
+    val (_, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
+    assertEquals(errors, List())
+  }
+
+
 
   // test("type checker can work with simple data types") {
   //   val (ast, _) = parseInput("""
