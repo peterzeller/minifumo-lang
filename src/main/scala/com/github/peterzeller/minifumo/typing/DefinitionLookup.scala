@@ -28,6 +28,10 @@ object DefinitionLookup:
     findElementAtCursor(program, pos).flatMap {
       case Expr.Var(symbol) =>
         definitionRange(symbol, currentFile, localDefinitions)
+      case Expr.App(Expr.Var(symbol), _, _) =>
+        definitionRange(symbol, currentFile, localDefinitions)
+      case Expr.AppImplicit(Expr.Var(symbol), _, _) =>
+        definitionRange(symbol, currentFile, localDefinitions)
       case TypedAst.Pattern.Ctor(symbol, _) =>
         definitionRange(symbol, currentFile, localDefinitions)
       case _ =>

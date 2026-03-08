@@ -25,11 +25,7 @@ fun sizedTree[T: Type](): MySized[MyTree[T]]
     MySizedMk[MyTree[T]](treeSize[T])
 
 fun totalSize[T: Type](list: MyList[T], tree: MyTree[T], s1: MySized[MyList[T]], s2: MySized[MyTree[T]]): Int
-    match s1
-        case MySizedMk(listSizeFn)
-            match s2
-                case MySizedMk(treeSizeFn)
-                    listSizeFn(list) + treeSizeFn(tree)
+    s1.size(list) + s2.size(tree)
 
 fun main(): Unit
     let list: MyList[Int] = MyCons(1, MyCons(2, MyNil))

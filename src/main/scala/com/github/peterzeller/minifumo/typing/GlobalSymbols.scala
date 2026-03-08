@@ -342,7 +342,6 @@ object GlobalSymbols:
         val ctorFieldNames = ctor.fields.map(_.name).toSet
         ctor.fields
           .filter(field => !referencesAny(field.tpe, ctorFieldNames))
-          .filter(field => !containsPi(field.tpe))
           .map(field => syntheticAccessorDecl(dataDecl, ctor, field))
       case _ =>
         List()
@@ -379,18 +378,6 @@ object GlobalSymbols:
         )
       )(source)
     ast.TopLevel.FunDecl(signature, body, exported = dataDecl.exported)(source)
-
-  // Checks whether an expression contains a function type.
-  private def containsPi(expr: ast.Expr): Boolean =
-    expr match
-      case ast.Expr.Pi(_, _) => true
-      case ast.Expr.Lit(_) | ast.Expr.Var(_) | ast.Expr.Hole() => false
-      case ast.Expr.Call(callee, arg) => containsPi(callee) || containsPi(arg)
-      case ast.Expr.CallImplicit(callee, arg) => containsPi(callee) || containsPi(arg)
-      case ast.Expr.FieldAccess(receiver, _) => containsPi(receiver)
-      case ast.Expr.Lambda(param, body) => param.tpe.exists(containsPi) || containsPi(body)
-      case ast.Expr.LetIn(_, declaredType, value, body) => declaredType.exists(containsPi) || containsPi(value) || containsPi(body)
-      case ast.Expr.Match(scrutinee, cases) => containsPi(scrutinee) || cases.exists(c => containsPi(c.body))
 
   // Checks whether an expression references any variable from a given name set.
   private def referencesAny(expr: ast.Expr, names: Set[String]): Boolean =
