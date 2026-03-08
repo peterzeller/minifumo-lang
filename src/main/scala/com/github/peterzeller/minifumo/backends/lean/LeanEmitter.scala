@@ -232,6 +232,7 @@ object LeanEmitter:
         s"(let ${localName} : ${emitExpr(declaredType, mangle, localScope, currentModule, localDefinitions, moduleNameByFile)} := ${emitExpr(value, mangle, localScope, currentModule, localDefinitions, moduleNameByFile)}; ${emitExpr(body, mangle, scope2, currentModule, localDefinitions, moduleNameByFile)})"
       case TypedAst.Expr.Meta(_, _) => "by trivial"
       case TypedAst.Expr.UnknownType() => "Type"
+      case TypedAst.Expr.Axiom() => "by\n  admit"
       case TypedAst.Expr.Match(scrutinee, _, cases) =>
         val scrut = emitExpr(scrutinee, mangle, localScope, currentModule, localDefinitions, moduleNameByFile)
         val caseText = cases
@@ -307,6 +308,7 @@ object LeanEmitter:
       case TypedAst.Expr.LetIn(_, _, declaredType, value, body) => collectGlobalNames(declaredType) ++ collectGlobalNames(value) ++ collectGlobalNames(body)
       case TypedAst.Expr.Meta(_, tpe) => collectGlobalNames(tpe)
       case TypedAst.Expr.UnknownType() => Set.empty
+      case TypedAst.Expr.Axiom() => Set.empty
       case TypedAst.Expr.Match(scrutinee, motive, cases) =>
         collectGlobalNames(scrutinee) ++ collectGlobalNames(motive) ++ cases.flatMap(c => collectGlobalNames(c.body)).toSet
 

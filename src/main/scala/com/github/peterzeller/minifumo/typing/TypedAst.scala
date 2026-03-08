@@ -86,12 +86,14 @@ object TypedAst:
 
     // placeholder when typing is unknown
     case UnknownType()(val source: SourceRange)
+    // axiom term accepted against any expected type
+    case Axiom()(val source: SourceRange)
     case Match(scrutinee: Expr, motive: Expr, cases: List[MatchCase])(val source: SourceRange)
 
     /** Returns child nodes for cursor-descent traversal. */
     override def children: List[com.github.peterzeller.minifumo.typing.TypedAst] =
       this match
-        case Lit(_) | Var(_) | Sort() | UnknownType() =>
+        case Lit(_) | Var(_) | Sort() | UnknownType() | Axiom() =>
           Nil
         case AppImplicit(callee, arg, tpe) =>
           List(callee, arg, tpe)
@@ -135,6 +137,7 @@ object TypedAst:
         case Expr.LetIn(symbol, isConstant, declaredType, value, body) => body.calculateType
         case Expr.Meta(index, tpe) => Some(tpe)
         case Expr.UnknownType() => Some(this)
+        case Expr.Axiom() => None
         case Expr.Match(scrutinee, motive, cases) => None
       }
 
