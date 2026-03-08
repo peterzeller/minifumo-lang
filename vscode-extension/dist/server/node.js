@@ -16185,48 +16185,18 @@ function $p_Lcom_github_peterzeller_minifumo_web_CompilerApi$__typedStandardProg
   }
   return $thiz.oc;
 }
-function $p_Lcom_github_peterzeller_minifumo_web_CompilerApi$__errorFromSyntax__Lcom_github_peterzeller_minifumo_parser_SyntaxError__sjs_js_Object($thiz, error) {
-  var s = error.i0;
-  var value = error.e7.e6;
-  var value$1 = error.e7.dC;
-  var value$2 = 1 + error.e7.dC | 0;
-  return {
-    "message": s,
-    "line": value,
-    "column": value$1,
-    "endColumn": value$2
-  };
+function $p_Lcom_github_peterzeller_minifumo_web_CompilerApi$__errorFromSyntax__Lcom_github_peterzeller_minifumo_parser_SyntaxError__Lcom_github_peterzeller_minifumo_web_CompilerApi$CompileError($thiz, error) {
+  return new ($a_Lcom_github_peterzeller_minifumo_web_CompilerApi$CompileError())(error.i0, error.e7.e6, error.e7.dC, 1 + error.e7.dC | 0);
 }
-function $p_Lcom_github_peterzeller_minifumo_web_CompilerApi$__errorFromType__Lcom_github_peterzeller_minifumo_typing_TypeChecker$TypeError__sjs_js_Object($thiz, error) {
-  var s = error.h3;
-  var value = error.g3.cP.e6;
-  var value$1 = error.g3.cP.dC;
-  var value$2 = error.g3.fU.dC;
-  return {
-    "message": s,
-    "line": value,
-    "column": value$1,
-    "endColumn": value$2
-  };
+function $p_Lcom_github_peterzeller_minifumo_web_CompilerApi$__errorFromType__Lcom_github_peterzeller_minifumo_typing_TypeChecker$TypeError__Lcom_github_peterzeller_minifumo_web_CompilerApi$CompileError($thiz, error) {
+  return new ($a_Lcom_github_peterzeller_minifumo_web_CompilerApi$CompileError())(error.h3, error.g3.cP.e6, error.g3.cP.dC, error.g3.fU.dC);
 }
-function $p_Lcom_github_peterzeller_minifumo_web_CompilerApi$__genericError__jl_Throwable__sjs_js_Object($thiz, error) {
+function $p_Lcom_github_peterzeller_minifumo_web_CompilerApi$__genericError__jl_Throwable__Lcom_github_peterzeller_minifumo_web_CompilerApi$CompileError($thiz, error) {
   var this$1 = $m_s_Option$().hy(error.cO());
-  var s = this$1.e() ? error.o() : this$1.aa();
-  return {
-    "message": s,
-    "line": 1,
-    "column": 1,
-    "endColumn": 1
-  };
+  return new ($a_Lcom_github_peterzeller_minifumo_web_CompilerApi$CompileError())(this$1.e() ? error.o() : this$1.aa(), 1, 1, 1);
 }
-function $p_Lcom_github_peterzeller_minifumo_web_CompilerApi$__compileResult__Z__T__sjs_js_Array__Z__Z__sjs_js_Object($thiz, success, output, errors, typed, executed) {
-  return {
-    "success": success,
-    "output": output,
-    "errors": errors,
-    "typed": typed,
-    "executed": executed
-  };
+function $p_Lcom_github_peterzeller_minifumo_web_CompilerApi$__compileResult__Z__T__sjs_js_Array__Z__Z__Lcom_github_peterzeller_minifumo_web_CompilerApi$CompileResult($thiz, success, output, errors, typed, executed) {
+  return new ($a_Lcom_github_peterzeller_minifumo_web_CompilerApi$CompileResult())(success, output, errors, typed, executed);
 }
 function $c_Lcom_github_peterzeller_minifumo_web_CompilerApi$() {
   this.r8 = null;
@@ -16257,7 +16227,7 @@ $p.s7 = (function(source, functionName, runFunction) {
     var syntaxErrors = \u03B42$.A;
     if (!syntaxErrors.e()) {
       var $x_2 = $m_sjs_js_JSConverters$JSRichIterableOnce$();
-      var f = ((error$2) => $p_Lcom_github_peterzeller_minifumo_web_CompilerApi$__errorFromSyntax__Lcom_github_peterzeller_minifumo_parser_SyntaxError__sjs_js_Object(this, error$2));
+      var f = ((error$2) => $p_Lcom_github_peterzeller_minifumo_web_CompilerApi$__errorFromSyntax__Lcom_github_peterzeller_minifumo_parser_SyntaxError__Lcom_github_peterzeller_minifumo_web_CompilerApi$CompileError(this, error$2));
       if (syntaxErrors === $m_sci_Nil$()) {
         var $x_1 = $m_sci_Nil$();
       } else {
@@ -16274,7 +16244,7 @@ $p.s7 = (function(source, functionName, runFunction) {
         }
         var $x_1 = h;
       }
-      return $p_Lcom_github_peterzeller_minifumo_web_CompilerApi$__compileResult__Z__T__sjs_js_Array__Z__Z__sjs_js_Object(this, false, "", $x_2.qZ($x_1), false, false);
+      return $p_Lcom_github_peterzeller_minifumo_web_CompilerApi$__compileResult__Z__T__sjs_js_Array__Z__Z__Lcom_github_peterzeller_minifumo_web_CompilerApi$CompileResult(this, false, "", $x_2.qZ($x_1), false, false);
     } else {
       matchResult2: {
         var \u03B44$;
@@ -16289,7 +16259,7 @@ $p.s7 = (function(source, functionName, runFunction) {
       var typeErrors = \u03B44$.A;
       if (!typeErrors.e()) {
         var $x_4 = $m_sjs_js_JSConverters$JSRichIterableOnce$();
-        var f$1 = ((error$2$1) => $p_Lcom_github_peterzeller_minifumo_web_CompilerApi$__errorFromType__Lcom_github_peterzeller_minifumo_typing_TypeChecker$TypeError__sjs_js_Object(this, error$2$1));
+        var f$1 = ((error$2$1) => $p_Lcom_github_peterzeller_minifumo_web_CompilerApi$__errorFromType__Lcom_github_peterzeller_minifumo_typing_TypeChecker$TypeError__Lcom_github_peterzeller_minifumo_web_CompilerApi$CompileError(this, error$2$1));
         if (typeErrors === $m_sci_Nil$()) {
           var $x_3 = $m_sci_Nil$();
         } else {
@@ -16306,16 +16276,16 @@ $p.s7 = (function(source, functionName, runFunction) {
           }
           var $x_3 = h$1;
         }
-        return $p_Lcom_github_peterzeller_minifumo_web_CompilerApi$__compileResult__Z__T__sjs_js_Array__Z__Z__sjs_js_Object(this, false, "", $x_4.qZ($x_3), false, false);
+        return $p_Lcom_github_peterzeller_minifumo_web_CompilerApi$__compileResult__Z__T__sjs_js_Array__Z__Z__Lcom_github_peterzeller_minifumo_web_CompilerApi$CompileResult(this, false, "", $x_4.qZ($x_3), false, false);
       } else {
-        return runFunction ? $p_Lcom_github_peterzeller_minifumo_web_CompilerApi$__compileResult__Z__T__sjs_js_Array__Z__Z__sjs_js_Object(this, true, $m_Lcom_github_peterzeller_minifumo_interpreter_Interpreter$().sw(typedProgram, new $c_sci_$colon$colon($p_Lcom_github_peterzeller_minifumo_web_CompilerApi$__typedStandardProgram__Lcom_github_peterzeller_minifumo_typing_TypedAst$Program(this), $m_sci_Nil$()), functionName).o(), [], true, true) : $p_Lcom_github_peterzeller_minifumo_web_CompilerApi$__compileResult__Z__T__sjs_js_Array__Z__Z__sjs_js_Object(this, true, "Compilation successful. Function '" + functionName + "' is ready.", [], true, false);
+        return runFunction ? $p_Lcom_github_peterzeller_minifumo_web_CompilerApi$__compileResult__Z__T__sjs_js_Array__Z__Z__Lcom_github_peterzeller_minifumo_web_CompilerApi$CompileResult(this, true, $m_Lcom_github_peterzeller_minifumo_interpreter_Interpreter$().sw(typedProgram, new $c_sci_$colon$colon($p_Lcom_github_peterzeller_minifumo_web_CompilerApi$__typedStandardProgram__Lcom_github_peterzeller_minifumo_typing_TypedAst$Program(this), $m_sci_Nil$()), functionName).o(), [], true, true) : $p_Lcom_github_peterzeller_minifumo_web_CompilerApi$__compileResult__Z__T__sjs_js_Array__Z__Z__Lcom_github_peterzeller_minifumo_web_CompilerApi$CompileResult(this, true, "Compilation successful. Function '" + functionName + "' is ready.", [], true, false);
       }
     }
   } catch (e) {
     var e$2 = e instanceof $c_jl_Throwable ? e : new $c_sjs_js_JavaScriptException(e);
     var x8 = $m_s_util_control_NonFatal$().ur(e$2);
     if (!x8.e()) {
-      return $p_Lcom_github_peterzeller_minifumo_web_CompilerApi$__compileResult__Z__T__sjs_js_Array__Z__Z__sjs_js_Object(this, false, "", [$p_Lcom_github_peterzeller_minifumo_web_CompilerApi$__genericError__jl_Throwable__sjs_js_Object(this, x8.aa())], false, false);
+      return $p_Lcom_github_peterzeller_minifumo_web_CompilerApi$__compileResult__Z__T__sjs_js_Array__Z__Z__Lcom_github_peterzeller_minifumo_web_CompilerApi$CompileResult(this, false, "", [$p_Lcom_github_peterzeller_minifumo_web_CompilerApi$__genericError__jl_Throwable__Lcom_github_peterzeller_minifumo_web_CompilerApi$CompileError(this, x8.aa())], false, false);
     }
     throw e$2 instanceof $c_sjs_js_JavaScriptException ? e$2.ht : e$2;
   }
@@ -23543,6 +23513,109 @@ function $m_Lcom_github_peterzeller_minifumo_typing_TypeChecker$MetaStore$() {
     $n_Lcom_github_peterzeller_minifumo_typing_TypeChecker$MetaStore$ = new $c_Lcom_github_peterzeller_minifumo_typing_TypeChecker$MetaStore$();
   }
   return $n_Lcom_github_peterzeller_minifumo_typing_TypeChecker$MetaStore$;
+}
+var $b_Lcom_github_peterzeller_minifumo_web_CompilerApi$CompileError;
+function $a_Lcom_github_peterzeller_minifumo_web_CompilerApi$CompileError() {
+  if (!$b_Lcom_github_peterzeller_minifumo_web_CompilerApi$CompileError) {
+    $b_Lcom_github_peterzeller_minifumo_web_CompilerApi$CompileError = class $b_Lcom_github_peterzeller_minifumo_web_CompilerApi$CompileError extends Object {
+      constructor(arg, arg$2, arg$3, arg$4) {
+        var message = null;
+        var line = 0;
+        var column = 0;
+        var endColumn = 0;
+        message = arg;
+        line = arg$2 | 0;
+        column = arg$3 | 0;
+        endColumn = arg$4 | 0;
+        super();
+        Object.defineProperty(this, "message", {
+          "configurable": true,
+          "enumerable": true,
+          "writable": true,
+          "value": null
+        });
+        Object.defineProperty(this, "line", {
+          "configurable": true,
+          "enumerable": true,
+          "writable": true,
+          "value": 0
+        });
+        Object.defineProperty(this, "column", {
+          "configurable": true,
+          "enumerable": true,
+          "writable": true,
+          "value": 0
+        });
+        Object.defineProperty(this, "endColumn", {
+          "configurable": true,
+          "enumerable": true,
+          "writable": true,
+          "value": 0
+        });
+        this.message = message;
+        this.line = line;
+        this.column = column;
+        this.endColumn = endColumn;
+      }
+    };
+  }
+  return $b_Lcom_github_peterzeller_minifumo_web_CompilerApi$CompileError;
+}
+var $b_Lcom_github_peterzeller_minifumo_web_CompilerApi$CompileResult;
+function $a_Lcom_github_peterzeller_minifumo_web_CompilerApi$CompileResult() {
+  if (!$b_Lcom_github_peterzeller_minifumo_web_CompilerApi$CompileResult) {
+    $b_Lcom_github_peterzeller_minifumo_web_CompilerApi$CompileResult = class $b_Lcom_github_peterzeller_minifumo_web_CompilerApi$CompileResult extends Object {
+      constructor(arg, arg$2, arg$3, arg$4, arg$5) {
+        var success = false;
+        var output = null;
+        var errors = null;
+        var typed = false;
+        var executed = false;
+        success = !!arg;
+        output = arg$2;
+        errors = arg$3;
+        typed = !!arg$4;
+        executed = !!arg$5;
+        super();
+        Object.defineProperty(this, "success", {
+          "configurable": true,
+          "enumerable": true,
+          "writable": true,
+          "value": false
+        });
+        Object.defineProperty(this, "output", {
+          "configurable": true,
+          "enumerable": true,
+          "writable": true,
+          "value": null
+        });
+        Object.defineProperty(this, "errors", {
+          "configurable": true,
+          "enumerable": true,
+          "writable": true,
+          "value": null
+        });
+        Object.defineProperty(this, "typed", {
+          "configurable": true,
+          "enumerable": true,
+          "writable": true,
+          "value": false
+        });
+        Object.defineProperty(this, "executed", {
+          "configurable": true,
+          "enumerable": true,
+          "writable": true,
+          "value": false
+        });
+        this.success = success;
+        this.output = output;
+        this.errors = errors;
+        this.typed = typed;
+        this.executed = executed;
+      }
+    };
+  }
+  return $b_Lcom_github_peterzeller_minifumo_web_CompilerApi$CompileResult;
 }
 function $c_jl_Class($data) {
   this.bx = $data;
@@ -50130,29 +50203,8 @@ var $e_MinifumoCompiler = $m_Lcom_github_peterzeller_minifumo_web_CompilerApi$()
 
 // src/shared/compiler.ts
 function compileMinifumoSource(source) {
-  const rawResult = $e_MinifumoCompiler.compileAndRun(source, "main", false);
-  return normalizeCompilerErrors(rawResult.errors);
-}
-function normalizeCompilerErrors(errors) {
-  if (!Array.isArray(errors)) {
-    return [];
-  }
-  return errors.map(normalizeCompilerError).filter((error) => error !== null);
-}
-function normalizeCompilerError(error) {
-  if (error === null || typeof error !== "object") {
-    return null;
-  }
-  const candidate = error;
-  if (typeof candidate.message !== "string" || typeof candidate.line !== "number" || typeof candidate.column !== "number" || typeof candidate.endColumn !== "number") {
-    return null;
-  }
-  return {
-    message: candidate.message,
-    line: candidate.line,
-    column: candidate.column,
-    endColumn: candidate.endColumn
-  };
+  const result = $e_MinifumoCompiler.compileAndRun(source, "main", false);
+  return result.errors;
 }
 
 // src/server/diagnostics.ts

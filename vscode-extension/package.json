@@ -16,7 +16,7 @@
     "Programming Languages"
   ],
   "scripts": {
-    "refresh:compiler": "cd .. && export PATH=/workspace/minifumo-lang/sbt/bin:$PATH && sbt compilerJs/fastLinkJS && cd web && npm run sync:compiler",
+    "refresh:compiler": "cd .. && sbt compilerJs/fullLinkJS && cd web && npm run sync:compiler",
     "compile": "npm run refresh:compiler && npm run compile:node && npm run compile:browser",
     "compile:node": "esbuild src/extension-node.ts src/server/node.ts --bundle --platform=node --format=cjs --outdir=dist --external:vscode",
     "compile:browser": "esbuild src/extension-browser.ts src/server/browser.ts --bundle --platform=browser --format=esm --outdir=dist --external:vscode",
