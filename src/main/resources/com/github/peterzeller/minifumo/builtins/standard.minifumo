@@ -59,6 +59,14 @@ export data Map[M: Type, K: Type, V: Type] = MakeMap(put: M -> K -> V -> M, look
 
 export data Set[S: Type, T: Type] = MakeSet(contains: S -> T -> Bool, add: S -> T -> S)
 
+// Postulates classical excluded middle.
+export fun excludedMiddle[p: Type](): p OR NOT p
+    axiom
+
+// Postulates functional extensionality for pointwise equal functions.
+export fun extFun[A: Type, B: Type, f: A -> B, g: A -> B](h: forall x: A :: Eq[B](f(x), g(x))): Eq[A -> B](f, g)
+    axiom
+
 // Substitutes equal values into a dependent motive.
 export fun subst[T: Type, x: T, y: T, motive: T -> Type](h: Eq[T](x, y), hx: motive(x)): motive(y)
     match h

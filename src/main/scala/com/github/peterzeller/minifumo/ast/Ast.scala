@@ -101,6 +101,8 @@ enum Expr:
 
   // place holder for missing expressions
   case Hole()(val source: SourceRange)
+  // axiom placeholder inhabiting any expected type during checking
+  case Axiom()(val source: SourceRange)
 
   def source: SourceRange
 
@@ -128,6 +130,7 @@ enum Expr:
       case Expr.Match(scrutinee, cases) =>
         s"match $scrutinee ${cases.map(c => s"$c").mkString(" | ")}"
       case Expr.Hole() => "???"
+      case Expr.Axiom() => "axiom"
     }
 
 final case class MatchCase(pattern: Pattern, body: Expr)(val source: SourceRange)

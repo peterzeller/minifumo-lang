@@ -192,6 +192,7 @@ object Interpreter:
       case TypedAst.Expr.Sort() => Value.UndefinedVal
       case TypedAst.Expr.Pi(_, _, _) => Value.UndefinedVal
       case TypedAst.Expr.UnknownType() => Value.UndefinedVal
+      case TypedAst.Expr.Axiom() => Value.UndefinedVal
     debugPrint(s"Evaluating ${prettyPrint(expr)}\n-> $res")
     res
 

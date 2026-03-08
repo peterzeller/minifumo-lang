@@ -18,6 +18,7 @@ object TypeCheckerExprDispatcher:
         case p @ ast.Expr.Pi(_, _) => CheckPiExpr.infer(p)
         case m @ ast.Expr.Match(_, _) => CheckMatchExpr.infer(m)
         case h @ ast.Expr.Hole() => CheckHoleExpr.infer(h)
+        case a @ ast.Expr.Axiom() => CheckAxiomExpr.infer(a)
     catch
       case e: Exception =>
         throw new RuntimeException(s"error inferring type of $expr", e)
@@ -29,6 +30,7 @@ object TypeCheckerExprDispatcher:
       expr match
         case l @ ast.Expr.Lambda(_, _) => CheckLambdaExpr.check(l, expectedType)
         case m @ ast.Expr.Match(_, _) => CheckMatchExpr.check(m, expectedType)
+        case a @ ast.Expr.Axiom() => CheckAxiomExpr.check(a, expectedType)
         case _ => checkAndElaborate(expr, expectedType)
     catch
       case e: Exception =>
