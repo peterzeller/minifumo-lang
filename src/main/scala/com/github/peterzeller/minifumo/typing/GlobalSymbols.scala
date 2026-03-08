@@ -242,8 +242,11 @@ final case class CtorSymbol(dt: DatatypeSymbol, name: String) extends GlobalSymb
    * The type of Cons would be: Pi(T: Type, Pi(head: T, Pi(tail: List[T], List[T]), true), true), false)
    * */
   def tpe: TypedAst.Expr = {
-    val ctor = dt.typed.ctors.find(_.symbol.name == name).get
-    ctor.tpe
+    dt.typed.ctors.find(_.symbol.name == name) match
+      case Some(ctor) =>
+        ctor.tpe
+      case None =>
+        TypedAst.Expr.UnknownType()(SourceRange.empty)
   }
 
 
@@ -323,6 +326,93 @@ enum SymbolSignature:
   case Datatype(implicitParams: List[LocalSymbol])
 
 object GlobalSymbols:
+  // Builds synthetic field accessor functions for single-constructor datatypes.
+  def syntheticAccessorDecls(items: List[ast.TopLevel]): List[ast.TopLevel.FunDecl] =
+    items.flatMap {
+      case dataDecl: ast.TopLevel.DataDecl =>
+        syntheticAccessorDeclsForDataDecl(dataDecl)
+      case _ =>
+        List()
+    }
+
+  // Builds synthetic field accessor functions for one datatype declaration.
+  private def syntheticAccessorDeclsForDataDecl(dataDecl: ast.TopLevel.DataDecl): List[ast.TopLevel.FunDecl] =
+    dataDecl.ctors match
+      case ctor :: Nil =>
+        val ctorFieldNames = ctor.fields.map(_.name).toSet
+        ctor.fields
+          .filter(field => !referencesAny(field.tpe, ctorFieldNames))
+          .filter(field => !containsPi(field.tpe))
+          .map(field => syntheticAccessorDecl(dataDecl, ctor, field))
+      case _ =>
+        List()
+
+  // Builds one synthetic accessor function declaration like And_left(p: And(...)): ...
+  private def syntheticAccessorDecl(dataDecl: ast.TopLevel.DataDecl, ctor: ast.CtorDecl, field: ast.CtorField): ast.TopLevel.FunDecl =
+    val source = dataDecl.source
+    val functionName = s"${dataDecl.name}_${field.name}"
+    val receiverName = "value"
+    val datatypeWithImplicitArgs = dataDecl.implicitParams.foldLeft[ast.Expr](ast.Expr.Var(dataDecl.name)(source)) { (acc, param) =>
+      ast.Expr.CallImplicit(acc, ast.Expr.Var(param.name)(source))(source)
+    }
+    val datatypeRef = dataDecl.params.foldLeft(datatypeWithImplicitArgs) { (acc, param) =>
+      ast.Expr.Call(acc, ast.Expr.Var(param.name)(source))(source)
+    }
+    val signature = ast.FunSig(
+      functionName,
+      dataDecl.implicitParams,
+      List(ast.FunParam(receiverName, datatypeRef)(source)),
+      field.tpe
+    )(source)
+    val binderNames = ctor.fields.indices.map(index => s"_field_${index}").toList
+    val casePatternArgs: List[ast.Pattern] =
+      binderNames.map(name => ast.Pattern.BinderOrCtor0(name)(source))
+    val selectedBinder = binderNames(ctor.fields.indexWhere(_.name == field.name))
+    val body =
+      ast.Expr.Match(
+        ast.Expr.Var(receiverName)(source),
+        List(
+          ast.MatchCase(
+            ast.Pattern.Ctor(ctor.name, casePatternArgs)(source),
+            ast.Expr.Var(selectedBinder)(source)
+          )(source)
+        )
+      )(source)
+    ast.TopLevel.FunDecl(signature, body, exported = dataDecl.exported)(source)
+
+  // Checks whether an expression contains a function type.
+  private def containsPi(expr: ast.Expr): Boolean =
+    expr match
+      case ast.Expr.Pi(_, _) => true
+      case ast.Expr.Lit(_) | ast.Expr.Var(_) | ast.Expr.Hole() => false
+      case ast.Expr.Call(callee, arg) => containsPi(callee) || containsPi(arg)
+      case ast.Expr.CallImplicit(callee, arg) => containsPi(callee) || containsPi(arg)
+      case ast.Expr.FieldAccess(receiver, _) => containsPi(receiver)
+      case ast.Expr.Lambda(param, body) => param.tpe.exists(containsPi) || containsPi(body)
+      case ast.Expr.LetIn(_, declaredType, value, body) => declaredType.exists(containsPi) || containsPi(value) || containsPi(body)
+      case ast.Expr.Match(scrutinee, cases) => containsPi(scrutinee) || cases.exists(c => containsPi(c.body))
+
+  // Checks whether an expression references any variable from a given name set.
+  private def referencesAny(expr: ast.Expr, names: Set[String]): Boolean =
+    collectVarNames(expr).exists(names.contains)
+
+  // Collects variable names referenced in an AST expression.
+  private def collectVarNames(expr: ast.Expr): Set[String] =
+    expr match
+      case ast.Expr.Lit(_) => Set()
+      case ast.Expr.Var(name) => Set(name)
+      case ast.Expr.Call(callee, arg) => collectVarNames(callee) ++ collectVarNames(arg)
+      case ast.Expr.CallImplicit(callee, arg) => collectVarNames(callee) ++ collectVarNames(arg)
+      case ast.Expr.FieldAccess(receiver, _) => collectVarNames(receiver)
+      case ast.Expr.Lambda(param, body) => param.tpe.map(collectVarNames).getOrElse(Set()) ++ (collectVarNames(body) - param.name)
+      case ast.Expr.LetIn(name, declaredType, value, body) =>
+        declaredType.map(collectVarNames).getOrElse(Set()) ++ collectVarNames(value) ++ (collectVarNames(body) - name)
+      case ast.Expr.Pi(param, body) =>
+        collectVarNames(param.tpe) ++ (collectVarNames(body) - param.name)
+      case ast.Expr.Match(scrutinee, cases) =>
+        collectVarNames(scrutinee) ++ cases.flatMap(matchCase => collectVarNames(matchCase.body)).toSet
+      case ast.Expr.Hole() => Set()
+
   // Collects local symbols referenced by an expression list.
   private def collectReferencedLocalSymbols(expressions: Iterable[TypedAst.Expr]): Set[LocalSymbol] =
     expressions.flatMap(TypeChecker.collectReferencedSymbols).collect { case local: LocalSymbol => local }.toSet
@@ -344,7 +434,8 @@ object GlobalSymbols:
 
   // build a map of global names in a program file
   def buildGlobalNames(file: String, prog: ast.ProgramFile, onlyExported: Boolean): Map[String, GlobalName] =
-    prog.items.flatMap(topLevelToGlobalNames(file, onlyExported)).toMap
+    val itemsWithAccessors = prog.items ++ syntheticAccessorDecls(prog.items)
+    itemsWithAccessors.flatMap(topLevelToGlobalNames(file, onlyExported)).toMap
 
   private def topLevelToGlobalNames(file: String, onlyExported: Boolean)(t: ast.TopLevel): Iterable[(String, GlobalName)] =
     t match
@@ -379,7 +470,8 @@ object GlobalSymbols:
           case None =>
             errors.addOne(TypeError(s"Import without from clause not supported", i.source))
 
-    for symbols <- prog.items.map(topLevelToGlobalSymbols(file, onlyExported, symbolCache, ids)) do
+    val itemsWithAccessors = prog.items ++ syntheticAccessorDecls(prog.items)
+    for symbols <- itemsWithAccessors.map(topLevelToGlobalSymbols(file, onlyExported, symbolCache, ids)) do
       for (name, source, sym) <- symbols do
         if res.contains(name) then
           errors.addOne(TypeError(s"Name ${name} is already defined", source))

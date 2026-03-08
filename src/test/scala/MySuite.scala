@@ -209,6 +209,46 @@ class MySuite extends munit.FunSuite {
     assertEquals(result, intValue(4))
   }
 
+
+
+  test("single-constructor datatype fields are accessible via dot syntax") {
+    val input =
+      """
+        |data Pair = MakePair(left: Int, right: Int)
+        |
+        |fun pickLeft(p: Pair): Int
+        |    p.left
+        |
+        |fun main(): Int
+        |    pickLeft(MakePair(5, 7))
+      """.stripMargin
+    val (ast, _) = parseInput(input)
+    val dummyPath = "pair-dot.minifumo"
+    val dummyCache = new ProjectSymbolCache(GlobalSymbolsIo.create("."), TypeChecker.IdSupply())
+    dummyCache.addInput(dummyPath, input)
+    val (typed, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
+    assertEquals(errors, List())
+    val result = Interpreter.evalProg(typed, dummyCache, "main")
+    assertEquals(result, intValue(5))
+  }
+
+  test("single-constructor datatype fields have generated accessor functions") {
+    val input =
+      """
+        |data Pair = MakePair(left: Int, right: Int)
+        |
+        |fun main(): Int
+        |    Pair_left(MakePair(9, 3))
+      """.stripMargin
+    val (ast, _) = parseInput(input)
+    val dummyPath = "pair-accessor.minifumo"
+    val dummyCache = new ProjectSymbolCache(GlobalSymbolsIo.create("."), TypeChecker.IdSupply())
+    dummyCache.addInput(dummyPath, input)
+    val (typed, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
+    assertEquals(errors, List())
+    val result = Interpreter.evalProg(typed, dummyCache, "main")
+    assertEquals(result, intValue(9))
+  }
   test("standard library compiles without type errors") {
     // Type-checks the bundled standard library in isolation.
     val standardPath = "standard.minifumo"

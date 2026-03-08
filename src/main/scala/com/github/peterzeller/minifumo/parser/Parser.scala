@@ -330,14 +330,8 @@ private class HandwrittenParser(tokens: Vector[Token]):
         consume(TokenKind.PAREN_RIGHT, "Expected ')' after call arguments.")
         expr = curriedCall(expr, Nil, args)
       else if matchKind(TokenKind.DOT) then
-        val method = consume(TokenKind.ID, "Expected field or method name after '.'.")
-        val args =
-          if matchKind(TokenKind.PAREN_LEFT) then
-            val parsed = if !check(TokenKind.PAREN_RIGHT) then commaSeparated(TokenKind.PAREN_RIGHT)(parseExpr) else Nil
-            consume(TokenKind.PAREN_RIGHT, "Expected ')' after method arguments.")
-            parsed
-          else Nil
-        expr = curriedCall(Expr.Var(method.text)(method.source), Nil, expr :: args)
+        val field = consume(TokenKind.ID, "Expected field name after '.'.")
+        expr = Expr.FieldAccess(expr, field.text)(merge(expr.source, field.source))
       else continue = false
     expr
 
