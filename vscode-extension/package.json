@@ -3,12 +3,38 @@
   "displayName": "Minifumo",
   "description": "Code extension for the Minifumo language, a language for playing with dependent types and proofs.",
   "version": "0.0.1",
+  "main": "./dist/extension-node.js",
+  "browser": "./dist/extension-browser.js",
   "engines": {
     "vscode": "^1.109.0"
   },
+  "extensionKind": [
+    "ui",
+    "workspace"
+  ],
   "categories": [
     "Programming Languages"
   ],
+  "scripts": {
+    "refresh:compiler": "cd .. && export PATH=/workspace/minifumo-lang/sbt/bin:$PATH && sbt compilerJs/fastLinkJS && cd web && npm run sync:compiler",
+    "compile": "npm run refresh:compiler && npm run compile:node && npm run compile:browser",
+    "compile:node": "esbuild src/extension-node.ts src/server/node.ts --bundle --platform=node --format=cjs --outdir=dist --external:vscode",
+    "compile:browser": "esbuild src/extension-browser.ts src/server/browser.ts --bundle --platform=browser --format=esm --outdir=dist --external:vscode",
+    "check-types": "tsc --noEmit",
+    "vscode:prepublish": "npm run compile"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1",
+    "vscode-languageserver": "^9.0.1",
+    "vscode-languageserver-textdocument": "^1.0.11"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.30",
+    "@types/vscode": "^1.109.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.8.2",
+    "vscode": "^1.1.37"
+  },
   "contributes": {
     "languages": [{
       "id": "minifumo",
