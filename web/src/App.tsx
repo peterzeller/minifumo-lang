@@ -6,12 +6,9 @@ import { minifumoLanguage } from './minifumoLanguage'
 import { MinifumoCompiler } from './compiler'
 import { tutorialPagesById, type TutorialBlock, type TutorialCodeInclude, type TutorialPage } from './tutorial'
 import { siteNavigationModel, tutorialOrderedPages, tutorialPageTitlesById, type TutorialNavigationNode } from './navigation'
+import { type NavigationTarget, navigationTargetToPath, pathToNavigationTarget, syncBrowserPath } from './routes'
 
 type Theme = 'light' | 'dark'
-
-type NavigationTarget =
-  | { kind: 'playground' }
-  | { kind: 'tutorial'; pageId: string }
 
 interface CompileError {
   message: string
@@ -186,7 +183,7 @@ function TutorialBlockView({
             <a
               key={`${link.targetId}-${index}`}
               className="tutorialLink"
-              href="#"
+              href={navigationTargetToPath({ kind: 'tutorial', pageId: link.targetId })}
               onClick={(event) => {
                 event.preventDefault()
                 onNavigate(link.targetId)
@@ -236,7 +233,7 @@ function TutorialNavigationTree({
           return (
             <li key={node.pageId}>
               <a
-                href="#"
+                href={navigationTargetToPath({ kind: 'tutorial', pageId: node.pageId })}
                 className={isActive ? 'tocLink activeTocLink' : 'tocLink'}
                 onClick={(event) => {
                   event.preventDefault()
@@ -318,10 +315,9 @@ function getInitialTheme(): Theme {
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
 
-// Returns the initial navigation target based on the declared tutorial table of contents.
-function getInitialNavigationTarget(): NavigationTarget {
-  const firstTutorialPage = tutorialOrderedPages[0]
-  return firstTutorialPage ? { kind: 'tutorial', pageId: firstTutorialPage.pageId } : { kind: 'playground' }
+// Returns the fallback navigation target used when the current path is unknown.
+function getDefaultNavigationTarget(): NavigationTarget {
+  return { kind: 'playground' }
 }
 
 // Renders the mobile-friendly Minifumo browser playground UI.
@@ -333,7 +329,7 @@ export function App() {
   const [shouldRun, setShouldRun] = useState(true)
   const [theme, setTheme] = useState<Theme>(() => getInitialTheme())
   const [isNavOpen, setIsNavOpen] = useState(false)
-  const [navigationTarget, setNavigationTarget] = useState<NavigationTarget>(() => getInitialNavigationTarget())
+  const [navigationTarget, setNavigationTarget] = useState<NavigationTarget>(() => pathToNavigationTarget(window.location.pathname, getDefaultNavigationTarget()))
   const isPlaygroundActive = navigationTarget.kind === 'playground'
   const activePageTitle =
     navigationTarget.kind === 'playground'
@@ -356,6 +352,21 @@ export function App() {
   useEffect(() => {
     document.title = activePageTitle
   }, [activePageTitle])
+
+  // Keeps application state synchronized with browser back and forward navigation.
+  useEffect(() => {
+    const handlePopState = () => {
+      setNavigationTarget(pathToNavigationTarget(window.location.pathname, getDefaultNavigationTarget()))
+    }
+
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
+
+  // Updates browser history when app navigation state changes.
+  useEffect(() => {
+    syncBrowserPath(navigationTarget)
+  }, [navigationTarget])
 
   // Initializes and tears down the CodeMirror editor instance when the playground view is active.
   useEffect(() => {
@@ -436,7 +447,7 @@ export function App() {
         <nav aria-label="Main navigation">
           <h2>Contents</h2>
           <a
-            href="#"
+            href={navigationTargetToPath({ kind: 'playground' })}
             className={isPlaygroundActive ? 'tocLink activeTocLink' : 'tocLink'}
             onClick={(event) => {
               event.preventDefault()

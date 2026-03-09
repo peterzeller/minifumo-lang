@@ -108,3 +108,16 @@ test('top bar and document titles track the active page', async ({ page }) => {
   await expect(page.locator('.topBarTitle')).toHaveText('Working with lists')
   await expect(page).toHaveTitle('Working with lists')
 })
+
+test('navigation updates browser URLs and supports deep links', async ({ page }) => {
+  await page.goto('/')
+
+  await navigateToTopLevel(page, 'Playground')
+  await expect(page).toHaveURL(/\/playground$/)
+
+  await navigateToTutorialPage(page, 'Working with lists')
+  await expect(page).toHaveURL(/\/tutorial\/working-with-lists$/)
+
+  await page.goto('/tutorial/03-functions')
+  await expect(page.locator('.topBarTitle')).toHaveText('Functions')
+})
