@@ -297,6 +297,8 @@ final case class FunctionSymbol(
         allErrors ++= errors
         val (elaboratedBody, unresolvedMetaErrors) = TypeChecker.finalizeTopLevelExpr(body)(using s.continuationContext, s.metaStore)
         allErrors ++= unresolvedMetaErrors
+        val completenessErrors = TypeChecker.checkMatchCompletenessInExpr(elaboratedBody)(using s.continuationContext, s.metaStore)
+        allErrors ++= completenessErrors
 
         state = FunctionSymbolCheckState.BodyCalculated(TypedAst.TopLevel.FunDecl(s.sig, elaboratedBody)(f.source))
         Some(elaboratedBody)

@@ -269,7 +269,117 @@ object TypeChecker:
     loop(expr)
 
   /** Type-checks a function body against its return type. */
-  
+  private[typing] def checkMatchCompletenessInExpr(expr: TypedAst.Expr)(using ctx: TypeContext, metas: MetaContext): List[TypeError] =
+    val matches = collectMatchExpressions(expr)
+    matches.flatMap(checkSingleMatchCompleteness)
+
+  /** Collects all match expressions that appear in an expression tree. */
+  private def collectMatchExpressions(expr: TypedAst.Expr): List[TypedAst.Expr.Match] =
+    expr match
+      case m @ TypedAst.Expr.Match(scrutinee, motive, cases) =>
+        m :: (collectMatchExpressions(scrutinee) ++ collectMatchExpressions(motive) ++ cases.flatMap(c => collectMatchExpressions(c.body)))
+      case TypedAst.Expr.App(callee, arg, tpe) =>
+        collectMatchExpressions(callee) ++ collectMatchExpressions(arg) ++ collectMatchExpressions(tpe)
+      case TypedAst.Expr.AppImplicit(callee, arg, tpe) =>
+        collectMatchExpressions(callee) ++ collectMatchExpressions(arg) ++ collectMatchExpressions(tpe)
+      case TypedAst.Expr.Lambda(param, body, tpe) =>
+        collectMatchExpressions(param.tpe) ++ collectMatchExpressions(body) ++ collectMatchExpressions(tpe)
+      case TypedAst.Expr.LetIn(symbol, _, declaredType, value, body) =>
+        collectMatchExpressions(symbol.tpe) ++ collectMatchExpressions(declaredType) ++ collectMatchExpressions(value) ++ collectMatchExpressions(body)
+      case TypedAst.Expr.Pi(dom, cod, _) =>
+        collectMatchExpressions(dom.tpe) ++ collectMatchExpressions(cod)
+      case TypedAst.Expr.Meta(_, tpe) =>
+        collectMatchExpressions(tpe)
+      case _ =>
+        Nil
+
+  /** Checks one match expression and reports the uncovered constructor patterns. */
+  private def checkSingleMatchCompleteness(matchExpr: TypedAst.Expr.Match)(using ctx: TypeContext, metas: MetaContext): List[TypeError] =
+    val missing = uncoveredPatterns(matchExpr.cases.map(c => List(c.pattern)), List(matchExpr.scrutinee.calculateType.getOrElse(TypedAst.Expr.UnknownType()(matchExpr.source))))
+    val missingCases = missing.flatMap(_.headOption)
+    if missingCases.isEmpty then
+      Nil
+    else
+      val missingText = missingCases.map(prettyCoveragePattern).distinct.sorted
+      val message = s"Non-exhaustive match. Missing cases: ${missingText.mkString(", ")}" 
+      List(TypeError(message, matchExpr.source))
+
+  /** Internal witness format used by the exhaustiveness checker. */
+  private enum CoveragePattern:
+    case Any
+    case Ctor(symbol: CtorSymbol, args: List[CoveragePattern])
+
+  /** Computes the uncovered pattern vectors for a constructor-pattern matrix. */
+  private def uncoveredPatterns(rows: List[List[TypedAst.Pattern]], columnTypes: List[TypedAst.Expr])(using ctx: TypeContext, metas: MetaContext): List[List[CoveragePattern]] =
+    if columnTypes.isEmpty then
+      if rows.exists(_.isEmpty) then Nil else List(Nil)
+    else
+      val headType = columnTypes.head
+      val tailTypes = columnTypes.tail
+      if rows.isEmpty then
+        datatypeHead(headType) match
+          case Some(dt) if dt.ctorSymbols.isEmpty => Nil
+          case _ => List(CoveragePattern.Any :: tailTypes.map(_ => CoveragePattern.Any))
+      else
+        datatypeHead(headType) match
+          case None =>
+            if rows.exists(row => row.nonEmpty && isWildcardLike(row.head)) then uncoveredPatterns(rows.filter(r => r.nonEmpty && isWildcardLike(r.head)).map(_.tail), tailTypes)
+              .map(CoveragePattern.Any :: _)
+            else Nil
+          case Some(dt) =>
+            if rows.exists(row => row.nonEmpty && isWildcardLike(row.head)) then
+              uncoveredPatterns(rows.filter(r => r.nonEmpty && isWildcardLike(r.head)).map(_.tail), tailTypes)
+                .map(CoveragePattern.Any :: _)
+            else
+              matchingConstructors(dt, headType).flatMap { ctor =>
+                val ctorRows = rows.flatMap {
+                  case head :: tail =>
+                    head match
+                      case TypedAst.Pattern.Ctor(symbol, args) if symbolsEqual(symbol, ctor) => Some(args ++ tail)
+                      case _ => None
+                  case Nil => None
+                }
+                val ctorFieldTypes = extractCtorFieldTypes(ctor.tpe, headType)
+                val missingUnderCtor = uncoveredPatterns(ctorRows, ctorFieldTypes ++ tailTypes)
+                if missingUnderCtor.isEmpty && ctorRows.nonEmpty then
+                  Nil
+                else if missingUnderCtor.isEmpty then
+                  List(CoveragePattern.Ctor(ctor, List.fill(ctorFieldTypes.length)(CoveragePattern.Any)) :: List.fill(tailTypes.length)(CoveragePattern.Any))
+                else
+                  missingUnderCtor.map { witness =>
+                    val (ctorArgs, rest) = witness.splitAt(ctorFieldTypes.length)
+                    CoveragePattern.Ctor(ctor, ctorArgs) :: rest
+                  }
+              }
+
+
+  /** Selects constructors whose result type is definitionally equal to the scrutinee type. */
+  private def matchingConstructors(datatype: DatatypeSymbol, expectedType: TypedAst.Expr)(using ctx: TypeContext, metas: MetaContext): List[CtorSymbol] =
+    val compatible = datatype.ctorSymbols.filter { ctor =>
+      val (_, resultType) = decomposeCtorType(ctor.tpe)
+      isDefEq(resultType, expectedType, expectedType.source)
+    }
+    if compatible.nonEmpty then compatible else datatype.ctorSymbols
+
+  /** Checks whether a typed pattern is a wildcard-like catch-all pattern. */
+  private def isWildcardLike(pattern: TypedAst.Pattern): Boolean =
+    pattern match
+      case TypedAst.Pattern.Wildcard() | TypedAst.Pattern.Binder(_) => true
+      case _ => false
+
+  /** Extracts the datatype symbol at the head of a type application. */
+  private def datatypeHead(expr: TypedAst.Expr)(using ctx: TypeContext, metas: MetaContext): Option[DatatypeSymbol] =
+    val (head, _) = decomposeApplication(whnf(expr))
+    head match
+      case TypedAst.Expr.Var(symbol: DatatypeSymbol) => Some(symbol)
+      case _ => None
+
+  /** Renders one uncovered pattern witness for diagnostics. */
+  private def prettyCoveragePattern(pattern: CoveragePattern): String =
+    pattern match
+      case CoveragePattern.Any => "_"
+      case CoveragePattern.Ctor(symbol, args) =>
+        if args.isEmpty then symbol.name else s"${symbol.name}(${args.map(prettyCoveragePattern).mkString(", ")})"
 
   /** Resolves metas at the end of a declaration and reports unresolved placeholders. */
   private[typing] def finalizeTopLevelExpr(expr: TypedAst.Expr)
