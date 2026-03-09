@@ -324,6 +324,11 @@ function getDefaultNavigationTarget(): NavigationTarget {
   return { kind: 'playground' }
 }
 
+// Returns whether sidebar link clicks should close the navigation drawer.
+function shouldAutoCloseNavigation(): boolean {
+  return window.matchMedia('(max-width: 700px)').matches
+}
+
 // Renders the mobile-friendly Minifumo browser playground UI.
 export function App() {
   const editorContainerRef = useRef<HTMLDivElement | null>(null)
@@ -422,6 +427,14 @@ export function App() {
     setNavigationTarget({ kind: 'playground' })
   }
 
+  // Switches to the playground and collapses mobile navigation after sidebar selection.
+  const openPlaygroundFromSidebar = () => {
+    openPlayground()
+    if (shouldAutoCloseNavigation()) {
+      setIsNavOpen(false)
+    }
+  }
+
   // Switches the main view to a selected tutorial page when it exists in parsed content.
   const openTutorialPage = (pageId: string) => {
     if (!tutorialPagesById[pageId]) {
@@ -429,6 +442,14 @@ export function App() {
     }
 
     setNavigationTarget({ kind: 'tutorial', pageId })
+  }
+
+  // Switches to a tutorial page and collapses mobile navigation after sidebar selection.
+  const openTutorialPageFromSidebar = (pageId: string) => {
+    openTutorialPage(pageId)
+    if (shouldAutoCloseNavigation()) {
+      setIsNavOpen(false)
+    }
   }
 
   const activeTutorialPageId = navigationTarget.kind === 'tutorial' ? navigationTarget.pageId : ''
@@ -458,7 +479,7 @@ export function App() {
             className={isPlaygroundActive ? 'tocLink activeTocLink' : 'tocLink'}
             onClick={(event) => {
               event.preventDefault()
-              openPlayground()
+              openPlaygroundFromSidebar()
             }}
           >
             Playground
@@ -468,7 +489,7 @@ export function App() {
             <TutorialNavigationTree
               nodes={siteNavigationModel.tutorialTree}
               currentPageId={activeTutorialPageId}
-              onOpenPage={openTutorialPage}
+              onOpenPage={openTutorialPageFromSidebar}
             />
           </details>
         </nav>
