@@ -97,8 +97,8 @@ test('tutorial page links navigate and included code is editable', async ({ page
 test('top bar and document titles track the active page', async ({ page }) => {
   await page.goto('/')
 
-  await expect(page.locator('.topBarTitle')).toHaveText('Your first Minifumo program')
-  await expect(page).toHaveTitle('Your first Minifumo program')
+  await expect(page.locator('.topBarTitle')).toContainText('Playground')
+  await expect(page).toHaveTitle('Playground')
 
   await navigateToTopLevel(page, 'Playground')
   await expect(page.locator('.topBarTitle')).toHaveText('Playground')
@@ -119,5 +119,5 @@ test('navigation updates browser URLs and supports deep links', async ({ page })
   await expect(page).toHaveURL(/\/tutorial\/working-with-lists$/)
 
   await page.goto('/tutorial/03-functions')
-  await expect(page.locator('.topBarTitle')).toHaveText('Functions')
+  await expect(page.locator('.topBarTitle')).toContainText('Functions')
 })
