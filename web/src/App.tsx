@@ -6,12 +6,9 @@ import { minifumoLanguage } from './minifumoLanguage'
 import { MinifumoCompiler } from './compiler'
 import { tutorialPagesById, type TutorialBlock, type TutorialCodeInclude, type TutorialPage } from './tutorial'
 import { siteNavigationModel, tutorialOrderedPages, tutorialPageTitlesById, type TutorialNavigationNode } from './navigation'
+import { type NavigationTarget, navigationTargetToPath, pathToNavigationTarget, syncBrowserPath } from './routes'
 
 type Theme = 'light' | 'dark'
-
-type NavigationTarget =
-  | { kind: 'playground' }
-  | { kind: 'tutorial'; pageId: string }
 
 interface CompileError {
   message: string
@@ -186,7 +183,7 @@ function TutorialBlockView({
             <a
               key={`${link.targetId}-${index}`}
               className="tutorialLink"
-              href="#"
+              href={navigationTargetToPath({ kind: 'tutorial', pageId: link.targetId })}
               onClick={(event) => {
                 event.preventDefault()
                 onNavigate(link.targetId)
@@ -236,7 +233,7 @@ function TutorialNavigationTree({
           return (
             <li key={node.pageId}>
               <a
-                href="#"
+                href={navigationTargetToPath({ kind: 'tutorial', pageId: node.pageId })}
                 className={isActive ? 'tocLink activeTocLink' : 'tocLink'}
                 onClick={(event) => {
                   event.preventDefault()
@@ -279,7 +276,6 @@ function TutorialView({
 
   return (
     <section className="tutorialContent">
-      <h2>{currentPage?.title ?? tutorialPageTitlesById[currentPageId] ?? 'Tutorial'}</h2>
       {currentPage ? (
         <article className="tutorialSection" key={currentPage.id}>
           {currentPage.blocks.map((block, index) => (
@@ -318,10 +314,14 @@ function getInitialTheme(): Theme {
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
 
-// Returns the initial navigation target based on the declared tutorial table of contents.
-function getInitialNavigationTarget(): NavigationTarget {
-  const firstTutorialPage = tutorialOrderedPages[0]
-  return firstTutorialPage ? { kind: 'tutorial', pageId: firstTutorialPage.pageId } : { kind: 'playground' }
+// Reads the saved sidebar open state and falls back to collapsed.
+function getInitialNavOpen(): boolean {
+  return window.localStorage.getItem('minifumo-nav-open') === 'true'
+}
+
+// Returns the fallback navigation target used when the current path is unknown.
+function getDefaultNavigationTarget(): NavigationTarget {
+  return { kind: 'playground' }
 }
 
 // Renders the mobile-friendly Minifumo browser playground UI.
@@ -332,8 +332,8 @@ export function App() {
   const [functionName, setFunctionName] = useState('main')
   const [shouldRun, setShouldRun] = useState(true)
   const [theme, setTheme] = useState<Theme>(() => getInitialTheme())
-  const [isNavOpen, setIsNavOpen] = useState(false)
-  const [navigationTarget, setNavigationTarget] = useState<NavigationTarget>(() => getInitialNavigationTarget())
+  const [isNavOpen, setIsNavOpen] = useState<boolean>(() => getInitialNavOpen())
+  const [navigationTarget, setNavigationTarget] = useState<NavigationTarget>(() => pathToNavigationTarget(window.location.pathname, getDefaultNavigationTarget()))
   const isPlaygroundActive = navigationTarget.kind === 'playground'
   const activePageTitle =
     navigationTarget.kind === 'playground'
@@ -352,10 +352,30 @@ export function App() {
     window.localStorage.setItem('minifumo-theme', theme)
   }, [theme])
 
+  // Persists whether the navigation sidebar is expanded.
+  useEffect(() => {
+    window.localStorage.setItem('minifumo-nav-open', String(isNavOpen))
+  }, [isNavOpen])
+
   // Keeps the browser tab title in sync with the currently active page.
   useEffect(() => {
     document.title = activePageTitle
   }, [activePageTitle])
+
+  // Keeps application state synchronized with browser back and forward navigation.
+  useEffect(() => {
+    const handlePopState = () => {
+      setNavigationTarget(pathToNavigationTarget(window.location.pathname, getDefaultNavigationTarget()))
+    }
+
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
+
+  // Updates browser history when app navigation state changes.
+  useEffect(() => {
+    syncBrowserPath(navigationTarget)
+  }, [navigationTarget])
 
   // Initializes and tears down the CodeMirror editor instance when the playground view is active.
   useEffect(() => {
@@ -400,7 +420,6 @@ export function App() {
   // Switches the main view to the playground section.
   const openPlayground = () => {
     setNavigationTarget({ kind: 'playground' })
-    setIsNavOpen(false)
   }
 
   // Switches the main view to a selected tutorial page when it exists in parsed content.
@@ -410,7 +429,6 @@ export function App() {
     }
 
     setNavigationTarget({ kind: 'tutorial', pageId })
-    setIsNavOpen(false)
   }
 
   const activeTutorialPageId = navigationTarget.kind === 'tutorial' ? navigationTarget.pageId : ''
@@ -436,7 +454,7 @@ export function App() {
         <nav aria-label="Main navigation">
           <h2>Contents</h2>
           <a
-            href="#"
+            href={navigationTargetToPath({ kind: 'playground' })}
             className={isPlaygroundActive ? 'tocLink activeTocLink' : 'tocLink'}
             onClick={(event) => {
               event.preventDefault()
