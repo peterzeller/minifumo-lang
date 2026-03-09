@@ -180,12 +180,14 @@ button:disabled {
 
 .tutorialContent {
   max-width: 52rem;
+  min-height: calc(100vh - 6rem);
+  display: flex;
+  flex-direction: column;
 }
 
 .tutorialSection {
-  border-top: 1px solid var(--panel-border);
-  padding-top: 1rem;
-  margin-top: 0.5rem;
+  padding-top: 0rem;
+  margin-top: 0rem;
 }
 
 .tutorialParagraph {
@@ -259,7 +261,8 @@ button:disabled {
   display: flex;
   justify-content: space-between;
   gap: 0.75rem;
-  margin-top: 1rem;
+  margin-top: auto;
+  padding-top: 1rem;
 }
 
 @media (max-width: 700px) {

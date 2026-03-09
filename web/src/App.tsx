@@ -276,7 +276,6 @@ function TutorialView({
 
   return (
     <section className="tutorialContent">
-      <h2>{currentPage?.title ?? tutorialPageTitlesById[currentPageId] ?? 'Tutorial'}</h2>
       {currentPage ? (
         <article className="tutorialSection" key={currentPage.id}>
           {currentPage.blocks.map((block, index) => (
@@ -315,6 +314,11 @@ function getInitialTheme(): Theme {
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
 
+// Reads the saved sidebar open state and falls back to collapsed.
+function getInitialNavOpen(): boolean {
+  return window.localStorage.getItem('minifumo-nav-open') === 'true'
+}
+
 // Returns the fallback navigation target used when the current path is unknown.
 function getDefaultNavigationTarget(): NavigationTarget {
   return { kind: 'playground' }
@@ -328,7 +332,7 @@ export function App() {
   const [functionName, setFunctionName] = useState('main')
   const [shouldRun, setShouldRun] = useState(true)
   const [theme, setTheme] = useState<Theme>(() => getInitialTheme())
-  const [isNavOpen, setIsNavOpen] = useState(false)
+  const [isNavOpen, setIsNavOpen] = useState<boolean>(() => getInitialNavOpen())
   const [navigationTarget, setNavigationTarget] = useState<NavigationTarget>(() => pathToNavigationTarget(window.location.pathname, getDefaultNavigationTarget()))
   const isPlaygroundActive = navigationTarget.kind === 'playground'
   const activePageTitle =
@@ -347,6 +351,11 @@ export function App() {
     document.documentElement.setAttribute('data-theme', theme)
     window.localStorage.setItem('minifumo-theme', theme)
   }, [theme])
+
+  // Persists whether the navigation sidebar is expanded.
+  useEffect(() => {
+    window.localStorage.setItem('minifumo-nav-open', String(isNavOpen))
+  }, [isNavOpen])
 
   // Keeps the browser tab title in sync with the currently active page.
   useEffect(() => {
@@ -411,7 +420,6 @@ export function App() {
   // Switches the main view to the playground section.
   const openPlayground = () => {
     setNavigationTarget({ kind: 'playground' })
-    setIsNavOpen(false)
   }
 
   // Switches the main view to a selected tutorial page when it exists in parsed content.
@@ -421,7 +429,6 @@ export function App() {
     }
 
     setNavigationTarget({ kind: 'tutorial', pageId })
-    setIsNavOpen(false)
   }
 
   const activeTutorialPageId = navigationTarget.kind === 'tutorial' ? navigationTarget.pageId : ''
