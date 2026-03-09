@@ -2,8 +2,24 @@ import { expect, test, type Page } from '@playwright/test'
 
 // Opens the sidebar and keeps it open for selecting a navigation entry.
 async function openSidebar(page: Page): Promise<void> {
+  const siteNavClass = await page.locator('#site-navigation').first().getAttribute('class')
+  if (siteNavClass?.includes('open')) {
+    // already open, no need to click the toggle button
+    return
+  }
   await page.getByRole('button', { name: '☰' }).click()
   await expect(page.locator('#site-navigation')).toHaveClass(/open/)
+}
+
+// Closes the sidebar
+async function closeSidebar(page: Page): Promise<void> {
+  const siteNavClass = await page.locator('#site-navigation').first().getAttribute('class')
+  if (!siteNavClass?.includes('open')) {
+    // already closed, no need to click the toggle button
+    return
+  }
+  await page.getByRole('button', { name: '☰' }).click()
+  await expect(page.locator('#site-navigation')).not.toHaveClass(/open/)
 }
 
 // Navigates to a top-level destination from the sidebar table of contents.
@@ -69,6 +85,7 @@ test('tutorial example runner shows output only after execution', async ({ page 
   await navigateToTutorialPage(page, 'First program')
 
   await expect(page.locator('textarea.output')).toHaveCount(0)
+  await closeSidebar(page)
   await page.getByRole('button', { name: 'Run example' }).first().click()
 
   await expect(page.locator('textarea.output').first()).toContainText('42')
@@ -88,6 +105,7 @@ test('tutorial page links navigate and included code is editable', async ({ page
   await page.keyboard.type(`fun main(): Int
   7`)
 
+  await closeSidebar(page)
   await page.getByRole('button', { name: 'Run example' }).first().click()
 
   const tutorialOutput = page.getByRole('textbox', { name: 'Output for Computing list length' })
