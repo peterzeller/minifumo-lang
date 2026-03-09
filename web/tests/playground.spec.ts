@@ -139,3 +139,14 @@ test('navigation updates browser URLs and supports deep links', async ({ page })
   await page.goto('/tutorial/03-functions')
   await expect(page.locator('.topBarTitle')).toContainText('Functions')
 })
+
+test('narrow screens show full-width navigation and close it after selection', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/')
+
+  await openSidebar(page)
+  await expect(page.locator('#site-navigation')).toHaveCSS('width', '390px')
+
+  await page.locator('#site-navigation').getByRole('link', { name: 'Playground', exact: true }).click()
+  await expect(page.locator('#site-navigation')).not.toHaveClass(/open/)
+})
