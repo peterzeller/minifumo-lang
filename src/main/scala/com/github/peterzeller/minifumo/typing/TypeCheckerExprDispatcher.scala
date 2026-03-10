@@ -30,6 +30,7 @@ object TypeCheckerExprDispatcher:
     try
       expr match
         case l @ ast.Expr.Lambda(_, _) => CheckLambdaExpr.check(l, expectedType)
+        case l @ ast.Expr.LetIn(_, _, _, _) => CheckLetExpr.check(l, expectedType)
         case m @ ast.Expr.Match(_, _) => CheckMatchExpr.check(m, expectedType)
         case a @ ast.Expr.Axiom() => CheckAxiomExpr.check(a, expectedType)
         case h @ ast.Expr.Hole() =>
