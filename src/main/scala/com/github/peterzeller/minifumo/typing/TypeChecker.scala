@@ -5,7 +5,6 @@ import com.github.peterzeller.minifumo.{ast, typing}
 import com.github.peterzeller.minifumo.ast.SourceRange
 import com.github.peterzeller.minifumo.builtins.Standard
 import com.github.peterzeller.minifumo.common.MinifumoError
-import com.github.peterzeller.minifumo.typing.TypeChecker.EqualityConstraint
 import com.github.peterzeller.minifumo.typing.TypedAst.*
 import com.github.peterzeller.minifumo.typing.TypedAst.Expr.{Sort, UnknownType}
 

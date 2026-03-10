@@ -36,5 +36,4 @@ object CheckLetExpr:
 
 
   /** Collects locally bound symbols that may appear in typed let annotations. */
-  private def localSymbols(ctx: TypeContext): Map[String, TermSymbol] =
-    ctx.locals.view.mapValues(_.symbol).toMap
+  
