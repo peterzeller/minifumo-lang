@@ -1,6 +1,7 @@
 package com.github.peterzeller.minifumo.typing
 
 import com.github.peterzeller.minifumo.ast
+import com.github.peterzeller.minifumo.ast.SourceRange
 import com.github.peterzeller.minifumo.typing.TypeChecker.*
 
 /** Type-checking logic for let expressions. */
@@ -10,9 +11,9 @@ object CheckLetExpr:
     val ast.Expr.LetIn(name, declaredType, value, body) = expr
     val inferredValue = declaredType match
       case Some(tpeExpr) =>
-        val expected = signatureExpr(tpeExpr, ctx.globals, localSymbols(ctx))
-        val (typedValue, errs) = TypeChecker.check(value, expected)
-        (typedValue, expected, errs)
+        val (expected, errs1) = TypeChecker.checkAndElaborate(tpeExpr, TypedAst.Expr.Sort()(SourceRange.empty))
+        val (typedValue, errs2) = TypeChecker.check(value, expected)
+        (typedValue, expected, errs1 ++ errs2)
       case None => TypeChecker.inferAndElaborate(value)
     val (valueExpr, valueType, errs) = inferredValue
     val symbol = LocalSymbol(name, valueType, ids.freshLocalId())

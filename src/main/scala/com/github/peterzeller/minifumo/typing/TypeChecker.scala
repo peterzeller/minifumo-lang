@@ -420,51 +420,7 @@ object TypeChecker:
       case local: LocalSymbol => instantiateLocalSymbol(local)
       case BuiltinValueSymbol(name, tpe) => BuiltinValueSymbol(name, instantiate(tpe))
 
-  /** Translates a signature expression to a typed expression. */
-  private[typing] def signatureExpr(expr: ast.Expr, globals: GlobalEnv, locals: Map[String, TermSymbol])(implicit ids: TypeChecker.IdSupply): TypedAst.Expr = {
-    // TODO can't we just use the normal expression typing method?
-    expr match
-      case ast.Expr.Lit(value) => TypedAst.Expr.Lit(value)(expr.source)
-      case ast.Expr.Var(name) =>
-        if name == "unit" then
-          TypedAst.Expr.UnknownType()(expr.source)
-        else if name == "Type" then
-          TypedAst.Expr.Sort()(expr.source)
-        else
-          locals.get(name) match
-            case Some(symbol) =>
-              TypedAst.Expr.Var(symbol)(expr.source)
-            case None =>
-              globals.names.get(name) match
-                case Some(symbol) =>
-                  TypedAst.Expr.Var(symbol)(expr.source)
-                case None =>
-                  TypedAst.Expr.Var(ErrorSymbol(name, TypedAst.Expr.UnknownType()(expr.source)))(expr.source)
-      case ast.Expr.Call(callee, arg) =>
-        val calleeExpr = signatureExpr(callee, globals, locals)
-        val argExpr = signatureExpr(arg, globals, locals)
-        TypedAst.Expr.App(calleeExpr, argExpr, TypedAst.Expr.UnknownType()(expr.source))(expr.source)
-      case ast.Expr.FieldAccess(_, _) =>
-        TypedAst.Expr.UnknownType()(expr.source)
-      case ast.Expr.CallImplicit(callee, arg) =>
-        val calleeExpr = signatureExpr(callee, globals, locals)
-        val argExpr = signatureExpr(arg, globals, locals)
-        TypedAst.Expr.AppImplicit(calleeExpr, argExpr, TypedAst.Expr.UnknownType()(expr.source))(expr.source)
-      case ast.Expr.Pi(param, body) =>
-        val dom = signatureExpr(param.tpe, globals, locals)
-        val domSym = LocalSymbol(param.name, dom, ids.freshLocalId())
-        val cod = signatureExpr(body, globals, locals + (param.name -> domSym))
-        TypedAst.Expr.Pi(domSym, cod, isImplicit = false)(expr.source)
-      case ast.Expr.Hole() =>
-        TypedAst.Expr.UnknownType()(expr.source)
-      case ast.Expr.Axiom() =>
-        TypedAst.Expr.Axiom()(expr.source)
-      case _ =>
-        TypedAst.Expr.UnknownType()(expr.source)
-  }
-
-
-  /** Checks if two types are definitionally equal, solving metas as needed. 
+  /** Checks if two types are definitionally equal, solving metas as needed.
   */
   def isDefEq(t1: TypedAst.Expr, t2: TypedAst.Expr, source: SourceRange)
              (implicit ctx: Context, metas: MetaContext): Boolean =
