@@ -52,6 +52,19 @@ class ParserRecoverySuite extends munit.FunSuite {
     assert(fun.body.isInstanceOf[ast.Expr.Lambda])
   }
 
+
+
+  test("hole in let body reports propagated expected type") {
+    val input =
+      """
+        |fun missingViaLet(): Int
+        |    let x = 1
+        |    ???
+      """.stripMargin
+    val errors = typeCheck(input)
+    assert(errors.exists(_.message.contains("Int is expected for this hole")))
+  }
+
   test("hole token ??? parses and reports expected type when checked") {
     val input =
       """
@@ -59,7 +72,6 @@ class ParserRecoverySuite extends munit.FunSuite {
         |    ???
       """.stripMargin
     val errors = typeCheck(input)
-    assert(errors.exists(_.message.contains("Encountered hole expression")))
-    assert(errors.exists(_.message.contains("Int")))
+    assert(errors.exists(_.message.contains("Int is expected")))
   }
 }
