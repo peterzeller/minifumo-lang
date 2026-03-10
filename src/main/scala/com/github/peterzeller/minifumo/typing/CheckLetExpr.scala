@@ -9,13 +9,12 @@ object CheckLetExpr:
   /** Infers the type for a let-in expression. */
   def infer(expr: ast.Expr.LetIn)(using ctx: TypeContext, metas: MetaContext, ids: IdSupply): (TypedAst.Expr, TypedAst.Expr, List[TypeError]) =
     val ast.Expr.LetIn(name, declaredType, value, body) = expr
-    val inferredValue = declaredType match
+    val (valueExpr, valueType, errs) = declaredType match
       case Some(tpeExpr) =>
         val (expected, errs1) = TypeChecker.checkAndElaborate(tpeExpr, TypedAst.Expr.Sort()(SourceRange.empty))
         val (typedValue, errs2) = TypeChecker.check(value, expected)
         (typedValue, expected, errs1 ++ errs2)
       case None => TypeChecker.inferAndElaborate(value)
-    val (valueExpr, valueType, errs) = inferredValue
     val symbol = LocalSymbol(name, valueType, ids.freshLocalId())
     val bodyCtx = ctx.withLocal(symbol, Some(valueExpr))
     val (bodyExpr, bodyType, errs2) = TypeChecker.infer(body)(using bodyCtx, metas, ids)
@@ -24,13 +23,12 @@ object CheckLetExpr:
   /** Checks a let-in expression against an expected body type. */
   def check(expr: ast.Expr.LetIn, expectedType: TypedAst.Expr)(using ctx: TypeContext, metas: MetaContext, ids: IdSupply): (TypedAst.Expr, List[TypeError]) =
     val ast.Expr.LetIn(name, declaredType, value, body) = expr
-    val inferredValue = declaredType match
+    val (valueExpr, valueType, errs) = declaredType match
       case Some(tpeExpr) =>
-        val expected = signatureExpr(tpeExpr, ctx.globals, localSymbols(ctx))
-        val (typedValue, errs) = TypeChecker.check(value, expected)
-        (typedValue, expected, errs)
+        val (expected, errs1) = TypeChecker.checkAndElaborate(tpeExpr, TypedAst.Expr.Sort()(SourceRange.empty))
+        val (typedValue, errs2) = TypeChecker.check(value, expected)
+        (typedValue, expected, errs1 ++ errs2)
       case None => TypeChecker.inferAndElaborate(value)
-    val (valueExpr, valueType, errs) = inferredValue
     val symbol = LocalSymbol(name, valueType, ids.freshLocalId())
     val bodyCtx = ctx.withLocal(symbol, Some(valueExpr))
     val (bodyExpr, bodyErrs) = TypeChecker.check(body, expectedType)(using bodyCtx, metas, ids)

@@ -62,8 +62,7 @@ class ParserRecoverySuite extends munit.FunSuite {
         |    ???
       """.stripMargin
     val errors = typeCheck(input)
-    assert(errors.exists(_.message.contains("Encountered hole expression")))
-    assert(errors.exists(_.message.contains("Int")))
+    assert(errors.exists(_.message.contains("Int is expected for this hole")))
   }
 
   test("hole token ??? parses and reports expected type when checked") {

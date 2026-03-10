@@ -15,12 +15,12 @@ class TypeCheckerSuite extends munit.FunSuite:
   // Builds a mutable meta context for normalization tests.
   private def metaContext: TypeChecker.MetaContext =
     val assignments = mutable.Map[Int, TypedAst.Expr]()
-    val constraints = mutable.ListBuffer[TypeChecker.EqualityConstraint]()
+    val constraintsBuf = mutable.ListBuffer[TypeChecker.Constraint]()
     new TypeChecker.MetaContext:
       override def assign(metaId: Int, term: TypedAst.Expr): Unit = assignments.update(metaId, term)
       override def getAssignment(metaId: Int): Option[TypedAst.Expr] = assignments.get(metaId)
-      override def addEqualityConstraint(constraint: TypeChecker.EqualityConstraint): Unit = constraints.addOne(constraint)
-      override def equalityConstraints: List[TypeChecker.EqualityConstraint] = constraints.toList
+      override def addConstraint(constraint: TypeChecker.Constraint): Unit = constraintsBuf.addOne(constraint)
+      override def constraints: List[TypeChecker.Constraint] = constraintsBuf.toList
 
   test("whnf reduces lambda application") {
     val source = ast.SourceRange.empty
@@ -96,16 +96,16 @@ class TypeCheckerSuite extends munit.FunSuite:
     val literal = TypedAst.Expr.Lit(ast.Literal.IntLit("7")(source))(source)
     given TypeChecker.Context = emptyContext
     val assignments = mutable.Map[Int, TypedAst.Expr]()
-    val constraints = mutable.ListBuffer[TypeChecker.EqualityConstraint]()
+    val constraintsBuf = mutable.ListBuffer[TypeChecker.Constraint]()
     given TypeChecker.MetaContext = new TypeChecker.MetaContext:
       override def assign(metaId: Int, term: TypedAst.Expr): Unit = assignments.update(metaId, term)
       override def getAssignment(metaId: Int): Option[TypedAst.Expr] = assignments.get(metaId)
-      override def addEqualityConstraint(constraint: TypeChecker.EqualityConstraint): Unit = constraints.addOne(constraint)
-      override def equalityConstraints: List[TypeChecker.EqualityConstraint] = constraints.toList
+      override def addConstraint(constraint: TypeChecker.Constraint): Unit = constraintsBuf.addOne(constraint)
+      override def constraints: List[TypeChecker.Constraint] = constraintsBuf.toList
     val result = TypeChecker.isDefEq(meta, literal, source)
     assert(result)
     assertEquals(assignments.get(0), Some(literal))
-    assertEquals(constraints.length, 0)
+    assertEquals(constraintsBuf.length, 0)
   }
 
 //  test("pattern matching substitutes constructor type parameters without standard library") {

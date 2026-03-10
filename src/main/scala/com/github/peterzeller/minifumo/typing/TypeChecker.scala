@@ -5,6 +5,7 @@ import com.github.peterzeller.minifumo.{ast, typing}
 import com.github.peterzeller.minifumo.ast.SourceRange
 import com.github.peterzeller.minifumo.builtins.Standard
 import com.github.peterzeller.minifumo.common.MinifumoError
+import com.github.peterzeller.minifumo.typing.TypeChecker.EqualityConstraint
 import com.github.peterzeller.minifumo.typing.TypedAst.*
 import com.github.peterzeller.minifumo.typing.TypedAst.Expr.{Sort, UnknownType}
 
@@ -120,8 +121,8 @@ object TypeChecker:
   trait MetaContext:
     def assign(metaId: Int, term: TypedAst.Expr): Unit
     def getAssignment(metaId: Int): Option[TypedAst.Expr]
-    def addEqualityConstraint(constraint: EqualityConstraint): Unit
-    def equalityConstraints: List[EqualityConstraint]
+    def addConstraint(constraint: Constraint): Unit
+    def constraints: List[Constraint]
 
   /** Represents a binding in the local context. */
   private[typing] final case class LocalBinding(symbol: TermSymbol, value: Option[TypedAst.Expr])
@@ -180,7 +181,7 @@ object TypeChecker:
 
   /** Stores meta-variable assignments during unification. */
   private[typing] final case class MetaStore(assignments: mutable.Map[Int, TypedAst.Expr] = mutable.Map()) extends MetaContext:
-    private val constraints: ListBuffer[EqualityConstraint] = ListBuffer.empty
+    private val constraintsBuf: ListBuffer[Constraint] = ListBuffer.empty
 
     override def assign(metaId: Int, term: TypedAst.Expr): Unit =
       assignments.update(metaId, term)
@@ -188,13 +189,13 @@ object TypeChecker:
     override def getAssignment(metaId: Int): Option[TypedAst.Expr] =
       assignments.get(metaId)
 
-    /** Appends a new deferred equality constraint to the store. */
-    override def addEqualityConstraint(constraint: EqualityConstraint): Unit =
-      constraints.addOne(constraint)
+    /** Appends a new deferred constraint to the store. */
+    override def addConstraint(constraint: Constraint): Unit =
+      constraintsBuf.addOne(constraint)
 
-    /** Returns the currently tracked deferred equality constraints. */
-    override def equalityConstraints: List[EqualityConstraint] =
-      constraints.toList
+    /** Returns the currently tracked deferred constraints. */
+    override def constraints: List[Constraint] =
+      constraintsBuf.toList
 
   /** Tracks identifier allocation for local symbols and metas. */
   final case class IdSupply(var nextId: Int = 0, var nextMeta: Int = 0):
@@ -384,16 +385,9 @@ object TypeChecker:
   /** Resolves metas at the end of a declaration and reports unresolved placeholders. */
   private[typing] def finalizeTopLevelExpr(expr: TypedAst.Expr)
                                (implicit ctx: Context, metas: MetaContext): (TypedAst.Expr, List[TypeError]) =
-    val unresolvedConstraints = solveOpenConstraints(defaultConstraintFuel)
+    val constraintErrors = solveOpenConstraints(defaultConstraintFuel)
     val unresolved = collectUnresolvedMetas(expr)
     val metaErrors = unresolved.toList.map(meta => TypeError(s"Could not infer implicit argument ${prettyExpr(meta)}", meta.source))
-    val constraintErrors = unresolvedConstraints.map { case (constraint, reducedLeft, reducedRight) =>
-      val message =
-        s"Could not solve equality constraint ${prettyEqConstraint(constraint.left, constraint.right)}\n" +
-          s"Reduced left: ${prettyExpr(reducedLeft)}\n" +
-          s"Reduced right: ${prettyExpr(reducedRight)}"
-      TypeError(message, constraint.source)
-    }.distinctBy(err => (err.source.start.line, err.message))
     (instantiate(expr), metaErrors ++ constraintErrors)
 
   /** Instantiates all local symbol types and values in a type-checking context. */
@@ -443,7 +437,7 @@ object TypeChecker:
           case _ if syntacticallyEquivalent(norm1, norm2) =>
             true
           case _ =>
-            metas.addEqualityConstraint(EqualityConstraint(t1, t2, source))
+            metas.addConstraint(EqualityConstraint(t1, t2, source))
             true
 
   private def symbolsEqual(a: Symbol, b: Symbol): Boolean =
@@ -499,12 +493,12 @@ object TypeChecker:
       case _ => None
 
   /** Tries to solve deferred equality constraints by normalizing both sides. */
-  private def solveOpenConstraints(fuel: Int)(implicit ctx: Context, metas: MetaContext): List[(EqualityConstraint, TypedAst.Expr, TypedAst.Expr)] =
-    var pending = metas.equalityConstraints
+  private def solveOpenConstraints(fuel: Int)(implicit ctx: Context, metas: MetaContext): List[TypeError] =
+    var pending = metas.constraints
     var changed = true
     while changed do
       changed = false
-      val nextPending = ListBuffer[(EqualityConstraint, TypedAst.Expr, TypedAst.Expr)]()
+      val nextPending = ListBuffer[(Constraint, List[TypeError])]()
       for constraint <- pending do
         trySolveConstraint(constraint, fuel) match
           case None =>
@@ -513,11 +507,32 @@ object TypeChecker:
             nextPending.addOne(unresolved)
       pending = nextPending.toList.map(_._1)
       if !changed then
-        return nextPending.toList
+        return nextPending.iterator.flatMap(_._2).toList
     List.empty
 
   /** Attempts to solve one constraint by reducing it and assigning metas when possible. */
-  private def trySolveConstraint(constraint: EqualityConstraint, fuel: Int)
+  private def trySolveConstraint(constraint: Constraint, fuel: Int)
+                                (implicit ctx: Context, metas: MetaContext): Option[(Constraint, List[TypeError])] = {
+    constraint match {
+      case eq: EqualityConstraint =>
+        trySolveEqualityConstraint(eq, fuel) match {
+          case Some((c, reducedLeft, reducedRight)) =>
+              val message =
+                s"Could not solve equality constraint ${prettyEqConstraint(c.left, c.right)}\n" +
+                  s"Reduced left: ${prettyExpr(reducedLeft)}\n" +
+                  s"Reduced right: ${prettyExpr(reducedRight)}"
+              Some((c, List(TypeError(message, constraint.source))))
+          case None =>
+            None
+        }
+      case h: HoleConstraint =>
+        val i = instantiate(h.holeType)
+        val t = TypeError(s"${prettyExpr(i)} is expected for this hole", h.source)
+        Some((h, List(t)))
+    }
+  }
+
+  private def trySolveEqualityConstraint(constraint: EqualityConstraint, fuel: Int)
                                 (implicit ctx: Context, metas: MetaContext): Option[(EqualityConstraint, TypedAst.Expr, TypedAst.Expr)] = {
     val left = instantiate(constraint.left)
     val right = instantiate(constraint.right)
@@ -1168,8 +1183,15 @@ object TypeChecker:
       """.stripMargin('|')
     else
       s"$msgHead: ${error.message}"
+
+  sealed trait Constraint:
+    def source: SourceRange
+
   /** Stores one deferred equality problem that should be solved after elaboration. */
-  final case class EqualityConstraint(left: TypedAst.Expr, right: TypedAst.Expr, source: SourceRange)
+  final case class EqualityConstraint(left: TypedAst.Expr, right: TypedAst.Expr, source: SourceRange) extends Constraint
+
+  final case class HoleConstraint(holeType: TypedAst.Expr, source: SourceRange) extends Constraint
+
 
   /** Classifies constructor-like application heads used by definitional equality. */
   private enum DefEqHeadKind:
