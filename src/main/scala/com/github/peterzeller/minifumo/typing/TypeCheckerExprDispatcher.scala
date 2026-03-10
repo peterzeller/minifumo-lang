@@ -17,7 +17,7 @@ object TypeCheckerExprDispatcher:
         case l @ ast.Expr.LetIn(_, _, _, _) => CheckLetExpr.check(l, None)
         case f @ ast.Expr.FieldAccess(_, _) => CheckFieldAccessExpr.infer(f)
         case p @ ast.Expr.Pi(_, _) => CheckPiExpr.infer(p)
-        case m @ ast.Expr.Match(_, _) => CheckMatchExpr.infer(m)
+        case m @ ast.Expr.Match(_, _, _) => CheckMatchExpr.infer(m)
         case h @ ast.Expr.Hole() => CheckHoleExpr.infer(h)
         case a @ ast.Expr.Axiom() => CheckAxiomExpr.infer(a)
     catch
@@ -33,7 +33,7 @@ object TypeCheckerExprDispatcher:
         case l @ ast.Expr.LetIn(_, _, _, _) => 
           val (a, _, es) = CheckLetExpr.check(l, Some(expectedType))
           (a, es)
-        case m @ ast.Expr.Match(_, _) => CheckMatchExpr.check(m, expectedType)
+        case m @ ast.Expr.Match(_, _, _) => CheckMatchExpr.check(m, expectedType)
         case a @ ast.Expr.Axiom() => CheckAxiomExpr.check(a, expectedType)
         case _ => checkAndElaborate(expr, expectedType)
     catch

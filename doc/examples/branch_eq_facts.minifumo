@@ -1,10 +1,10 @@
-// Demonstrates that if-branches provide an equality fact named if_Eq.
+// Demonstrates that if-branches provide an equality fact named match_Eq by default.
 fun if_branch_eq_fact(k: Bool): Bool
     if k
-        let true_fact: Eq[Bool](k, True) = if_Eq
+        let true_fact: Eq[Bool](k, True) = match_Eq
         True
     else
-        let false_fact: Eq[Bool](k, False) = if_Eq
+        let false_fact: Eq[Bool](k, False) = match_Eq
         False
 
 // Demonstrates that match-branches provide an equality fact named match_Eq.
@@ -15,4 +15,23 @@ fun match_branch_eq_fact(k: Bool): Bool
             True
         case False
             let false_fact: Eq[Bool](k, False) = match_Eq
+            False
+
+
+// Demonstrates custom branch fact names with Lean-style syntax.
+fun named_branch_eq_fact(v: Bool): Bool
+    if h: v
+        let true_fact: Eq[Bool](v, True) = h
+        True
+    else
+        let false_fact: Eq[Bool](v, False) = h
+        False
+
+fun named_match_branch_eq_fact(v: Bool): Bool
+    match h: v
+        case True
+            let true_fact: Eq[Bool](v, True) = h
+            True
+        case False
+            let false_fact: Eq[Bool](v, False) = h
             False

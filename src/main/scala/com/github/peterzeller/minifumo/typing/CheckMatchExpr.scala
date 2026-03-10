@@ -13,9 +13,9 @@ object CheckMatchExpr:
 
   /** Checks a match expression against an expected type using dependent branch refinement. */
   def check(expr: ast.Expr.Match, expectedType: TypedAst.Expr)(using ctx: TypeContext, metas: MetaContext, ids: IdSupply): (TypedAst.Expr, List[TypeError]) =
-    val ast.Expr.Match(scrutinee, cases) = expr
+    val ast.Expr.Match(scrutinee, factName, cases) = expr
     val (scrutineeExpr, scrutineeType, scrutineeErrs) = TypeChecker.infer(scrutinee)
-    val branchFactName = inferBranchFactName(expr.source, cases)
+    val branchFactName = factName.getOrElse("match_Eq")
     val motiveParam = LocalSymbol("x_scrut", scrutineeType, ids.freshLocalId())
     val motiveBody = replaceExpr(expectedType, scrutineeExpr, TypedAst.Expr.Var(motiveParam)(expr.source))
     val motive = TypedAst.Expr.Lambda(motiveParam, motiveBody, TypedAst.Expr.UnknownType()(expr.source))(expr.source)
@@ -35,24 +35,6 @@ object CheckMatchExpr:
     val typedMatch = TypedAst.Expr.Match(scrutineeExpr, motive, typedCases.map(_._1))(expr.source)
     val errors = typedCases.flatMap(_._2)
     (typedMatch, scrutineeErrs ++ errors)
-
-  /** Chooses default names for branch equality facts. */
-  private def inferBranchFactName(source: ast.SourceRange, cases: List[ast.MatchCase]): String =
-    if isIfDesugaredMatch(source, cases) then "if_Eq" else "match_Eq"
-
-  /** Detects parser-desugared boolean if expressions represented as a two-case match. */
-  private def isIfDesugaredMatch(source: ast.SourceRange, cases: List[ast.MatchCase]): Boolean =
-    def isCtor0Pattern(pattern: ast.Pattern, name: String): Boolean =
-      pattern match
-        case ast.Pattern.BinderOrCtor0(patternName) => patternName == name
-        case ast.Pattern.Ctor(patternName, args) => patternName == name && args.isEmpty
-        case _ => false
-
-    cases match
-      case List(ast.MatchCase(truePattern, _), ast.MatchCase(falsePattern, _)) =>
-        val parserGeneratedPatternRanges = truePattern.source == source && falsePattern.source == source
-        parserGeneratedPatternRanges && isCtor0Pattern(truePattern, "True") && isCtor0Pattern(falsePattern, "False")
-      case _ => false
 
   /** Converts a typed pattern into a branch refinement term. */
   private def patternToExpr(pattern: TypedAst.Pattern, refinements: Map[Int, TypedAst.Expr], source: ast.SourceRange): TypedAst.Expr =

@@ -99,7 +99,7 @@ enum Expr:
   case Pi(param: PiParam, body: Expr)(val source: SourceRange)
 
   case LetIn(name: String, tpe: Option[Expr], value: Expr, body: Expr)(val source: SourceRange)
-  case Match(scrutinee: Expr, cases: List[MatchCase])(val source: SourceRange)
+  case Match(scrutinee: Expr, factName: Option[String], cases: List[MatchCase])(val source: SourceRange)
 
   // place holder for missing expressions
   case Hole()(val source: SourceRange)
@@ -131,8 +131,9 @@ enum Expr:
         s"($param => $body)"
       case Expr.LetIn(name, tpe, value, body) =>
         s"let $name: $tpe = $value in $body"
-      case Expr.Match(scrutinee, cases) =>
-        s"match $scrutinee ${cases.map(c => s"$c").mkString(" | ")}"
+      case Expr.Match(scrutinee, factName, cases) =>
+        val factPrefix = factName.map(name => s"$name: ").getOrElse("")
+        s"match $factPrefix$scrutinee ${cases.map(c => s"$c").mkString(" | ")}"
       case Expr.Hole() => "???"
       case Expr.Axiom() => "axiom"
     }

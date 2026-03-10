@@ -182,25 +182,27 @@ private class HandwrittenParser(tokens: Vector[Token]):
 
   /** Parses both if-then-else and suite-based if forms into match desugaring. */
   private def parseIfExpr(start: Token): Expr =
+    val factName = parseOptionalBranchFactName()
     val cond = parseExpr()
     if matchKind(TokenKind.THEN) then
       val thenExpr = parseExpr()
       consume(TokenKind.ELSE, "Expected else branch.")
       val elseExpr = parseExpr()
-      boolMatch(cond, thenExpr, elseExpr, merge(start, elseExpr.source))
+      boolMatch(cond, factName, thenExpr, elseExpr, merge(start, elseExpr.source))
     else
       val thenSuite = parseSuite()
       consume(TokenKind.ELSE, "Expected else branch.")
       val elseSuite = parseSuite()
-      boolMatch(cond, thenSuite, elseSuite, merge(start, elseSuite.source))
+      boolMatch(cond, factName, thenSuite, elseSuite, merge(start, elseSuite.source))
 
   /** Parses a match expression with one or more cases. */
   private def parseMatchExpr(start: Token): Expr =
+    val factName = parseOptionalBranchFactName()
     val scrutinee = parseExpr()
     consume(TokenKind.NL, "Expected newline before match cases.")
     if !check(TokenKind.BEGIN) then
       // empty match expression
-      return Expr.Match(scrutinee, List())(merge(start, previous.source))
+      return Expr.Match(scrutinee, factName, List())(merge(start, previous.source))
 
     consume(TokenKind.BEGIN, "Expected begin for match cases.")
     val cases = scala.collection.mutable.ListBuffer.empty[MatchCase]
@@ -211,7 +213,17 @@ private class HandwrittenParser(tokens: Vector[Token]):
       cases += MatchCase(pat, body)(merge(pat.source, body.source))
       while matchKind(TokenKind.NL) do ()
     consume(TokenKind.END, "Expected end of match block.")
-    Expr.Match(scrutinee, cases.toList)(merge(start, previous.source))
+    Expr.Match(scrutinee, factName, cases.toList)(merge(start, previous.source))
+
+
+  /** Parses an optional branch fact name prefix of the form `name:`. */
+  private def parseOptionalBranchFactName(): Option[String] =
+    if check(TokenKind.ID) && lookAhead(1).exists(_.kind == TokenKind.COLON) then
+      val name = advance()
+      consume(TokenKind.COLON, "Expected ':' after branch fact name.")
+      Some(name.text)
+    else
+      None
 
   /** Parses forall / exists quantifiers and desugars them into core expressions. */
   private def parseForall(): Expr =
@@ -489,10 +501,10 @@ private class HandwrittenParser(tokens: Vector[Token]):
           case other => Expr.LetIn("_", None, other, desugarBlock(tail))(other.source)
 
   /** Desugars if expressions into boolean pattern matching. */
-  private def boolMatch(cond: Expr, thenExpr: Expr, elseExpr: Expr, source: SourceRange): Expr =
+  private def boolMatch(cond: Expr, factName: Option[String], thenExpr: Expr, elseExpr: Expr, source: SourceRange): Expr =
     val trueCase = MatchCase(Pattern.BinderOrCtor0("True")(source), thenExpr)(source)
     val falseCase = MatchCase(Pattern.BinderOrCtor0("False")(source), elseExpr)(source)
-    Expr.Match(cond, List(trueCase, falseCase))(source)
+    Expr.Match(cond, factName, List(trueCase, falseCase))(source)
 
   /** Builds operator calls by name for transformed infix/unary syntax. */
   private def opCall(name: String, args: List[Expr], source: SourceRange): Expr =
