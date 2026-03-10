@@ -14,7 +14,7 @@ object TypeCheckerExprDispatcher:
         case c @ ast.Expr.Call(_, _) => CheckCallExpr.infer(c)
         case c @ ast.Expr.CallImplicit(_, _) => CheckCallImplicitExpr.infer(c)
         case l @ ast.Expr.Lambda(_, _) => CheckLambdaExpr.infer(l)
-        case l @ ast.Expr.LetIn(_, _, _, _) => CheckLetExpr.infer(l)
+        case l @ ast.Expr.LetIn(_, _, _, _) => CheckLetExpr.check(l, None)
         case f @ ast.Expr.FieldAccess(_, _) => CheckFieldAccessExpr.infer(f)
         case p @ ast.Expr.Pi(_, _) => CheckPiExpr.infer(p)
         case m @ ast.Expr.Match(_, _) => CheckMatchExpr.infer(m)
@@ -30,7 +30,9 @@ object TypeCheckerExprDispatcher:
     try
       expr match
         case l @ ast.Expr.Lambda(_, _) => CheckLambdaExpr.check(l, expectedType)
-        case l @ ast.Expr.LetIn(_, _, _, _) => CheckLetExpr.check(l, expectedType)
+        case l @ ast.Expr.LetIn(_, _, _, _) => 
+          val (a, _, es) = CheckLetExpr.check(l, Some(expectedType))
+          (a, es)
         case m @ ast.Expr.Match(_, _) => CheckMatchExpr.check(m, expectedType)
         case a @ ast.Expr.Axiom() => CheckAxiomExpr.check(a, expectedType)
         case _ => checkAndElaborate(expr, expectedType)
