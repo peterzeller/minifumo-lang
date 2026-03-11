@@ -6,22 +6,8 @@ import com.github.peterzeller.minifumo.typing.TypeChecker.*
 
 /** Type-checking logic for let expressions. */
 object CheckLetExpr:
-  /** Infers the type for a let-in expression. */
-  def infer(expr: ast.Expr.LetIn)(using ctx: TypeContext, metas: MetaContext, ids: IdSupply): (TypedAst.Expr, TypedAst.Expr, List[TypeError]) =
-    val ast.Expr.LetIn(name, declaredType, value, body) = expr
-    val (valueExpr, valueType, errs) = declaredType match
-      case Some(tpeExpr) =>
-        val (expected, errs1) = TypeChecker.checkAndElaborate(tpeExpr, TypedAst.Expr.Sort()(SourceRange.empty))
-        val (typedValue, errs2) = TypeChecker.check(value, expected)
-        (typedValue, expected, errs1 ++ errs2)
-      case None => TypeChecker.inferAndElaborate(value)
-    val symbol = LocalSymbol(name, valueType, ids.freshLocalId())
-    val bodyCtx = ctx.withLocal(symbol, Some(valueExpr))
-    val (bodyExpr, bodyType, errs2) = TypeChecker.infer(body)(using bodyCtx, metas, ids)
-    (TypedAst.Expr.LetIn(symbol, isConstant = false, valueType, valueExpr, bodyExpr)(expr.source), bodyType, errs ++ errs2)
-
   /** Checks a let-in expression against an expected body type. */
-  def check(expr: ast.Expr.LetIn, expectedType: TypedAst.Expr)(using ctx: TypeContext, metas: MetaContext, ids: IdSupply): (TypedAst.Expr, List[TypeError]) =
+  def check(expr: ast.Expr.LetIn, expectedType: Option[TypedAst.Expr])(using ctx: TypeContext, metas: MetaContext, ids: IdSupply): (TypedAst.Expr, TypedAst.Expr, List[TypeError]) =
     val ast.Expr.LetIn(name, declaredType, value, body) = expr
     val (valueExpr, valueType, errs) = declaredType match
       case Some(tpeExpr) =>
@@ -29,11 +15,28 @@ object CheckLetExpr:
         val (typedValue, errs2) = TypeChecker.check(value, expected)
         (typedValue, expected, errs1 ++ errs2)
       case None => TypeChecker.inferAndElaborate(value)
+    // add new variable to the context
     val symbol = LocalSymbol(name, valueType, ids.freshLocalId())
-    val bodyCtx = ctx.withLocal(symbol, Some(valueExpr))
-    val (bodyExpr, bodyErrs) = TypeChecker.check(body, expectedType)(using bodyCtx, metas, ids)
-    (TypedAst.Expr.LetIn(symbol, isConstant = false, valueType, valueExpr, bodyExpr)(expr.source), errs ++ bodyErrs)
+    
+    // there is also a second implicit definition added: an equality proof between the sym and value
+    // for let x: Int = 2 + 3, it adds a definition
+    // let x_def: Eq[Int](x, 2 + 3)
+    val defType = ExprBuilder.equalityConstraint(
+      valueType, 
+      ExprBuilder.v(symbol, expr.source),
+      valueExpr,
+      expr.source
+    )
+    val defSymbol = LocalSymbol(name + "_def", defType, ids.freshMetaId())
 
+    val bodyCtx = ctx.withLocal(symbol, Some(valueExpr)).withLocal(defSymbol)
 
-  /** Collects locally bound symbols that may appear in typed let annotations. */
-  
+    val (bodyExpr, bodyType, bodyErrs) = expectedType match {
+      case Some(expectedType) =>
+        val (bodyExpr, errs2) = TypeChecker.check(body, expectedType)(using bodyCtx, metas, ids)
+        (bodyExpr, expectedType, errs2)
+      case None =>
+        TypeChecker.infer(body)(using bodyCtx, metas, ids)
+    }
+    val typedAst = TypedAst.Expr.LetIn(symbol, isConstant = false, valueType, valueExpr, bodyExpr)(expr.source)
+    (typedAst, bodyType, errs ++ bodyErrs)
