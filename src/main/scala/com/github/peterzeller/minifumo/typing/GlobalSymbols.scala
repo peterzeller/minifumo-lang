@@ -372,6 +372,7 @@ object GlobalSymbols:
     val body =
       ast.Expr.Match(
         ast.Expr.Var(receiverName)(source),
+        None,
         List(
           ast.MatchCase(
             ast.Pattern.Ctor(ctor.name, casePatternArgs)(source),
@@ -398,7 +399,7 @@ object GlobalSymbols:
         declaredType.map(collectVarNames).getOrElse(Set()) ++ collectVarNames(value) ++ (collectVarNames(body) - name)
       case ast.Expr.Pi(param, body) =>
         collectVarNames(param.tpe) ++ (collectVarNames(body) - param.name)
-      case ast.Expr.Match(scrutinee, cases) =>
+      case ast.Expr.Match(scrutinee, _, cases) =>
         collectVarNames(scrutinee) ++ cases.flatMap(matchCase => collectVarNames(matchCase.body)).toSet
       case ast.Expr.Hole() => Set()
 
