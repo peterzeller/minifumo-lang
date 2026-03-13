@@ -182,6 +182,8 @@ private class HandwrittenParser(tokens: Vector[Token]):
 
   /** Consumes a lemma section keyword token, accepting fallback identifier text. */
   private def consumeLemmaKeyword(kind: TokenKind, text: String, message: String): Token =
+    if check(TokenKind.BEGIN) && lookAhead(1).exists(tok => tok.kind == kind || (tok.kind == TokenKind.ID && tok.text == text)) then
+      advanceUnit()
     if check(kind) then advance()
     else if check(TokenKind.ID) && current.text == text then advance()
     else

@@ -232,10 +232,6 @@ object Lexer:
       case "data" => TokenKind.DATA
       case "fun" => TokenKind.FUN
       case "lemma" => TokenKind.LEMMA
-      case "given" => TokenKind.GIVEN
-      case "assumes" => TokenKind.ASSUMES
-      case "shows" => TokenKind.SHOWS
-      case "proof" => TokenKind.PROOF
       case "match" => TokenKind.MATCH
       case "case" => TokenKind.CASE
       case "if" => TokenKind.IF
