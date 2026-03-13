@@ -113,16 +113,23 @@ private class HandwrittenParser(tokens: Vector[Token]):
     val name = consume(TokenKind.ID, "Expected lemma name.")
     consume(TokenKind.COLON, "Expected ':' after lemma name.")
     val hadBlock = consumeOptionalLemmaBlockStart()
-    consumeLemmaKeyword(TokenKind.GIVEN, "given", "Expected 'given' section in lemma.")
-    val implicitParams = parseLemmaParamsUntil(Set(TokenKind.ASSUMES), Set("assumes"))
-    consumeOptionalNl()
-    consumeLemmaKeyword(TokenKind.ASSUMES, "assumes", "Expected 'assumes' section in lemma.")
-    val params = parseLemmaParamsUntil(Set(TokenKind.SHOWS), Set("shows"))
-    consumeOptionalNl()
-    consumeLemmaKeyword(TokenKind.SHOWS, "shows", "Expected 'shows' section in lemma.")
+
+    val implicitParams =
+      if isLemmaKeyword(TokenKind.GIVEN, "given") then
+        val _ = consumeLemmaKeyword(TokenKind.GIVEN, "given", "Expected 'given' section in lemma.")
+        parseLemmaSectionParams(Set(TokenKind.ASSUMES, TokenKind.SHOWS), Set("assumes", "shows"))
+      else Nil
+
+    val params =
+      if isLemmaKeyword(TokenKind.ASSUMES, "assumes") then
+        val _ = consumeLemmaKeyword(TokenKind.ASSUMES, "assumes", "Expected 'assumes' section in lemma.")
+        parseLemmaSectionParams(Set(TokenKind.SHOWS), Set("shows"))
+      else Nil
+
+    val _ = consumeLemmaKeyword(TokenKind.SHOWS, "shows", "Expected 'shows' section in lemma.")
     val returnType = parseExpr()
     consumeOptionalNl()
-    consumeLemmaKeyword(TokenKind.PROOF, "proof", "Expected 'proof' section in lemma.")
+    val _ = consumeLemmaKeyword(TokenKind.PROOF, "proof", "Expected 'proof' section in lemma.")
     val body = parseSuite()
     while matchKind(TokenKind.NL) do ()
     if hadBlock then
@@ -138,20 +145,40 @@ private class HandwrittenParser(tokens: Vector[Token]):
     if hadNl && matchKind(TokenKind.BEGIN) then true
     else false
 
-  /** Parses lemma section parameters until one of the stop markers is reached. */
-  private def parseLemmaParamsUntil(stopKinds: Set[TokenKind], stopWords: Set[String]): List[FunParam] =
+  /** Parses an optional lemma section parameter group (inline or nested block form). */
+  private def parseLemmaSectionParams(stopKinds: Set[TokenKind], stopWords: Set[String]): List[FunParam] =
     val params = scala.collection.mutable.ListBuffer.empty[FunParam]
-    while !isLemmaStopToken(stopKinds, stopWords) && !check(TokenKind.EOF) do
-      if matchKind(TokenKind.NL) || matchKind(TokenKind.SPACETAB) || matchKind(TokenKind.BEGIN) || matchKind(TokenKind.END) then ()
-      else
-        params += parseFunParam()
-        if !isLemmaStopToken(stopKinds, stopWords) then
-          val _ = matchKind(TokenKind.COMMA)
+    parseLemmaInlineParams(params, stopKinds, stopWords)
+    if check(TokenKind.NL) && lookAhead(1).exists(_.kind == TokenKind.BEGIN) then
+      val _ = consume(TokenKind.NL, "Expected newline before lemma section parameter block.")
+      val _ = consume(TokenKind.BEGIN, "Expected begin of lemma section parameter block.")
+      while !check(TokenKind.END) && !check(TokenKind.EOF) && !isLemmaStopToken(stopKinds, stopWords) do
+        while matchKind(TokenKind.NL) do ()
+        if !check(TokenKind.END) && !isLemmaStopToken(stopKinds, stopWords) then
+          parseLemmaInlineParams(params, stopKinds, stopWords)
+          while matchKind(TokenKind.NL) do ()
+      val _ = matchKind(TokenKind.END)
+    else
+      consumeOptionalNl()
     params.toList
+
+  /** Parses a comma-separated list of inline lemma parameters on the current line. */
+  private def parseLemmaInlineParams(
+    params: ListBuffer[FunParam],
+    stopKinds: Set[TokenKind],
+    stopWords: Set[String]
+  ): Unit =
+    if !isLemmaStopToken(stopKinds, stopWords) && !check(TokenKind.NL) && !check(TokenKind.EOF) then
+      params += parseFunParam()
+      while matchKind(TokenKind.COMMA) do params += parseFunParam()
 
   /** Returns whether the current token marks the start of the next lemma section. */
   private def isLemmaStopToken(stopKinds: Set[TokenKind], stopWords: Set[String]): Boolean =
     stopKinds.contains(current.kind) || (check(TokenKind.ID) && stopWords.contains(current.text))
+
+  /** Returns whether the current token starts the requested lemma section keyword. */
+  private def isLemmaKeyword(kind: TokenKind, text: String): Boolean =
+    check(kind) || (check(TokenKind.ID) && current.text == text)
 
   /** Consumes a lemma section keyword token, accepting fallback identifier text. */
   private def consumeLemmaKeyword(kind: TokenKind, text: String, message: String): Token =
