@@ -36,12 +36,12 @@ private class HandwrittenParser(tokens: Vector[Token]):
       if check(TokenKind.NL) then
       advanceUnit()
       else if check(TokenKind.IMPORT) then imports += parseImport()
-      else if check(TokenKind.DATA) || check(TokenKind.EXPORT) || check(TokenKind.FUN) then
+      else if check(TokenKind.DATA) || check(TokenKind.EXPORT) || check(TokenKind.FUN) || check(TokenKind.LEMMA) then
         parseTopLevel() match
           case Some(t) => items += t
           case None => synchronizeTopLevel()
       else
-        error(current, "Expected import, data, or fun declaration.")
+        error(current, "Expected import, data, fun, or lemma declaration.")
         synchronizeTopLevel()
     val src = SourceRange(SourcePos(1, 1), previous.source.end)
     ProgramFile(imports.toList, items.toList)(src)
@@ -64,8 +64,9 @@ private class HandwrittenParser(tokens: Vector[Token]):
     val exported = matchKind(TokenKind.EXPORT)
     if matchKind(TokenKind.DATA) then Some(parseDataDecl(exported, previous))
     else if matchKind(TokenKind.FUN) then Some(parseFunDecl(exported, previous))
+    else if matchKind(TokenKind.LEMMA) then Some(parseLemmaDecl(exported, previous))
     else
-      error(current, "Expected data or fun declaration.")
+      error(current, "Expected data, fun, or lemma declaration.")
       None
 
   /** Parses a data declaration and constructors. */
@@ -107,6 +108,88 @@ private class HandwrittenParser(tokens: Vector[Token]):
     val body = parseSuite()
     TopLevel.FunDecl(sig, body, exported)(merge(start, body.source))
 
+  /** Parses a lemma declaration and desugars it into a function declaration. */
+  private def parseLemmaDecl(exported: Boolean, start: Token): TopLevel =
+    val name = consume(TokenKind.ID, "Expected lemma name.")
+    consume(TokenKind.COLON, "Expected ':' after lemma name.")
+    val hadBlock = consumeOptionalLemmaBlockStart()
+
+    val implicitParams =
+      if isLemmaKeyword(TokenKind.GIVEN, "given") then
+        val _ = consumeLemmaKeyword(TokenKind.GIVEN, "given", "Expected 'given' section in lemma.")
+        parseLemmaSectionParams(Set(TokenKind.ASSUMES, TokenKind.SHOWS), Set("assumes", "shows"))
+      else Nil
+
+    val params =
+      if isLemmaKeyword(TokenKind.ASSUMES, "assumes") then
+        val _ = consumeLemmaKeyword(TokenKind.ASSUMES, "assumes", "Expected 'assumes' section in lemma.")
+        parseLemmaSectionParams(Set(TokenKind.SHOWS), Set("shows"))
+      else Nil
+
+    val _ = consumeLemmaKeyword(TokenKind.SHOWS, "shows", "Expected 'shows' section in lemma.")
+    val returnType = parseExpr()
+    consumeOptionalNl()
+    val _ = consumeLemmaKeyword(TokenKind.PROOF, "proof", "Expected 'proof' section in lemma.")
+    val body = parseSuite()
+    while matchKind(TokenKind.NL) do ()
+    if hadBlock then
+      val _ = consume(TokenKind.END, "Expected end of lemma block.")
+    else
+      val _ = matchKind(TokenKind.END)
+    val sig = FunSig(name.text, implicitParams, params, returnType)(merge(start, returnType.source))
+    TopLevel.FunDecl(sig, body, exported)(merge(start, body.source))
+
+  /** Consumes the optional layout tokens that may surround a lemma header. */
+  private def consumeOptionalLemmaBlockStart(): Boolean =
+    val hadNl = matchKind(TokenKind.NL)
+    if hadNl && matchKind(TokenKind.BEGIN) then true
+    else false
+
+  /** Parses an optional lemma section parameter group (inline or nested block form). */
+  private def parseLemmaSectionParams(stopKinds: Set[TokenKind], stopWords: Set[String]): List[FunParam] =
+    val params = scala.collection.mutable.ListBuffer.empty[FunParam]
+    parseLemmaInlineParams(params, stopKinds, stopWords)
+    if check(TokenKind.NL) && lookAhead(1).exists(_.kind == TokenKind.BEGIN) then
+      val _ = consume(TokenKind.NL, "Expected newline before lemma section parameter block.")
+      val _ = consume(TokenKind.BEGIN, "Expected begin of lemma section parameter block.")
+      while !check(TokenKind.END) && !check(TokenKind.EOF) && !isLemmaStopToken(stopKinds, stopWords) do
+        while matchKind(TokenKind.NL) do ()
+        if !check(TokenKind.END) && !isLemmaStopToken(stopKinds, stopWords) then
+          parseLemmaInlineParams(params, stopKinds, stopWords)
+          while matchKind(TokenKind.NL) do ()
+      val _ = matchKind(TokenKind.END)
+    else
+      consumeOptionalNl()
+    params.toList
+
+  /** Parses a comma-separated list of inline lemma parameters on the current line. */
+  private def parseLemmaInlineParams(
+    params: ListBuffer[FunParam],
+    stopKinds: Set[TokenKind],
+    stopWords: Set[String]
+  ): Unit =
+    if !isLemmaStopToken(stopKinds, stopWords) && !check(TokenKind.NL) && !check(TokenKind.EOF) then
+      params += parseFunParam()
+      while matchKind(TokenKind.COMMA) do params += parseFunParam()
+
+  /** Returns whether the current token marks the start of the next lemma section. */
+  private def isLemmaStopToken(stopKinds: Set[TokenKind], stopWords: Set[String]): Boolean =
+    stopKinds.contains(current.kind) || (check(TokenKind.ID) && stopWords.contains(current.text))
+
+  /** Returns whether the current token starts the requested lemma section keyword. */
+  private def isLemmaKeyword(kind: TokenKind, text: String): Boolean =
+    check(kind) || (check(TokenKind.ID) && current.text == text)
+
+  /** Consumes a lemma section keyword token, accepting fallback identifier text. */
+  private def consumeLemmaKeyword(kind: TokenKind, text: String, message: String): Token =
+    if check(TokenKind.BEGIN) && lookAhead(1).exists(tok => tok.kind == kind || (tok.kind == TokenKind.ID && tok.text == text)) then
+      advanceUnit()
+    if check(kind) then advance()
+    else if check(TokenKind.ID) && current.text == text then advance()
+    else
+      error(current, message)
+      current
+
   /** Parses a function signature after the leading fun token. */
   private def parseFunSig(start: Token): FunSig =
     val name = consume(TokenKind.ID, "Expected function name.")
@@ -146,7 +229,7 @@ private class HandwrittenParser(tokens: Vector[Token]):
   /** Parses an indented suite and desugars it to one expression. */
   private def parseSuite(): Expr =
     consume(TokenKind.NL, "Expected newline before suite.")
-    if isAtEnd || check(TokenKind.FUN) || check(TokenKind.DATA) || check(TokenKind.IMPORT) || check(TokenKind.END) then
+    if isAtEnd || check(TokenKind.FUN) || check(TokenKind.LEMMA) || check(TokenKind.DATA) || check(TokenKind.IMPORT) || check(TokenKind.END) then
       return Expr.Hole()(previous.source)
     consume(TokenKind.BEGIN, "Expected begin of indented suite.")
     val exprs = scala.collection.mutable.ListBuffer.empty[Expr]
@@ -556,15 +639,15 @@ private class HandwrittenParser(tokens: Vector[Token]):
 
   /** Returns true for tokens that can safely restart top-level parsing. */
   private def isTopLevelSyncPoint(kind: TokenKind = current.kind): Boolean =
-    Set(TokenKind.NL, TokenKind.END, TokenKind.FUN, TokenKind.DATA, TokenKind.IMPORT).contains(kind)
+    Set(TokenKind.NL, TokenKind.END, TokenKind.FUN, TokenKind.LEMMA, TokenKind.DATA, TokenKind.IMPORT).contains(kind)
 
   /** Returns true when suite parsing should recover to surrounding structure. */
   private def isSuiteRecoveryPoint(): Boolean =
-    check(TokenKind.FUN) || check(TokenKind.DATA) || check(TokenKind.IMPORT)
+    check(TokenKind.FUN) || check(TokenKind.LEMMA) || check(TokenKind.DATA) || check(TokenKind.IMPORT)
 
   /** Skips tokens until the parser can continue after a broken suite expression. */
   private def synchronizeSuite(): Unit =
-    while !isAtEnd && !Set(TokenKind.NL, TokenKind.END, TokenKind.FUN, TokenKind.DATA, TokenKind.IMPORT).contains(current.kind) do
+    while !isAtEnd && !Set(TokenKind.NL, TokenKind.END, TokenKind.FUN, TokenKind.LEMMA, TokenKind.DATA, TokenKind.IMPORT).contains(current.kind) do
       advanceUnit()
 
   /** Reports a parser error at a token position. */

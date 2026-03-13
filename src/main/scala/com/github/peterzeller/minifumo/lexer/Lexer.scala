@@ -231,6 +231,7 @@ object Lexer:
       case "export" => TokenKind.EXPORT
       case "data" => TokenKind.DATA
       case "fun" => TokenKind.FUN
+      case "lemma" => TokenKind.LEMMA
       case "match" => TokenKind.MATCH
       case "case" => TokenKind.CASE
       case "if" => TokenKind.IF

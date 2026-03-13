@@ -5,26 +5,34 @@ data Test = MakeTest(blub: Int)
 fun anyThingFromFalse[P: Type](f: FalseProp): P
     match f
 
-fun Not_moveInsideAnd[a: Type, b: Type](h: NOT (a AND b)): NOT a OR NOT b
-    match excludedMiddle[a]
-        case OrLeft(aTrue)
-            match excludedMiddle[b]
-                case OrLeft(bTrue)
-                    let f: FalseProp = h(MakeAnd(aTrue, bTrue))
-                    anyThingFromFalse(f)
-                case OrRight(bFalse)
-                    OrRight(bFalse)
-        case OrRight(aFalse)
-            OrLeft(aFalse)
+lemma Not_moveInsideAnd:
+    given a: Type, b: Type
+    assumes h: NOT (a AND b)
+    shows NOT a OR NOT b
+    proof
+        match excludedMiddle[a]
+            case OrLeft(aTrue)
+                match excludedMiddle[b]
+                    case OrLeft(bTrue)
+                        let f: FalseProp = h(MakeAnd(aTrue, bTrue))
+                        anyThingFromFalse(f)
+                    case OrRight(bFalse)
+                        OrRight(bFalse)
+            case OrRight(aFalse)
+                OrLeft(aFalse)
 
-fun Or_moveNotOutside[a: Type, b: Type](h: NOT a OR NOT b): NOT (a AND b)
-    (x: a AND b) => match x
-        case MakeAnd(a1, b1)
-            match h
-                case OrLeft(p)
-                    p(a1)
-                case OrRight(q)
-                    q(b1)
+lemma Or_moveNotOutside:
+    given a: Type, b: Type
+    assumes h: NOT a OR NOT b
+    shows NOT (a AND b)
+    proof
+        (x: a AND b) => match x
+            case MakeAnd(a1, b1)
+                match h
+                    case OrLeft(p)
+                        p(a1)
+                    case OrRight(q)
+                        q(b1)
 
 
 fun notAnd[a: Type, b: Type](): NOT (a AND b) <==> NOT a OR NOT b

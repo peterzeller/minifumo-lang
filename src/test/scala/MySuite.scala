@@ -344,6 +344,45 @@ class MySuite extends munit.FunSuite {
   }
 
 
+
+  test("lemma syntax supports optional given and assumes sections") {
+    val input =
+      """
+        |lemma idLemma:
+        |    shows Type
+        |    proof
+        |        Type
+      """.stripMargin
+    val (ast, parseErrors) = parseInput(input)
+    assertEquals(parseErrors, List())
+    val dummyPath = "lemma-optional-sections.minifumo"
+    val dummyCache = new ProjectSymbolCache(GlobalSymbolsIo.create("."), TypeChecker.IdSupply())
+    dummyCache.addInput(dummyPath, input)
+    val (_, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
+    assertEquals(errors, List())
+  }
+
+  test("lemma syntax desugars to a function declaration") {
+    val input =
+      """
+        |lemma andComm:
+        |    given A: Type, B: Type
+        |    assumes h: A AND B
+        |    shows B AND A
+        |    proof
+        |        match h
+        |            case MakeAnd(a, b)
+        |                MakeAnd(b, a)
+      """.stripMargin
+    val (ast, parseErrors) = parseInput(input)
+    assertEquals(parseErrors, List())
+    val dummyPath = "lemma-sugar.minifumo"
+    val dummyCache = new ProjectSymbolCache(GlobalSymbolsIo.create("."), TypeChecker.IdSupply())
+    dummyCache.addInput(dummyPath, input)
+    val (_, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
+    assertEquals(errors, List())
+  }
+
   test("meta iff operator parses and type checks") {
     val input =
       """
