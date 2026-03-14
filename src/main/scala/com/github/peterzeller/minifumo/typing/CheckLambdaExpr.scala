@@ -12,7 +12,7 @@ object CheckLambdaExpr:
     var allErrors: List[TypeError] = List()
     val paramType = expr.param.tpe match {
       case Some(t) =>
-        val (typedT, errs) = TypeChecker.checkAndElaborate(t, Sort()(SourceRange.empty))
+        val (typedT, errs) = TypeChecker.checkAndElaborate(t, Sort(UniverseLevel.Type1)(SourceRange.empty))
         allErrors ++= errs
         typedT
       case None =>

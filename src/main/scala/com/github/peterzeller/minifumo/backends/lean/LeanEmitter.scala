@@ -221,7 +221,7 @@ object LeanEmitter:
         val domName = mangle.mangle(LeanNameMangler.NameKind.LocalName, dom.name)
         val scope2 = localScope + (dom.id -> domName)
         s"(${domName} : ${emitExpr(dom.tpe, mangle, localScope, currentModule, localDefinitions, moduleNameByFile)}) -> ${emitExpr(cod, mangle, scope2, currentModule, localDefinitions, moduleNameByFile)}"
-      case TypedAst.Expr.Sort() => "Type"
+      case TypedAst.Expr.Sort(_) => "Type"
       case TypedAst.Expr.Lambda(param, body, _) =>
         val paramName = mangle.mangle(LeanNameMangler.NameKind.LocalName, param.name)
         val scope2 = localScope + (param.id -> paramName)
@@ -303,7 +303,7 @@ object LeanEmitter:
       case TypedAst.Expr.App(callee, arg, tpe) => collectGlobalNames(callee) ++ collectGlobalNames(arg) ++ collectGlobalNames(tpe)
       case TypedAst.Expr.AppImplicit(callee, arg, tpe) => collectGlobalNames(callee) ++ collectGlobalNames(arg) ++ collectGlobalNames(tpe)
       case TypedAst.Expr.Pi(dom, cod, _) => collectGlobalNames(dom.tpe) ++ collectGlobalNames(cod)
-      case TypedAst.Expr.Sort() => Set.empty
+      case TypedAst.Expr.Sort(_) => Set.empty
       case TypedAst.Expr.Lambda(param, body, tpe) => collectGlobalNames(param.tpe) ++ collectGlobalNames(body) ++ collectGlobalNames(tpe)
       case TypedAst.Expr.LetIn(_, _, declaredType, value, body) => collectGlobalNames(declaredType) ++ collectGlobalNames(value) ++ collectGlobalNames(body)
       case TypedAst.Expr.Meta(_, tpe) => collectGlobalNames(tpe)

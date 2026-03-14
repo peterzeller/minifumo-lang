@@ -1,6 +1,6 @@
 
 fun test(): Int
-    let x = Nil // error: Could not infer implicit argument ?T_0 : Type
+    let x = Nil // error: Could not infer implicit argument ?T_0 : Sort(1)
     35
 
 fun test2(): Int

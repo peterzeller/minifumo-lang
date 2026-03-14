@@ -149,7 +149,7 @@ object DefinitionLookup:
         for c <- cases do
           collectPatternDefinitions(c.pattern, definitions)
           collectExprDefinitions(c.body, definitions)
-      case Expr.Lit(_) | Expr.Var(_) | Expr.Sort() | Expr.Meta(_, _) | Expr.UnknownType() | Expr.Axiom() =>
+      case Expr.Lit(_) | Expr.Var(_) | Expr.Sort(_) | Expr.Meta(_, _) | Expr.UnknownType() | Expr.Axiom() =>
         ()
 
   /** Collects local symbol definitions introduced by pattern binders. */

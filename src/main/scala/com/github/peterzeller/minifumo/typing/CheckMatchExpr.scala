@@ -7,7 +7,7 @@ import com.github.peterzeller.minifumo.typing.TypeChecker.*
 object CheckMatchExpr:
   /** Infers the result type of a match expression by delegating to check-mode with a meta expected type. */
   def infer(expr: ast.Expr.Match)(using ctx: TypeContext, metas: MetaContext, ids: IdSupply): (TypedAst.Expr, TypedAst.Expr, List[TypeError]) =
-    val unknownType = freshMeta("matchResult", TypedAst.Expr.Sort()(expr.source), expr.source)
+    val unknownType = freshMeta("matchResult", TypedAst.Expr.Sort(UniverseLevel.Type1)(expr.source), expr.source)
     val (typedExpr, errs) = check(expr, unknownType)
     (typedExpr, instantiate(unknownType), errs)
 

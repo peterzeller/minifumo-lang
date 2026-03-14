@@ -10,7 +10,7 @@ object ExprBuilder:
     TypedAst.Expr.UnknownType()(SourceRange.empty)
 
   def sort: TypedAst.Expr =
-    TypedAst.Expr.Sort()(SourceRange.empty)
+    TypedAst.Expr.Sort(UniverseLevel.Type1)(SourceRange.empty)
 
   def applyImplicit(f: TypedAst.Expr, args: List[TypedAst.Expr], source: SourceRange): TypedAst.Expr = {
     var res = f

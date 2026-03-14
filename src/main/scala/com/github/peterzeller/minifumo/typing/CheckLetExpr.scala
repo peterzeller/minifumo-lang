@@ -11,7 +11,7 @@ object CheckLetExpr:
     val ast.Expr.LetIn(name, declaredType, value, body) = expr
     val (valueExpr, valueType, errs) = declaredType match
       case Some(tpeExpr) =>
-        val (expected, errs1) = TypeChecker.checkAndElaborate(tpeExpr, TypedAst.Expr.Sort()(SourceRange.empty))
+        val (expected, errs1) = TypeChecker.checkAndElaborate(tpeExpr, TypedAst.Expr.Sort(UniverseLevel.Type1)(SourceRange.empty))
         val (typedValue, errs2) = TypeChecker.check(value, expected)
         (typedValue, expected, errs1 ++ errs2)
       case None => TypeChecker.inferAndElaborate(value)
