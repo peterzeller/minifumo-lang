@@ -1,0 +1,10 @@
+// Inspired by impossible Eq(True, False) matches: impossible constructors are omitted.
+// This checks that exhaustiveness uses constructor unification on indexed datatypes.
+export data Vec[A: Type, N: Nat] =
+   VNil: Vec[A, Zero]
+ | VCons(head: A, tail: Vec[A, N]): Vec[A, Suc(N)]
+
+fun head1[A: Type, N: Nat](xs: Vec[A, Suc(N)]): A
+  match xs
+    case VCons(head, _)
+      head
