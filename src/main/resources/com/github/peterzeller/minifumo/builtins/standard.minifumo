@@ -36,20 +36,20 @@ export data OpAnd[T: Type] = MakeOpAnd(opAnd: T -> T -> T)
 
 export data OpOr[T: Type] = MakeOpOr(opOr: T -> T -> T)
 
-export data Eq[T: Type](a: T, b: T) =
+export data Eq[T: Type](a: T, b: T): Prop =
    refl: Eq[T](a, a)
 
 export data TrueProp = TrueIntro
 
 export data FalseProp =
 
-export data And[left: Type, right: Type] = MakeAnd(left: left, right: right)
+export data And[left: Prop, right: Prop]: Prop = MakeAnd(left: left, right: right)
 
-export data Or[left: Type, right: Type] = OrLeft(left: left) | OrRight(right: right)
+export data Or[left: Prop, right: Prop]: Prop = OrLeft(left: left) | OrRight(right: right)
 
 export data Iff[left: Type, right: Type] = MakeIff(leftToRight: left ==> right, rightToLeft: right ==> left)
 
-export data Exists[T: Type, P: T -> Type] = MakeExists(x: T, p: P(x))
+export data Exists[T: Type, P: T -> Prop]: Prop = MakeExists(x: T, p: P(x))
 
 export data HasEq[T: Type] = MakeEq(eq: T -> T -> Bool)
 
