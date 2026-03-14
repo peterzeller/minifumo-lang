@@ -324,8 +324,17 @@ object TypeChecker:
       val tailTypes = columnTypes.tail
       if rows.isEmpty then
         datatypeHead(headType) match
-          case Some(dt) if dt.ctorSymbols.isEmpty => Nil
-          case _ => List(CoveragePattern.Any :: tailTypes.map(_ => CoveragePattern.Any))
+          case Some(dt) =>
+            val compatibleConstructors = matchingConstructors(dt, headType)
+            if compatibleConstructors.isEmpty then
+              Nil
+            else
+              compatibleConstructors.map { ctor =>
+                val ctorFieldTypes = extractCtorFieldTypes(ctor.tpe, headType)
+                CoveragePattern.Ctor(ctor, List.fill(ctorFieldTypes.length)(CoveragePattern.Any)) :: tailTypes.map(_ => CoveragePattern.Any)
+              }
+          case None =>
+            List(CoveragePattern.Any :: tailTypes.map(_ => CoveragePattern.Any))
       else
         datatypeHead(headType) match
           case None =>
