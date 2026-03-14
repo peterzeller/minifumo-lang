@@ -130,7 +130,7 @@ final case class DatatypeSymbol(file: String, name: String)(val continuationData
     val metas = MetaStore()
     val implicitParams: List[LocalSymbol] =
       for p <- data.declAst.implicitParams yield
-        val (t, errors) = TypeChecker.checkAndElaborate(p.tpe, TypedAst.Expr.Sort()(SourceRange.empty))(using ctx, metas, data.idSupply)
+        val (t, errors) = TypeChecker.checkAndElaborate(p.tpe, TypedAst.Expr.Sort(UniverseLevel.Type1)(SourceRange.empty))(using ctx, metas, data.idSupply)
         allErrors ++= errors
         val pSym = LocalSymbol(p.name, t, data.idSupply.freshLocalId())
         ctx = ctx.withLocal(pSym)
@@ -138,13 +138,14 @@ final case class DatatypeSymbol(file: String, name: String)(val continuationData
 
     val explicitParams: List[LocalSymbol] =
       for p <- data.declAst.params yield
-        val (t, errors) = TypeChecker.checkAndElaborate(p.tpe, TypedAst.Expr.Sort()(SourceRange.empty))(using ctx, metas, data.idSupply)
+        val (t, errors) = TypeChecker.checkAndElaborate(p.tpe, TypedAst.Expr.Sort(UniverseLevel.Type1)(SourceRange.empty))(using ctx, metas, data.idSupply)
         allErrors ++= errors
         val pSym = LocalSymbol(p.name, t, data.idSupply.freshLocalId())
         ctx = ctx.withLocal(pSym)
         pSym
 
-    val t = buildPiType(implicitParams, explicitParams, Expr.Sort()(SourceRange.empty))
+    val dataSortLevel = if data.declAst.isProp then UniverseLevel.Prop else UniverseLevel.Type1
+    val t = buildPiType(implicitParams, explicitParams, Expr.Sort(dataSortLevel)(SourceRange.empty))
     val (_, signatureErrors) = TypeChecker.finalizeTopLevelExpr(t)(using ctx, metas)
     allErrors ++= signatureErrors
     val instantiatedImplicitParams = implicitParams.map(p => TypeChecker.instantiateLocalSymbol(p)(using metas))
@@ -174,7 +175,7 @@ final case class DatatypeSymbol(file: String, name: String)(val continuationData
         var ctx = baseCtx
         val fields: List[LocalSymbol] =
           for p <- ctor.fields yield
-            val (t, errors) = TypeChecker.checkAndElaborate(p.tpe, TypedAst.Expr.Sort()(SourceRange.empty))(using ctx, metas, data.idSupply)
+            val (t, errors) = TypeChecker.checkAndElaborate(p.tpe, TypedAst.Expr.Sort(UniverseLevel.Type1)(SourceRange.empty))(using ctx, metas, data.idSupply)
             allErrors ++= errors
             val pSym = LocalSymbol(p.name, t, data.idSupply.freshLocalId())
             ctx = ctx.withLocal(pSym)
@@ -183,7 +184,7 @@ final case class DatatypeSymbol(file: String, name: String)(val continuationData
         val returnType: TypedAst.Expr =
           ctor.returnType match {
             case Some(rType) =>
-                val (t, errors) = TypeChecker.checkAndElaborate(rType, TypedAst.Expr.Sort()(SourceRange.empty))(using ctx, metas, data.idSupply)
+                val (t, errors) = TypeChecker.checkAndElaborate(rType, TypedAst.Expr.Sort(UniverseLevel.Type1)(SourceRange.empty))(using ctx, metas, data.idSupply)
                 allErrors ++= errors
                 t
             case None =>
@@ -429,7 +430,7 @@ object GlobalSymbols:
 
   private def topLevelToGlobalNames(file: String, onlyExported: Boolean)(t: ast.TopLevel): Iterable[(String, GlobalName)] =
     t match
-      case ast.TopLevel.DataDecl(name, _, _, ctors, exported) if exported || !onlyExported =>
+      case ast.TopLevel.DataDecl(name, _, _, ctors, exported, _) if exported || !onlyExported =>
         val dataTypeName = List(name -> GlobalName(file, name))
         val constructorNames = ctors.map(ctor => ctor.name -> GlobalName(file, ctor.name))
         dataTypeName ++ constructorNames
@@ -473,7 +474,7 @@ object GlobalSymbols:
 
   private def topLevelToGlobalSymbols(file: String, onlyExported: Boolean, globalNames: NameCache & SymbolCache, idSupply: TypeChecker.IdSupply)(t: ast.TopLevel): Iterable[(String, SourceRange, GlobalSymbol)] =
     t match
-      case d@ast.TopLevel.DataDecl(name, implicitParams, params, ctors, exported) if exported || !onlyExported =>
+      case d@ast.TopLevel.DataDecl(name, implicitParams, params, ctors, exported, _) if exported || !onlyExported =>
         ListBuffer[TypeError]()
         val symbols = ListBuffer[(String, SourceRange, GlobalSymbol)]()
         val _ = params

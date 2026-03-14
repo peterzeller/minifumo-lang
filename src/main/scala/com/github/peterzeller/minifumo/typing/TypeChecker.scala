@@ -78,7 +78,7 @@ object TypeChecker:
     val typedParams = mutable.ListBuffer[LocalSymbol]()
     // first check the implicit params
     for p <- sig.implicitParams do
-      val (paramType, errs) = check(p.tpe, Sort()(SourceRange.empty))(using mEnv)
+      val (paramType, errs) = check(p.tpe, Sort(UniverseLevel.Type1)(SourceRange.empty))(using mEnv)
       errors.addAll(errs)
 
       val localSymbol = LocalSymbol(p.name, paramType, ids.freshLocalId())
@@ -86,13 +86,13 @@ object TypeChecker:
       typedImplicitParams.addOne(localSymbol)
     // next check the explicit params
     for p <- sig.params do
-      val (paramType, errs) = check(p.tpe, Sort()(SourceRange.empty))(using mEnv)
+      val (paramType, errs) = check(p.tpe, Sort(UniverseLevel.Type1)(SourceRange.empty))(using mEnv)
       errors.addAll(errs)
       val localSymbol = LocalSymbol(p.name, paramType, ids.freshLocalId())
       mEnv = mEnv.withLocal(localSymbol, Some(paramType))
       typedParams.addOne(localSymbol)
 
-    val (returnType, errs) = check(sig.returnType, Sort()(SourceRange.empty))(using mEnv)
+    val (returnType, errs) = check(sig.returnType, Sort(UniverseLevel.Type1)(SourceRange.empty))(using mEnv)
     errors.addAll(errs)
 
     // construct function type as Pi type by going backwards
@@ -239,7 +239,7 @@ object TypeChecker:
     val localTypeParams = ListBuffer[LocalSymbol]()
 
     for param <- decl.implicitParams ++ decl.params do
-      val (paramType, paramErrors) = check(param.tpe, Sort()(SourceRange.empty))(using localCtx, metas, idSupply)
+      val (paramType, paramErrors) = check(param.tpe, Sort(UniverseLevel.Type1)(SourceRange.empty))(using localCtx, metas, idSupply)
       errors.addAll(paramErrors)
       val localSymbol = LocalSymbol(param.name, paramType, idSupply.freshLocalId())
       localTypeParams.addOne(localSymbol)
@@ -247,7 +247,7 @@ object TypeChecker:
 
     for ctor <- decl.ctors do
       ctor.returnType.foreach { returnType =>
-        val (typedReturnType, returnTypeErrors) = check(returnType, Sort()(SourceRange.empty))(using localCtx, metas, idSupply)
+        val (typedReturnType, returnTypeErrors) = check(returnType, Sort(UniverseLevel.Type1)(SourceRange.empty))(using localCtx, metas, idSupply)
         errors.addAll(returnTypeErrors)
         if returnTypeErrors.isEmpty && !hasDatatypeHead(typedReturnType, decl.name)(using localCtx, metas) then
           val message = s"Constructor ${ctor.name} must return ${decl.name} but got ${prettyExpr(typedReturnType)}"
@@ -454,7 +454,7 @@ object TypeChecker:
       case (TypedAst.Expr.Var(s1), TypedAst.Expr.Var(s2)) if symbolsEqual(s1, s2) => true
       case (TypedAst.Expr.Var(p1: LocalSymbol), TypedAst.Expr.Var(p2: LocalSymbol)) if p1.name == p2.name => true
       case (TypedAst.Expr.Lit(v1), TypedAst.Expr.Lit(v2)) => v1 == v2
-      case (TypedAst.Expr.Sort(), TypedAst.Expr.Sort()) => true
+      case (TypedAst.Expr.Sort(_), TypedAst.Expr.Sort(_)) => true
       case (TypedAst.Expr.App(c1, a1, _), TypedAst.Expr.App(c2, a2, _)) => syntacticallyEquivalent(c1, c2) && syntacticallyEquivalent(a1, a2)
       case (TypedAst.Expr.AppImplicit(c1, a1, _), TypedAst.Expr.AppImplicit(c2, a2, _)) => syntacticallyEquivalent(c1, c2) && syntacticallyEquivalent(a1, a2)
       case (TypedAst.Expr.Lambda(p1, b1, _), TypedAst.Expr.Lambda(p2, b2, _)) =>
@@ -866,7 +866,7 @@ object TypeChecker:
       case TypedAst.Expr.Match(scrutinee, motive, cases) =>
         val newCases = cases.map(c => TypedAst.MatchCase(c.pattern, substitute(c.body, symbol, value))(c.source))
         TypedAst.Expr.Match(substitute(scrutinee, symbol, value), substitute(motive, symbol, value), newCases)(term.source)
-      case TypedAst.Expr.Lit(_) | TypedAst.Expr.Var(_) | TypedAst.Expr.Sort() | TypedAst.Expr.Meta(_, _) | TypedAst.Expr.UnknownType() | TypedAst.Expr.Axiom() =>
+      case TypedAst.Expr.Lit(_) | TypedAst.Expr.Var(_) | TypedAst.Expr.Sort(_) | TypedAst.Expr.Meta(_, _) | TypedAst.Expr.UnknownType() | TypedAst.Expr.Axiom() =>
         term
 
   private def substituteInLocalSymbol(s: LocalSymbol, symbol: LocalSymbol, value: TypedAst.Expr): LocalSymbol =
@@ -919,7 +919,7 @@ object TypeChecker:
         collectReferencedSymbols(callee) ++ collectReferencedSymbols(arg)
       case Expr.Pi(dom, cod, isImplicit) =>
         collectReferencedSymbols(cod) -- Set(dom)
-      case Expr.Sort() => Set()
+      case Expr.Sort(_) => Set()
       case Expr.Lambda(param, body, tpe) =>
         collectReferencedSymbols(body) -- Set(param)
       case Expr.LetIn(symbol, isConstant, declaredType, value, body) =>
@@ -945,7 +945,7 @@ object TypeChecker:
     expr match
       case TypedAst.Expr.UnknownType() => "_"
       case TypedAst.Expr.Axiom() => "axiom"
-      case TypedAst.Expr.Sort() => "Type"
+      case TypedAst.Expr.Sort(level) => s"Sort(${UniverseLevel.pretty(level)})"
       case TypedAst.Expr.Var(symbol) => symbol.toString
       case TypedAst.Expr.Lit(ast.Literal.IntLit(_)) => "Int"
       case TypedAst.Expr.Lit(ast.Literal.BoolLit(_)) => "Bool"

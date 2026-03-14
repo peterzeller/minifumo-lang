@@ -46,7 +46,8 @@ enum TopLevel:
     implicitParams: List[FunParam],
     params: List[FunParam],
     ctors: List[CtorDecl],
-    exported: Boolean
+    exported: Boolean,
+    isProp: Boolean
   )(val source: SourceRange)
 
   // a function definition with implementation

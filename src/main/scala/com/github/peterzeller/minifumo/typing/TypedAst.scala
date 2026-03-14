@@ -3,6 +3,7 @@ package com.github.peterzeller.minifumo.typing
 import com.github.peterzeller.minifumo.ast
 import com.github.peterzeller.minifumo.ast.{Literal, SourceRange}
 import com.github.peterzeller.minifumo.typing.TypedAst.Expr.{Pi, Sort, UnknownType}
+import com.github.peterzeller.minifumo.typing.UniverseLevel
 
 sealed trait TypedAst:
   def source: SourceRange
@@ -71,7 +72,7 @@ object TypedAst:
     case AppImplicit(callee: Expr, arg: Expr, tpe: Expr)(val source: SourceRange)
     case App(callee: Expr, arg: Expr, tpe: Expr)(val source: SourceRange)
     case Pi(dom: LocalSymbol, cod: Expr, isImplicit: Boolean)(val source: SourceRange)
-    case Sort()(val source: SourceRange)
+    case Sort(level: UniverseLevel = UniverseLevel.Type1)(val source: SourceRange)
 
     case Lambda(param: LocalSymbol, body: Expr, tpe: Expr)(val source: SourceRange)
     case LetIn(
@@ -93,7 +94,7 @@ object TypedAst:
     /** Returns child nodes for cursor-descent traversal. */
     override def children: List[com.github.peterzeller.minifumo.typing.TypedAst] =
       this match
-        case Lit(_) | Var(_) | Sort() | UnknownType() | Axiom() =>
+        case Lit(_) | Var(_) | Sort(_) | UnknownType() | Axiom() =>
           Nil
         case AppImplicit(callee, arg, tpe) =>
           List(callee, arg, tpe)
@@ -131,8 +132,8 @@ object TypedAst:
         case Expr.Var(symbol) => Some(symbol.tpe)
         case Expr.AppImplicit(callee, arg, tpe) => Some(tpe)
         case Expr.App(callee, arg, tpe) => Some(tpe)
-        case Expr.Pi(dom, cod, isImplicit) => Some(Expr.Sort()(SourceRange.empty))
-        case Expr.Sort() => Some(Expr.Sort()(SourceRange.empty))
+        case Expr.Pi(dom, cod, isImplicit) => Some(Expr.Sort(UniverseLevel.Type1)(SourceRange.empty))
+        case Expr.Sort(level) => Some(Expr.Sort(UniverseLevel.Type1)(SourceRange.empty))
         case Expr.Lambda(param, body, tpe) => None
         case Expr.LetIn(symbol, isConstant, declaredType, value, body) => body.calculateType
         case Expr.Meta(index, tpe) => Some(tpe)

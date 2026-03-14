@@ -10,8 +10,16 @@ object CheckVarExpr:
   /** Infers the type for a variable expression. */
   def infer(expr: ast.Expr.Var)(using ctx: TypeContext): (TypedAst.Expr, TypedAst.Expr, List[TypeError]) =
     expr match
+      case ast.Expr.Var("Prop") =>
+        val propSort = TypedAst.Expr.Sort(UniverseLevel.Prop)(expr.source)
+        val typeSort = TypedAst.Expr.Sort(UniverseLevel.Type1)(expr.source)
+        (propSort, typeSort, List())
       case ast.Expr.Var("Type") =>
-        (TypedAst.Expr.Sort()(expr.source), TypedAst.Expr.Sort()(expr.source), List())
+        val inferredLevel =
+          if ctx.lookupSymbol("u").isDefined then UniverseLevel.Generic("u")
+          else UniverseLevel.Type1
+        val typeSort = TypedAst.Expr.Sort(inferredLevel)(expr.source)
+        (typeSort, TypedAst.Expr.Sort(UniverseLevel.Type1)(expr.source), List())
       case ast.Expr.Var(name) =>
         ctx.lookupSymbol(name) match
           case Some(symbol) =>

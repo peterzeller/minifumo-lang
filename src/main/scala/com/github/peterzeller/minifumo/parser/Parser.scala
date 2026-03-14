@@ -74,12 +74,19 @@ private class HandwrittenParser(tokens: Vector[Token]):
     val name = consume(TokenKind.ID, "Expected type name.")
     val implicitParams = parseImplicitParamsFun()
     val params = parseExplicitParamsFun()
+    val isProp =
+      if matchKind(TokenKind.COLON) then
+        val sortToken = consume(TokenKind.ID, "Expected sort annotation after ':'.")
+        if sortToken.text != "Prop" then
+          error(sortToken, "Only Prop is supported as data sort annotation.")
+        true
+      else false
     consume(TokenKind.EQ, "Expected '=' in data declaration.")
     val ctors = scala.collection.mutable.ListBuffer.empty[CtorDecl]
     if check(TokenKind.ID) then
       ctors += parseCtorDecl()
       while matchKind(TokenKind.BAR) do ctors += parseCtorDecl()
-    TopLevel.DataDecl(name.text, implicitParams, params, ctors.toList, exported)(merge(start, previous))
+    TopLevel.DataDecl(name.text, implicitParams, params, ctors.toList, exported, isProp)(merge(start, previous))
 
   /** Parses one constructor declaration with optional fields. */
   private def parseCtorDecl(): CtorDecl =

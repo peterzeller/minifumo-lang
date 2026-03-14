@@ -189,7 +189,7 @@ object Interpreter:
         val scrutineeVal = evalExpr(scrutinee, locals, globals)
         evalMatch(scrutineeVal, cases, locals, globals)
       case TypedAst.Expr.Meta(_, _) => Value.UndefinedVal
-      case TypedAst.Expr.Sort() => Value.UndefinedVal
+      case TypedAst.Expr.Sort(_) => Value.UndefinedVal
       case TypedAst.Expr.Pi(_, _, _) => Value.UndefinedVal
       case TypedAst.Expr.UnknownType() => Value.UndefinedVal
       case TypedAst.Expr.Axiom() => Value.UndefinedVal
