@@ -120,10 +120,10 @@ enum Expr:
         }
       case Expr.Var(name) =>
         name
-      case Expr.CallImplicit(callee, arg) =>
-        s"$callee[$arg]"
-      case Expr.Call(callee, arg) =>
-        s"$callee($arg)"
+      case Expr.CallImplicit(_, _) =>
+        renderCall(this)
+      case Expr.Call(_, _) =>
+        renderCall(this)
       case Expr.FieldAccess(receiver, fieldName) =>
         s"$receiver.$fieldName"
       case Expr.Lambda(param, body) =>
@@ -138,6 +138,29 @@ enum Expr:
       case Expr.Hole() => "???"
       case Expr.Axiom() => "axiom"
     }
+
+  // Renders chained function applications in a compact form, including Eq(lhs, rhs) as lhs = rhs.
+  private def renderCall(expr: Expr): String =
+    val (callee, implicitArgs, explicitArgs) = collectCallSegments(expr)
+    callee match
+      case Expr.Var("Eq") if implicitArgs.isEmpty && explicitArgs.length == 2 =>
+        s"${explicitArgs.head} = ${explicitArgs(1)}"
+      case _ =>
+        val base = callee.toString
+        val withImplicit =
+          if implicitArgs.isEmpty then base
+          else s"$base[${implicitArgs.mkString(", ")}]"
+        if explicitArgs.isEmpty then withImplicit
+        else s"$withImplicit(${explicitArgs.mkString(", ")})"
+
+  // Collects callee plus flattened implicit and explicit call arguments from nested Call nodes.
+  private def collectCallSegments(expr: Expr): (Expr, List[Expr], List[Expr]) =
+    def loop(current: Expr, implicitRev: List[Expr], explicitRev: List[Expr]): (Expr, List[Expr], List[Expr]) =
+      current match
+        case Expr.Call(callee, arg) => loop(callee, implicitRev, arg :: explicitRev)
+        case Expr.CallImplicit(callee, arg) => loop(callee, arg :: implicitRev, explicitRev)
+        case other => (other, implicitRev, explicitRev)
+    loop(expr, Nil, Nil)
 
 final case class MatchCase(pattern: Pattern, body: Expr)(val source: SourceRange)
 

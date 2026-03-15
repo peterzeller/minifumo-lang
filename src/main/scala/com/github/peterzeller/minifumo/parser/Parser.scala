@@ -258,7 +258,7 @@ private class HandwrittenParser(tokens: Vector[Token]):
     if matchKind(TokenKind.LET) then
       val start = previous
       val name = consume(TokenKind.ID, "Expected variable name after let.")
-      val tpe = if matchKind(TokenKind.COLON) then Some(parseExpr()) else None
+      val tpe = if matchKind(TokenKind.COLON) then Some(parseArrow()) else None
       consume(TokenKind.EQ, "Expected '=' in let expression.")
       val value = parseExpr()
       if matchKind(TokenKind.IN) then
@@ -397,7 +397,7 @@ private class HandwrittenParser(tokens: Vector[Token]):
   private def parseAnd(): Expr = parseBinaryLeft(parseEq, Set(TokenKind.AND))
 
   /** Parses equality and inequality expressions. */
-  private def parseEq(): Expr = parseBinaryLeft(parseCompare, Set(TokenKind.EQEQ, TokenKind.NOTEQ))
+  private def parseEq(): Expr = parseBinaryLeft(parseCompare, Set(TokenKind.EQ, TokenKind.EQEQ, TokenKind.NOTEQ))
 
   /** Parses comparison expressions. */
   private def parseCompare(): Expr = parseBinaryLeft(parseAdd, Set(TokenKind.LT, TokenKind.LE, TokenKind.GT, TokenKind.GE))
@@ -546,6 +546,8 @@ private class HandwrittenParser(tokens: Vector[Token]):
   private def makeBinary(left: Expr, op: Token, right: Expr): Expr =
     val src = merge(left.source, right.source)
     op.kind match
+      case TokenKind.EQ =>
+        curriedCall(Expr.Var("Eq")(src), Nil, List(left, right))
       case TokenKind.NOTEQ =>
         val eqExpr = opCall("eq", List(left, right), src)
         makeCall(Expr.Var("opNot")(src), List(eqExpr), src)
