@@ -87,7 +87,7 @@ object ScalaBackend:
         else
           sanitizeTypeName(importedModule)
     val packageLine = if packageParts.nonEmpty then s"package ${packageParts.mkString(".")}" else ""
-    val importLines = (imports.map(i => s"import ${i}") :+ "import java.nio.file.Paths" :+ "import com.github.peterzeller.minifumo.Main")
+    val importLines = imports.map(i => s"import ${i}")
       .distinct
       .mkString("\n")
 

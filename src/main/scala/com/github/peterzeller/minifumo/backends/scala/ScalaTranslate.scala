@@ -1,9 +1,9 @@
 package com.github.peterzeller.minifumo.backends.scala
 
-import com.github.peterzeller.minifumo.typing.{LocalSymbol, TypedAst}
+import com.github.peterzeller.minifumo.ast.Literal
+import com.github.peterzeller.minifumo.typing.{ErrorSymbol, GlobalSymbol, GlobalSymbols, LocalSymbol, Symbol, TermSymbol, TypedAst}
 import com.github.peterzeller.minifumo.typing.TypedAst.TopLevel.{DataDecl, FunDecl}
 import com.github.peterzeller.minifumo.typing.TypedAst.{Expr, Pattern, Program, TopLevel}
-
 
 object ScalaTranslate:
   def translateProg(prog: Program): String =
@@ -48,7 +48,7 @@ object ScalaTranslate:
 
   private def translateType(t: TypedAst.Expr): String =
     t match {
-      case Expr.Var(symbol) => symbol.name
+      case Expr.Var(symbol) => fullyQualified(symbol)
       case Expr.AppImplicit(callee, arg, tpe) =>
         s"${translateType(callee)}[${translateType(arg)}]"
       case Expr.App(callee, arg, tpe) =>
@@ -58,14 +58,24 @@ object ScalaTranslate:
       case _ => "Any"
     }
 
+  private def fullyQualified(s: Symbol): String =
+    s match {
+      case symbol: TermSymbol =>
+        symbol.name
+      case symbol: GlobalSymbol =>
+        symbol.file.replace(".minifumo", "").replace("/", ".") + "." + symbol.name
+      case ErrorSymbol(name, tpe) =>
+        name
+    }
+
   private def translateFunDecl(f: FunDecl): String = {
     s"def ${f.sig.symbol.name}${translateTypeParams(f.sig.typeParams)}(${translateParams(f.sig.params)}): ${translateType(f.sig.returnType)} =\n    ${printExpr(f.body, 4)}"
   }
 
   private def printExpr(e: Expr, indent: Int): String =
     e match {
-      case Expr.Lit(value) => value.toString
-      case Expr.Var(symbol) => symbol.name
+      case Expr.Lit(value) => translateLit(value)
+      case Expr.Var(symbol) => fullyQualified(symbol)
       case Expr.AppImplicit(callee, arg, tpe) =>
         s"${printExpr(callee, indent)}[${printExpr(arg, indent)}]"
       case Expr.App(callee, arg, tpe) =>
@@ -93,9 +103,17 @@ object ScalaTranslate:
   private def printPattern(p: Pattern): String =
     p match {
       case Pattern.Wildcard() => "_"
-      case Pattern.Lit(value) => value.toString
+      case p: Pattern.Lit => translateLit(p.value)
       case Pattern.Binder(symbol) => symbol.name
       case Pattern.Ctor(symbol, args) if args.isEmpty => symbol.name
       case Pattern.Ctor(symbol, args) =>
         s"${symbol.name}(${args.map(printPattern).mkString(", ")})"
+    }
+
+  private def translateLit(literal: Literal): String =
+    literal match {
+      case Literal.IntLit(value: String) => value
+      case Literal.BoolLit(value: Boolean) => value.toString
+      case Literal.StringLit(value: String) => s"\"$value\""
+      case Literal.UnitLit() => "()"
     }
