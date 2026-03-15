@@ -252,6 +252,29 @@ class MySuite extends munit.FunSuite {
   }
 
 
+  test("subst infers motive through higher-order matching") {
+    val input =
+      """
+        |fun bool_distinct[a: Bool](h1: Eq(a, True), h2: Eq(a, False)): FalseProp
+        |    match a
+        |        case True
+        |            let h: Eq(a, True) = match_Eq
+        |            let q: Eq(True, False) = subst(match_Eq, h2)
+        |            match q
+        |        case False
+        |            let h: Eq(a, False) = match_Eq
+        |            let q: Eq(False, True) = subst(match_Eq, h1)
+        |            match q
+      """.stripMargin
+    val (ast, _) = parseInput(input)
+    val dummyPath = "subst-motive-inference.minifumo"
+    val dummyCache = new ProjectSymbolCache(GlobalSymbolsIo.create("."), TypeChecker.IdSupply())
+    dummyCache.addInput(dummyPath, input)
+    val (_, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
+    assertEquals(errors, List())
+  }
+
+
 
   test("single-constructor datatype fields are accessible via dot syntax") {
     val input =

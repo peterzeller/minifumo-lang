@@ -525,6 +525,10 @@ object TypeChecker:
         solveMeta(id, other)
       case (other, TypedAst.Expr.Meta(id, _)) =>
         solveMeta(id, other)
+      case _ if solvePatternMetaApplication(norm1, norm2) =>
+        true
+      case _ if solvePatternMetaApplication(norm2, norm1) =>
+        true
       case _ =>
         (extractHeadedExpr(norm1), extractHeadedExpr(norm2)) match
           case (Some(h1), Some(h2)) if h1.kind == h2.kind =>
@@ -584,6 +588,48 @@ object TypeChecker:
         case TypedAst.Expr.AppImplicit(callee, arg, _) => loop(callee, arg :: acc)
         case _ => (current, acc)
     loop(expr, Nil)
+
+  /** Solves equations of the shape `(?m x1 ... xn) = rhs` using higher-order pattern matching. */
+  private def solvePatternMetaApplication(left: TypedAst.Expr, right: TypedAst.Expr)
+                                         (implicit metas: MetaContext): Boolean =
+    extractMetaApplication(left) match
+      case Some((metaId, metaType, args)) =>
+        val distinctArgIds = args.map(_.id).distinct
+        if distinctArgIds.length != args.length then
+          false
+        else
+          solveMeta(metaId, buildPatternMetaSolution(metaType, args, right, left.source, metaId))
+      case None =>
+        false
+
+  /** Extracts the meta head id, type, and local-variable arguments from an application chain. */
+  private def extractMetaApplication(expr: TypedAst.Expr): Option[(Int, TypedAst.Expr, List[LocalSymbol])] =
+    val (head, args) = decomposeApplication(expr)
+    head match
+      case TypedAst.Expr.Meta(id, tpe) =>
+        val localArgs = args.collect { case TypedAst.Expr.Var(local: LocalSymbol) => local }
+        if localArgs.length == args.length then Some((id, tpe, localArgs)) else None
+      case _ =>
+        None
+
+  /** Builds a lambda solution for a pattern meta by abstracting over its local-variable arguments. */
+  private def buildPatternMetaSolution(metaType: TypedAst.Expr, args: List[LocalSymbol], target: TypedAst.Expr, source: SourceRange, metaId: Int)(implicit metas: MetaContext): TypedAst.Expr =
+    val binders = args.zipWithIndex.map { case (arg, index) =>
+      LocalSymbol(s"m${metaId}_${index}", arg.tpe, -2000000 - index)
+    }
+    val abstractedBody = args.zip(binders).foldLeft(target) { case (current, (arg, binder)) =>
+      substitute(current, arg, TypedAst.Expr.Var(binder)(source))
+    }
+    val lambdaTypes = ListBuffer[TypedAst.Expr]()
+    var currentType = metaType
+    for binder <- binders do
+      lambdaTypes.addOne(currentType)
+      currentType = (instantiate(currentType) match
+        case TypedAst.Expr.Pi(dom, cod, _) => substitute(cod, dom, TypedAst.Expr.Var(binder)(source))
+        case _ => TypedAst.Expr.UnknownType()(source))
+    binders.zip(lambdaTypes).reverse.foldLeft(abstractedBody) { case (currentBody, (binder, binderType)) =>
+      TypedAst.Expr.Lambda(binder, currentBody, binderType)(source)
+    }
 
   /** Classifies heads that represent constructors or type constructors. */
   private def classifyHead(symbol: Symbol): Option[DefEqHeadKind] =
@@ -660,6 +706,8 @@ object TypeChecker:
       (left, right) match
         case (TypedAst.Expr.Meta(id, _), other) => solveMeta(id, other)
         case (other, TypedAst.Expr.Meta(id, _)) => solveMeta(id, other)
+        case _ if solvePatternMetaApplication(left, right) => true
+        case _ if solvePatternMetaApplication(right, left) => true
         case (TypedAst.Expr.App(c1, a1, _), TypedAst.Expr.App(c2, a2, _)) =>
           canSolveByUnification(c1, c2) && canSolveByUnification(a1, a2)
         case (TypedAst.Expr.AppImplicit(c1, a1, _), TypedAst.Expr.AppImplicit(c2, a2, _)) =>
