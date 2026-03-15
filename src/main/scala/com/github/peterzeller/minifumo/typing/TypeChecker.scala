@@ -309,6 +309,12 @@ object TypeChecker:
     case Any
     case Ctor(symbol: CtorSymbol, args: List[CoveragePattern])
 
+  /** Classifies whether a constructor result can match the expected scrutinee type. */
+  private enum ConstructorCompatibility:
+    case Compatible
+    case Incompatible
+    case Unknown
+
   /** Computes the uncovered pattern vectors for a constructor-pattern matrix. */
   private def uncoveredPatterns(rows: List[List[TypedAst.Pattern]], columnTypes: List[TypedAst.Expr])(using ctx: TypeContext, metas: MetaContext): List[List[CoveragePattern]] =
     if columnTypes.isEmpty then
@@ -318,8 +324,17 @@ object TypeChecker:
       val tailTypes = columnTypes.tail
       if rows.isEmpty then
         datatypeHead(headType) match
-          case Some(dt) if dt.ctorSymbols.isEmpty => Nil
-          case _ => List(CoveragePattern.Any :: tailTypes.map(_ => CoveragePattern.Any))
+          case Some(dt) =>
+            val compatibleConstructors = matchingConstructors(dt, headType)
+            if compatibleConstructors.isEmpty then
+              Nil
+            else
+              compatibleConstructors.map { ctor =>
+                val ctorFieldTypes = extractCtorFieldTypes(ctor.tpe, headType)
+                CoveragePattern.Ctor(ctor, List.fill(ctorFieldTypes.length)(CoveragePattern.Any)) :: tailTypes.map(_ => CoveragePattern.Any)
+              }
+          case None =>
+            List(CoveragePattern.Any :: tailTypes.map(_ => CoveragePattern.Any))
       else
         datatypeHead(headType) match
           case None =>
@@ -355,11 +370,97 @@ object TypeChecker:
 
   /** Selects constructors whose result type is definitionally equal to the scrutinee type. */
   private def matchingConstructors(datatype: DatatypeSymbol, expectedType: TypedAst.Expr)(using ctx: TypeContext, metas: MetaContext): List[CtorSymbol] =
-    val compatible = datatype.ctorSymbols.filter { ctor =>
-      val (_, resultType) = decomposeCtorType(ctor.tpe)
-      isDefEq(resultType, expectedType, expectedType.source)
-    }
-    if compatible.nonEmpty then compatible else datatype.ctorSymbols
+    val classified = datatype.ctorSymbols.map(ctor => ctor -> constructorCompatibility(ctor.tpe, expectedType))
+    val compatible = classified.collect { case (ctor, ConstructorCompatibility.Compatible) => ctor }
+    val unknown = classified.collect { case (ctor, ConstructorCompatibility.Unknown) => ctor }
+    if compatible.nonEmpty then compatible
+    else if unknown.nonEmpty then unknown
+    else Nil
+
+  /** Checks constructor compatibility against the scrutinee type without adding constraints. */
+  private def constructorCompatibility(ctorType: TypedAst.Expr, expectedType: TypedAst.Expr)(using ctx: TypeContext, metas: MetaContext): ConstructorCompatibility =
+    val (_, resultType) = decomposeCtorType(ctorType)
+    val normalizedResult = whnf(resultType)
+    val normalizedExpected = whnf(expectedType)
+    val templateParams = collectParamIds(normalizedResult)
+    val targetParams = collectParamIds(normalizedExpected)
+    unifyCoverageType(normalizedResult, normalizedExpected, templateParams, targetParams, Map.empty, Map.empty) match
+      case Some(_) => ConstructorCompatibility.Compatible
+      case None if hasCoverageUnknown(normalizedResult) || hasCoverageUnknown(normalizedExpected) => ConstructorCompatibility.Unknown
+      case None => ConstructorCompatibility.Incompatible
+
+  /** Returns true when a type contains unresolved placeholders that block coverage unification. */
+  private def hasCoverageUnknown(expr: TypedAst.Expr)(using ctx: TypeContext, metas: MetaContext): Boolean =
+    whnf(expr) match
+      case TypedAst.Expr.UnknownType() | TypedAst.Expr.Meta(_, _) => true
+      case TypedAst.Expr.App(callee, arg, tpe) =>
+        hasCoverageUnknown(callee) || hasCoverageUnknown(arg) || hasCoverageUnknown(tpe)
+      case TypedAst.Expr.AppImplicit(callee, arg, tpe) =>
+        hasCoverageUnknown(callee) || hasCoverageUnknown(arg) || hasCoverageUnknown(tpe)
+      case TypedAst.Expr.Pi(dom, cod, _) =>
+        hasCoverageUnknown(dom.tpe) || hasCoverageUnknown(cod)
+      case TypedAst.Expr.Lambda(param, body, tpe) =>
+        hasCoverageUnknown(param.tpe) || hasCoverageUnknown(body) || hasCoverageUnknown(tpe)
+      case TypedAst.Expr.LetIn(symbol, _, declaredType, value, body) =>
+        hasCoverageUnknown(symbol.tpe) || hasCoverageUnknown(declaredType) || hasCoverageUnknown(value) || hasCoverageUnknown(body)
+      case TypedAst.Expr.Match(scrutinee, motive, cases) =>
+        hasCoverageUnknown(scrutinee) || hasCoverageUnknown(motive) || cases.exists(c => hasCoverageUnknown(c.body))
+      case _ =>
+        false
+
+  /** Unifies constructor result templates with target types for exhaustiveness checking. */
+  private def unifyCoverageType(
+      template: TypedAst.Expr,
+      target: TypedAst.Expr,
+      templateParamIds: Set[Int],
+      targetParamIds: Set[Int],
+      templateSubst: Map[Int, TypedAst.Expr],
+      targetSubst: Map[Int, TypedAst.Expr]
+    )(using ctx: TypeContext, metas: MetaContext): Option[(Map[Int, TypedAst.Expr], Map[Int, TypedAst.Expr])] =
+    val normalizedTemplate = whnf(template)
+    val normalizedTarget = whnf(target)
+    (normalizedTemplate, normalizedTarget) match
+      case (TypedAst.Expr.Var(param: LocalSymbol), other) if templateParamIds.contains(param.id) =>
+        templateSubst.get(param.id) match
+          case Some(existing) =>
+            if syntacticallyEquivalent(existing, other) then Some((templateSubst, targetSubst)) else None
+          case None =>
+            Some((templateSubst + (param.id -> other), targetSubst))
+      case (other, TypedAst.Expr.Var(param: LocalSymbol)) if targetParamIds.contains(param.id) =>
+        targetSubst.get(param.id) match
+          case Some(existing) =>
+            if syntacticallyEquivalent(existing, other) then Some((templateSubst, targetSubst)) else None
+          case None =>
+            Some((templateSubst, targetSubst + (param.id -> other)))
+      case (TypedAst.Expr.Var(left), TypedAst.Expr.Var(right)) if symbolsEqual(left, right) =>
+        Some((templateSubst, targetSubst))
+      case (TypedAst.Expr.Lit(left), TypedAst.Expr.Lit(right)) if left == right =>
+        Some((templateSubst, targetSubst))
+      case (TypedAst.Expr.Sort(_), TypedAst.Expr.Sort(_)) =>
+        Some((templateSubst, targetSubst))
+      case (TypedAst.Expr.UnknownType(), _) | (_, TypedAst.Expr.UnknownType()) =>
+        None
+      case (TypedAst.Expr.Meta(_, _), _) | (_, TypedAst.Expr.Meta(_, _)) =>
+        None
+      case (TypedAst.Expr.App(tc, ta, _), TypedAst.Expr.App(ec, ea, _)) =>
+        unifyCoverageType(tc, ec, templateParamIds, targetParamIds, templateSubst, targetSubst)
+          .flatMap((nextTemplateSubst, nextTargetSubst) => unifyCoverageType(ta, ea, templateParamIds, targetParamIds, nextTemplateSubst, nextTargetSubst))
+      case (TypedAst.Expr.AppImplicit(tc, ta, _), TypedAst.Expr.AppImplicit(ec, ea, _)) =>
+        unifyCoverageType(tc, ec, templateParamIds, targetParamIds, templateSubst, targetSubst)
+          .flatMap((nextTemplateSubst, nextTargetSubst) => unifyCoverageType(ta, ea, templateParamIds, targetParamIds, nextTemplateSubst, nextTargetSubst))
+      case (TypedAst.Expr.App(tc, ta, _), TypedAst.Expr.AppImplicit(ec, ea, _)) =>
+        unifyCoverageType(tc, ec, templateParamIds, targetParamIds, templateSubst, targetSubst)
+          .flatMap((nextTemplateSubst, nextTargetSubst) => unifyCoverageType(ta, ea, templateParamIds, targetParamIds, nextTemplateSubst, nextTargetSubst))
+      case (TypedAst.Expr.AppImplicit(tc, ta, _), TypedAst.Expr.App(ec, ea, _)) =>
+        unifyCoverageType(tc, ec, templateParamIds, targetParamIds, templateSubst, targetSubst)
+          .flatMap((nextTemplateSubst, nextTargetSubst) => unifyCoverageType(ta, ea, templateParamIds, targetParamIds, nextTemplateSubst, nextTargetSubst))
+      case (TypedAst.Expr.Pi(leftDom, leftCod, leftImplicit), TypedAst.Expr.Pi(rightDom, rightCod, rightImplicit)) if leftImplicit == rightImplicit =>
+        unifyCoverageType(leftDom.tpe, rightDom.tpe, templateParamIds, targetParamIds, templateSubst, targetSubst)
+          .flatMap((nextTemplateSubst, nextTargetSubst) => unifyCoverageType(leftCod, rightCod, templateParamIds, targetParamIds, nextTemplateSubst, nextTargetSubst))
+      case _ if syntacticallyEquivalent(normalizedTemplate, normalizedTarget) =>
+        Some((templateSubst, targetSubst))
+      case _ =>
+        None
 
   /** Checks whether a typed pattern is a wildcard-like catch-all pattern. */
   private def isWildcardLike(pattern: TypedAst.Pattern): Boolean =
@@ -988,7 +1089,7 @@ object TypeChecker:
       expectedType: TypedAst.Expr,
       ctx: TypeContext,
       ids: IdSupply
-    ): PatternCheckResult =
+    )(using metas: MetaContext): PatternCheckResult =
     pattern match
       case ast.Pattern.Wildcard() =>
         PatternCheckResult(TypedAst.Pattern.Wildcard()(pattern.source), Map(), Map(), List())

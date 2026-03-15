@@ -1,0 +1,4 @@
+// Demonstrates an impossible equality match: Eq(True, False) has no constructors.
+fun bool_distinct1(h: Eq(True, False)): FalseProp
+    // impossible case: true cannot be equal to false
+    match h
