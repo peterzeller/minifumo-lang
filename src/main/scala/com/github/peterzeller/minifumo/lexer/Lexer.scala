@@ -175,8 +175,9 @@ object Lexer:
       case Left(err) => result += Left(err)
       case Right(token) =>
         if token.kind == TokenKind.EOF then
+          val eofNewline = firstNewline.getOrElse(Token(TokenKind.NL, "$NL", token.source))
+          outputQueue.enqueue(Right(eofNewline))
           handleIndent(0, token)
-          outputQueue.enqueue(Right(Token(TokenKind.NL, "$NL", token.source)))
           outputQueue.enqueue(Right(token))
           flushQueue()
         else
