@@ -1,7 +1,7 @@
 package com.github.peterzeller.minifumo.backends.scala
 
 import com.github.peterzeller.minifumo.common.MinifumoErrorWithPath
-import com.github.peterzeller.minifumo.typing.{DatatypeIndexErasure, GlobalSymbolsIo, ProjectSymbolCache, ProofErasure, TypeChecker}
+import com.github.peterzeller.minifumo.typing.{DatatypeIndexErasure, GlobalSymbolsIo, ProjectSymbolCache, TypeChecker}
 
 import java.nio.file.{Files, Path}
 import scala.jdk.CollectionConverters.*
@@ -37,9 +37,7 @@ object ScalaBackend:
     else
       Files.createDirectories(outputDir)
       val generatedFiles = files.map: file =>
-        val (typed, _) = cache.typedAst(file)
-        val erasedProgram = ProofErasure.erase(DatatypeIndexErasure.erase(typed))
-        val content = emitScalaModule(file, erasedProgram.items.length, cache)
+        val content = emitScalaModule(file, cache)
         val target = outputDir.resolve(file.stripSuffix(".minifumo") + ".scala")
         Option(target.getParent).foreach(parent => Files.createDirectories(parent))
         Files.writeString(target, content)
@@ -70,7 +68,7 @@ object ScalaBackend:
     ModuleRef(packageParts, objectName)
 
   /** Emits a Scala 3 module that runs the original Minifumo program through the interpreter entrypoint. */
-  private def emitScalaModule(relativePath: String, erasedDeclCount: Int, cache: ProjectSymbolCache): String =
+  private def emitScalaModule(relativePath: String, cache: ProjectSymbolCache): String =
     val moduleRef = moduleRefFor(relativePath)
     val packageParts = moduleRef.packageParts
 
@@ -92,7 +90,8 @@ object ScalaBackend:
       .mkString("\n")
 
     val (typedAst, errs) = cache.typedAst(relativePath)
-    val progStr = ScalaTranslate.translateProg(typedAst)
+    val typedAstErased = DatatypeIndexErasure.erase(DatatypeIndexErasure.erase(typedAst))
+    val progStr = ScalaTranslate.translateProg(typedAstErased)
 
     s"""${packageLine}
     |${importLines}
@@ -117,10 +116,7 @@ object ScalaBackend:
     if head.isLower then ident.updated(0, head.toUpper) else ident
 
   /** Escapes string content for Scala string literals. */
-  private def escape(value: String): String =
-    value
-      .replace("\\", "\\\\")
-      .replace("\"", "\\\"")
+  
 
   /** Lists reserved keywords that cannot be used as bare Scala identifiers. */
   private val scalaKeywords: Set[String] = Set(

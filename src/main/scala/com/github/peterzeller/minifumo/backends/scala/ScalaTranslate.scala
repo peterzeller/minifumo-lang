@@ -1,7 +1,7 @@
 package com.github.peterzeller.minifumo.backends.scala
 
 import com.github.peterzeller.minifumo.ast.Literal
-import com.github.peterzeller.minifumo.typing.{ErrorSymbol, GlobalSymbol, GlobalSymbols, LocalSymbol, Symbol, TermSymbol, TypedAst}
+import com.github.peterzeller.minifumo.typing.{ErrorSymbol, GlobalSymbol, LocalSymbol, Symbol, TermSymbol, TypedAst}
 import com.github.peterzeller.minifumo.typing.TypedAst.TopLevel.{DataDecl, FunDecl}
 import com.github.peterzeller.minifumo.typing.TypedAst.{Expr, Pattern, Program, TopLevel}
 
