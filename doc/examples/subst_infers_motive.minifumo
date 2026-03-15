@@ -1,0 +1,12 @@
+// Demonstrates that subst can infer the motive from the expected type.
+fun bool_distinct[a: Bool](h1: Eq(a, True), h2: Eq(a, False)): FalseProp
+    // proof by induction on a
+    match a
+        case True
+            let h: Eq(a, True) = match_Eq
+            let q: Eq(True, False) = subst(match_Eq, h2)
+            match q
+        case False
+            let h: Eq(a, False) = match_Eq
+            let q: Eq(False, True) = subst(match_Eq, h1)
+            match q
