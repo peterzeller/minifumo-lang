@@ -26,11 +26,10 @@ object ScalaBackend:
     val root = GlobalSymbolsIo.findProjectRoot(entry)
     val io = GlobalSymbolsIo(root)
     val cache = new ProjectSymbolCache(io, TypeChecker.IdSupply())
-    val files = collectInputFiles(entry, root)
+    val files: List[String] = "standard.minifumo" :: collectInputFiles(entry, root).map(io.makeRelative)
 
     files.foreach: file =>
-      val relative = io.makeRelative(file)
-      cache.typedAst(relative)
+      cache.typedAst(file)
 
     val errors = cache.allErrors
     if errors.nonEmpty then
@@ -38,11 +37,10 @@ object ScalaBackend:
     else
       Files.createDirectories(outputDir)
       val generatedFiles = files.map: file =>
-        val relative = io.makeRelative(file)
-        val (typed, _) = cache.typedAst(relative)
+        val (typed, _) = cache.typedAst(file)
         val erasedProgram = ProofErasure.erase(DatatypeIndexErasure.erase(typed))
-        val content = emitScalaModule(relative, erasedProgram.items.length, cache)
-        val target = outputDir.resolve(relative.stripSuffix(".minifumo") + ".scala")
+        val content = emitScalaModule(file, erasedProgram.items.length, cache)
+        val target = outputDir.resolve(file.stripSuffix(".minifumo") + ".scala")
         Option(target.getParent).foreach(parent => Files.createDirectories(parent))
         Files.writeString(target, content)
         GeneratedScalaFile(target, content)
@@ -73,13 +71,12 @@ object ScalaBackend:
 
   /** Emits a Scala 3 module that runs the original Minifumo program through the interpreter entrypoint. */
   private def emitScalaModule(relativePath: String, erasedDeclCount: Int, cache: ProjectSymbolCache): String =
-    val sanitizedRelative = relativePath.replace('\\', '/')
     val moduleRef = moduleRefFor(relativePath)
     val packageParts = moduleRef.packageParts
-    val moduleName = moduleRef.objectName
 
     val imports =
       val (programAst, _) = cache.getAst(relativePath)
+
       programAst.imports.flatMap(_.from).distinct.map: imp =>
         val importedModule = imp.replace('\\', '/').stripSuffix(".minifumo")
         val impParts = importedModule.split('/').toList.filter(_.nonEmpty)
@@ -94,25 +91,14 @@ object ScalaBackend:
       .distinct
       .mkString("\n")
 
+    val (typedAst, errs) = cache.typedAst(relativePath)
+    val progStr = ScalaTranslate.translateProg(typedAst)
+
     s"""${packageLine}
-|${importLines}
-|
-|object ${moduleName}:
-|  /** Stores the source file path relative to the Minifumo project root. */
-|  val sourcePath: String = \"${escape(sanitizedRelative)}\"
-|
-|  /** Stores the number of declarations after index and proof erasure. */
-|  val erasedDeclarationCount: Int = ${erasedDeclCount}
-|
-|  /** Runs the translated file by delegating to the Minifumo interpreter. */
-|  def main(args: Array[String]): Unit =
-|    Main.runFile(Paths.get(sourcePath)) match
-|      case Right(value) =>
-|        println(value)
-|      case Left(errors) =>
-|        Console.err.println(Main.renderTypeErrors(errors).mkString("\\n\\n"))
-|        sys.exit(1)
-|""".stripMargin.trim + "\n"
+    |${importLines}
+    |
+    |$progStr
+    |""".stripMargin.trim + "\n"
 
   /** Converts a filesystem path token into a valid Scala identifier. */
   private def sanitizeIdentifier(value: String): String =
