@@ -69,8 +69,8 @@ object CheckMatchExpr:
           TypedAst.Expr.AppImplicit(replaceExpr(callee, target, replacement), replaceExpr(arg, target, replacement), replaceExpr(tpe, target, replacement))(term.source)
         case TypedAst.Expr.Lambda(param, body, tpe) =>
           TypedAst.Expr.Lambda(param, replaceExpr(body, target, replacement), replaceExpr(tpe, target, replacement))(term.source)
-        case TypedAst.Expr.LetIn(symbol, isConstant, declaredType, value, body) =>
-          TypedAst.Expr.LetIn(symbol, isConstant, replaceExpr(declaredType, target, replacement), replaceExpr(value, target, replacement), replaceExpr(body, target, replacement))(term.source)
+        case letExpr@TypedAst.Expr.LetIn(symbol, isConstant, declaredType, value, body) =>
+          TypedAst.Expr.LetIn(symbol, isConstant, replaceExpr(declaredType, target, replacement), replaceExpr(value, target, replacement), replaceExpr(body, target, replacement))(letExpr.comment)(term.source)
         case TypedAst.Expr.Pi(dom, cod, isImplicit) =>
           TypedAst.Expr.Pi(dom, replaceExpr(cod, target, replacement), isImplicit)(term.source)
         case TypedAst.Expr.Match(scrutinee, motive, cases) =>

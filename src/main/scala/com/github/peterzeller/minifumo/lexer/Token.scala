@@ -4,7 +4,7 @@ import com.github.peterzeller.minifumo.ast.{SourcePos, SourceRange}
 
 /** Represents the kind of lexical token produced by the handwritten lexer. */
 enum TokenKind:
-  case EOF, NL, BEGIN, END, SPACETAB
+  case EOF, NL, BEGIN, END, SPACETAB, COMMENT
   case ID, INT, BOOL, STRING
   case IMPORT, FROM, IN, EXPORT, DATA, FUN, LEMMA, GIVEN, ASSUMES, SHOWS, PROOF, MATCH, CASE, IF, THEN, ELSE, LET, FORALL, EXISTS, AXIOM
   case UNDERSCORE, HOLE

@@ -13,17 +13,17 @@ object ProofErasure:
   /** Erases one top-level declaration. */
   private def eraseTopLevel(topLevel: TopLevel): TopLevel =
     topLevel match
-      case TopLevel.DataDecl(symbol, _, ctors) =>
-        TopLevel.DataDecl(symbol, List(), ctors.map(eraseCtor))(topLevel.source)
-      case TopLevel.FunDecl(sig, body) =>
+      case dataDecl@TopLevel.DataDecl(symbol, _, ctors) =>
+        TopLevel.DataDecl(symbol, List(), ctors.map(eraseCtor))(dataDecl.comment)(topLevel.source)
+      case funDecl@TopLevel.FunDecl(sig, body) =>
         val keptParams = sig.params.filterNot(param => isErasedParameterType(param.tpe))
         val erasedSig = FunSig(sig.symbol, List(), keptParams, eraseExpr(sig.returnType))
-        TopLevel.FunDecl(erasedSig, eraseExpr(body))(topLevel.source)
+        TopLevel.FunDecl(erasedSig, eraseExpr(body))(funDecl.comment)(topLevel.source)
 
 
   /** Erases all constructor fields so constructors carry no runtime payload. */
   private def eraseCtor(ctor: CtorDecl): CtorDecl =
-    CtorDecl(ctor.symbol, List(), List(), eraseExpr(ctor.returnType), eraseExpr(ctor.tpe))(ctor.source)
+    CtorDecl(ctor.symbol, List(), List(), eraseExpr(ctor.returnType), eraseExpr(ctor.tpe))(ctor.comment)(ctor.source)
 
   /** Erases proof and type terms inside one expression tree. */
   private def eraseExpr(expr: Expr): Expr =
@@ -43,8 +43,8 @@ object ProofErasure:
           Expr.Pi(dom, eraseExpr(cod), isImplicit)(expr.source)
         case Expr.Lambda(param, body, tpe) =>
           Expr.Lambda(param, eraseExpr(body), eraseExpr(tpe))(expr.source)
-        case Expr.LetIn(symbol, isConstant, declaredType, value, body) =>
-          Expr.LetIn(symbol, isConstant, eraseExpr(declaredType), eraseExpr(value), eraseExpr(body))(expr.source)
+        case letExpr@Expr.LetIn(symbol, isConstant, declaredType, value, body) =>
+          Expr.LetIn(symbol, isConstant, eraseExpr(declaredType), eraseExpr(value), eraseExpr(body))(letExpr.comment)(expr.source)
         case Expr.Match(scrutinee, motive, cases) =>
           if isErasedValue(scrutinee) then
             eraseExpr(cases.headOption.map(_.body).getOrElse(unitExpr(expr.source)))

@@ -9,6 +9,7 @@ object CheckLetExpr:
   /** Checks a let-in expression against an expected body type. */
   def check(expr: ast.Expr.LetIn, expectedType: Option[TypedAst.Expr])(using ctx: TypeContext, metas: MetaContext, ids: IdSupply): (TypedAst.Expr, TypedAst.Expr, List[TypeError]) =
     val ast.Expr.LetIn(name, declaredType, value, body) = expr
+    val comment = expr.comment
     val (valueExpr, valueType, errs) = declaredType match
       case Some(tpeExpr) =>
         val (expected, errs1) = TypeChecker.checkAndElaborate(tpeExpr, TypedAst.Expr.Sort(UniverseLevel.Type1)(SourceRange.empty))
@@ -38,5 +39,5 @@ object CheckLetExpr:
       case None =>
         TypeChecker.infer(body)(using bodyCtx, metas, ids)
     }
-    val typedAst = TypedAst.Expr.LetIn(symbol, isConstant = false, valueType, valueExpr, bodyExpr)(expr.source)
+    val typedAst = TypedAst.Expr.LetIn(symbol, isConstant = false, valueType, valueExpr, bodyExpr)(comment)(expr.source)
     (typedAst, bodyType, errs ++ bodyErrs)

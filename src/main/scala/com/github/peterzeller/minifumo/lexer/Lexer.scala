@@ -54,7 +54,11 @@ object Lexer:
         advance()
         emit(TokenKind.NL, "\\n", start, start)
       else if ch == '/' && peek(1) == '/' then
-        while i < input.length && peek() != '\n' do advanceUnit()
+        val start = pos
+        advance(); advance()
+        val b = new StringBuilder
+        while i < input.length && peek() != '\n' do b += advance()
+        emit(TokenKind.COMMENT, b.result().trim, start, SourcePos(line, col - 1))
       else if ch == '/' && peek(1) == '*' then
         val start = pos
         advance(); advance()
@@ -174,7 +178,9 @@ object Lexer:
     tokens.foreach {
       case Left(err) => result += Left(err)
       case Right(token) =>
-        if token.kind == TokenKind.EOF then
+        if token.kind == TokenKind.COMMENT then
+          ()
+        else if token.kind == TokenKind.EOF then
           val eofNewline = firstNewline.getOrElse(Token(TokenKind.NL, "$NL", token.source))
           outputQueue.enqueue(Right(eofNewline))
           handleIndent(0, token)

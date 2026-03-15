@@ -4,7 +4,7 @@ import com.github.peterzeller.minifumo.builtins.Standard
 import com.github.peterzeller.minifumo.interpreter.Interpreter
 import com.github.peterzeller.minifumo.ast.SourcePos
 import com.github.peterzeller.minifumo.parser.parseInput
-import com.github.peterzeller.minifumo.typing.{DefinitionLookup, GlobalSymbolsIo, ProjectSymbolCache, TypeChecker}
+import com.github.peterzeller.minifumo.typing.{DefinitionLookup, GlobalSymbolsIo, HoverLookup, ProjectSymbolCache, TypeChecker}
 
 import scala.scalajs.js
 import scala.scalajs.js.JSConverters.*
@@ -26,6 +26,9 @@ object CompilerApi:
 
   /** Represents one go-to-definition target location sent to JavaScript callers. */
   class DefinitionLocation(val file: String, val line: Int, val column: Int, val endLine: Int, val endColumn: Int) extends js.Object
+
+  /** Represents hover information at one source position. */
+  class HoverInfo(val typeText: String, val comment: js.UndefOr[String]) extends js.Object
 
   /** Compiles source code and optionally runs a named function from the resulting program. */
   @JSExport
@@ -107,6 +110,26 @@ object CompilerApi:
           .orUndefined
     catch
       // Keeps go-to-definition resilient by hiding internal compiler failures from callers.
+      case NonFatal(_) =>
+        js.undefined
+
+
+  /** Resolves hover information at the given 1-based source position. */
+  @JSExport
+  def hoverAt(source: String, line: Int, column: Int, currentFile: String = inMemoryFile): js.UndefOr[HoverInfo] =
+    val ids = TypeChecker.IdSupply()
+    val symbolCache = ProjectSymbolCache(new GlobalSymbolsIo("."), ids)
+    symbolCache.addInput(currentFile, source)
+    try
+      val (program, syntaxErrors) = parseInput(source)
+      if syntaxErrors.nonEmpty then
+        js.undefined
+      else
+        val (typedProgram, _) = TypeChecker.checkProgram(currentFile, program, symbolCache, importStandard = true, ids)
+        HoverLookup.hoverAt(typedProgram, SourcePos(line, column), currentFile)
+          .map(info => new HoverInfo(info.typeText, info.comment.orUndefined))
+          .orUndefined
+    catch
       case NonFatal(_) =>
         js.undefined
 

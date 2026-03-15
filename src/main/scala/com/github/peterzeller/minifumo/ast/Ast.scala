@@ -32,7 +32,7 @@ object SourceRange:
 
 case class SourceRangeWithFile(file: String, range: SourceRange)
 
-
+final case class DocComment(text: String)(val source: SourceRange)
 
 case class ProgramFile(imports: List[ImportStatement], items: List[TopLevel])(val source: SourceRange)
 
@@ -48,14 +48,14 @@ enum TopLevel:
     ctors: List[CtorDecl],
     exported: Boolean,
     isProp: Boolean
-  )(val source: SourceRange)
+  )(val comment: Option[DocComment])(val source: SourceRange)
 
   // a function definition with implementation
   case FunDecl(
     sig: FunSig,
     body: Expr,
     exported: Boolean
-  )(val source: SourceRange)
+  )(val comment: Option[DocComment])(val source: SourceRange)
 
   def source: SourceRange
 
@@ -71,7 +71,7 @@ final case class FunSig(
     returnType: Expr
   )(val source: SourceRange)
 
-final case class CtorDecl(name: String, fields: List[CtorField], returnType: Option[Expr])(val source: SourceRange)
+final case class CtorDecl(name: String, fields: List[CtorField], returnType: Option[Expr])(val comment: Option[DocComment])(val source: SourceRange)
 final case class CtorField(name: String, tpe: Expr)(val source: SourceRange)
 
 final case class FunParam(name: String, tpe: Expr)(val source: SourceRange)
@@ -99,7 +99,7 @@ enum Expr:
   // Dependent function types (Pi types)
   case Pi(param: PiParam, body: Expr)(val source: SourceRange)
 
-  case LetIn(name: String, tpe: Option[Expr], value: Expr, body: Expr)(val source: SourceRange)
+  case LetIn(name: String, tpe: Option[Expr], value: Expr, body: Expr)(val comment: Option[DocComment])(val source: SourceRange)
   case Match(scrutinee: Expr, factName: Option[String], cases: List[MatchCase])(val source: SourceRange)
 
   // place holder for missing expressions

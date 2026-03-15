@@ -1,5 +1,6 @@
 import { Location, Position, Range } from 'vscode-languageserver'
 import { CompilerDefinitionLocation, findDefinition } from '../shared/compiler'
+import { uriToCompilerPath } from './uri'
 
 /** Resolves a go-to-definition location for the given document position. */
 export function computeDefinition(source: string, uri: string, position: Position): Location | null {
@@ -21,18 +22,6 @@ function toRange(definition: CompilerDefinitionLocation): Range {
   return {
     start: { line: startLine, character: startCharacter },
     end: { line: endLine, character: safeEndCharacter }
-  }
-}
-
-/** Converts an LSP document URI into a compiler file path key. */
-function uriToCompilerPath(uri: string): string {
-  if (!uri.startsWith('file://')) {
-    return uri
-  }
-  try {
-    return decodeURIComponent(new URL(uri).pathname)
-  } catch {
-    return uri
   }
 }
 

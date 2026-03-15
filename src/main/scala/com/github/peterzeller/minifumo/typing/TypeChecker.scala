@@ -893,8 +893,8 @@ object TypeChecker:
         TypedAst.Expr.AppImplicit(instantiate(callee), instantiate(arg), instantiate(tpe))(term.source)
       case TypedAst.Expr.Lambda(param, body, tpe) =>
         TypedAst.Expr.Lambda(param, instantiate(body), instantiate(tpe))(term.source)
-      case TypedAst.Expr.LetIn(symbol, isConstant, declaredType, value, body) =>
-        TypedAst.Expr.LetIn(symbol, isConstant, instantiate(declaredType), instantiate(value), instantiate(body))(term.source)
+      case letExpr@TypedAst.Expr.LetIn(symbol, isConstant, declaredType, value, body) =>
+        TypedAst.Expr.LetIn(symbol, isConstant, instantiate(declaredType), instantiate(value), instantiate(body))(letExpr.comment)(term.source)
       case TypedAst.Expr.Pi(dom, cod, isImplicit) =>
         TypedAst.Expr.Pi(instantiateLocalSymbol(dom), instantiate(cod), isImplicit)(term.source)
       case TypedAst.Expr.Match(scrutinee, motive, cases) =>
@@ -1015,8 +1015,8 @@ object TypeChecker:
         TypedAst.Expr.AppImplicit(substitute(callee, symbol, value), substitute(arg, symbol, value), tpe)(term.source)
       case TypedAst.Expr.Lambda(param, body, tpe) =>
         TypedAst.Expr.Lambda(param, substitute(body, symbol, value), tpe)(term.source)
-      case TypedAst.Expr.LetIn(sym, isConstant, declaredType, valExpr, body) =>
-        TypedAst.Expr.LetIn(sym, isConstant, declaredType, substitute(valExpr, symbol, value), substitute(body, symbol, value))(term.source)
+      case letExpr@TypedAst.Expr.LetIn(sym, isConstant, declaredType, valExpr, body) =>
+        TypedAst.Expr.LetIn(sym, isConstant, declaredType, substitute(valExpr, symbol, value), substitute(body, symbol, value))(letExpr.comment)(term.source)
       case TypedAst.Expr.Pi(dom, cod, isImplicit) =>
         TypedAst.Expr.Pi(substituteInLocalSymbol(dom, symbol, value), substitute(cod, symbol, value), isImplicit)(term.source)
       case TypedAst.Expr.Match(scrutinee, motive, cases) =>
@@ -1296,8 +1296,8 @@ object TypeChecker:
         TypedAst.Expr.Pi(substituteTypeParamsInLocalSymbol(dom, subst), substituteTypeParams(cod, subst), isImplicit)(expr.source)
       case TypedAst.Expr.Lambda(param, body, tpe) =>
         TypedAst.Expr.Lambda(param, substituteTypeParams(body, subst), substituteTypeParams(tpe, subst))(expr.source)
-      case TypedAst.Expr.LetIn(symbol, isConstant, declaredType, value, body) =>
-        TypedAst.Expr.LetIn(symbol, isConstant, substituteTypeParams(declaredType, subst), substituteTypeParams(value, subst), substituteTypeParams(body, subst))(expr.source)
+      case letExpr@TypedAst.Expr.LetIn(symbol, isConstant, declaredType, value, body) =>
+        TypedAst.Expr.LetIn(symbol, isConstant, substituteTypeParams(declaredType, subst), substituteTypeParams(value, subst), substituteTypeParams(body, subst))(letExpr.comment)(expr.source)
       case TypedAst.Expr.Match(scrutinee, motive, cases) =>
         val rewrittenCases = cases.map(c => TypedAst.MatchCase(c.pattern, substituteTypeParams(c.body, subst))(c.source))
         TypedAst.Expr.Match(substituteTypeParams(scrutinee, subst), substituteTypeParams(motive, subst), rewrittenCases)(expr.source)
