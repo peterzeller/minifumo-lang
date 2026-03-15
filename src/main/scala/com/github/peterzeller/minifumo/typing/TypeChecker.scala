@@ -10,10 +10,12 @@ import com.github.peterzeller.minifumo.typing.TypedAst.Expr.{Sort, UnknownType}
 
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
+import java.util.concurrent.atomic.AtomicInteger
 
 object TypeChecker:
   private val throwOnError = false
   private val defaultConstraintFuel = 128
+  private val syntheticLocalIdCounter = AtomicInteger(Int.MinValue / 2)
 
   final case class TypeError(message: String, source: ast.SourceRange) extends MinifumoError:
     if throwOnError then
@@ -589,7 +591,7 @@ object TypeChecker:
         case _ => (current, acc)
     loop(expr, Nil)
 
-  /** Solves equations of the shape `(?m x1 ... xn) = rhs` using higher-order pattern matching. */
+  /** Solves equations of the shape `(?m x1 ... xn) = rhs` using Miller-pattern unification. */
   private def solvePatternMetaApplication(left: TypedAst.Expr, right: TypedAst.Expr)
                                          (implicit metas: MetaContext): Boolean =
     extractMetaApplication(left) match
@@ -602,6 +604,11 @@ object TypeChecker:
       case None =>
         false
 
+
+  /** Allocates a fresh synthetic local-symbol id for generated binders in solved metas. */
+  private def freshSyntheticLocalId(): Int =
+    syntheticLocalIdCounter.getAndIncrement()
+
   /** Extracts the meta head id, type, and local-variable arguments from an application chain. */
   private def extractMetaApplication(expr: TypedAst.Expr): Option[(Int, TypedAst.Expr, List[LocalSymbol])] =
     val (head, args) = decomposeApplication(expr)
@@ -612,10 +619,10 @@ object TypeChecker:
       case _ =>
         None
 
-  /** Builds a lambda solution for a pattern meta by abstracting over its local-variable arguments. */
+  /** Builds a solved meta as lambdas over distinct arguments from the higher-order pattern fragment. */
   private def buildPatternMetaSolution(metaType: TypedAst.Expr, args: List[LocalSymbol], target: TypedAst.Expr, source: SourceRange, metaId: Int)(implicit metas: MetaContext): TypedAst.Expr =
     val binders = args.zipWithIndex.map { case (arg, index) =>
-      LocalSymbol(s"m${metaId}_${index}", arg.tpe, -2000000 - index)
+      LocalSymbol(s"m${metaId}_${index}", arg.tpe, freshSyntheticLocalId())
     }
     val abstractedBody = args.zip(binders).foldLeft(target) { case (current, (arg, binder)) =>
       substitute(current, arg, TypedAst.Expr.Var(binder)(source))
