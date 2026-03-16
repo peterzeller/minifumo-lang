@@ -22,5 +22,5 @@ class ParserDocCommentSuite extends munit.FunSuite:
     assert(data.ctors.nonEmpty)
 
     val fun = program.items(1).asInstanceOf[TopLevel.FunDecl]
-    val letExpr = fun.body.asInstanceOf[Expr.LetIn]
+    fun.body.asInstanceOf[Expr.LetIn]
   }

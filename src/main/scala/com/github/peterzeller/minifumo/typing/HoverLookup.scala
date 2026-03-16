@@ -3,7 +3,6 @@ package com.github.peterzeller.minifumo.typing
 import com.github.peterzeller.minifumo.ast.SourcePos
 import com.github.peterzeller.minifumo.typing.TypedAst.Expr
 
-import scala.collection.mutable
 
 /** Resolves hover information (type + declaration comment) for typed programs. */
 object HoverLookup:

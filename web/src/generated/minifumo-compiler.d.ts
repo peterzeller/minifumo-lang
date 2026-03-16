@@ -31,6 +31,7 @@ export interface DefinitionLocation {
 }
 
 export const MinifumoCompiler: {
+  standardLibrarySource(): string
   compileAndRun(source: string, functionName?: string, runFunction?: boolean): CompileResult
   definitionAt(source: string, line: number, column: number, currentFile?: string): DefinitionLocation | undefined
 }

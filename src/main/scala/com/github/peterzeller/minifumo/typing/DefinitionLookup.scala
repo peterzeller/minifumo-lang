@@ -61,8 +61,7 @@ object DefinitionLookup:
     lineSpan * 10000 + columnSpan
 
   /** Checks whether the child range is narrower than the parent range. */
-  private def isStrictlyNarrower(child: SourceRange, parent: SourceRange): Boolean =
-    child.start != parent.start || child.end != parent.end
+  
 
   /** Collects known local-symbol definition ranges keyed by local symbol id. */
   private def collectLocalDefinitions(program: TypedAst.Program): Map[Int, SourceRange] =
