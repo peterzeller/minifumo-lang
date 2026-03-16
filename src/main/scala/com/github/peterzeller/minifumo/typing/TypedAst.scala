@@ -15,11 +15,11 @@ object TypedAst:
     override def children: List[com.github.peterzeller.minifumo.typing.TypedAst] = items
 
   enum TopLevel extends com.github.peterzeller.minifumo.typing.TypedAst:
-    case DataDecl(symbol: DatatypeSymbol, typeParams: List[LocalSymbol], ctors: List[CtorDecl])(val source: SourceRange)
+    case DataDecl(symbol: DatatypeSymbol, typeParams: List[LocalSymbol], ctors: List[CtorDecl])(val source: SourceRange, val comment: String)
     case FunDecl(
         sig: FunSig,
         body: Expr
-      )(val source: SourceRange)
+      )(val source: SourceRange, val comment: String)
 
     /** Returns child nodes for cursor-descent traversal. */
     override def children: List[com.github.peterzeller.minifumo.typing.TypedAst] =
@@ -58,7 +58,7 @@ object TypedAst:
       r
 
 
-  final case class CtorDecl(symbol: CtorSymbol, implicitFields: List[LocalSymbol], fields: List[LocalSymbol], returnType: Expr, tpe: Expr)(val source: SourceRange)
+  final case class CtorDecl(symbol: CtorSymbol, implicitFields: List[LocalSymbol], fields: List[LocalSymbol], returnType: Expr, tpe: Expr)(val source: SourceRange, val comment: String)
       extends com.github.peterzeller.minifumo.typing.TypedAst:
     /** Returns constructor field types, return type, and full constructor type. */
     override def children: List[com.github.peterzeller.minifumo.typing.TypedAst] =
@@ -81,7 +81,7 @@ object TypedAst:
         declaredType: Expr,
         value: Expr,
         body: Expr,
-      )(val source: SourceRange)
+      )(val source: SourceRange, val comment: String)
 
     case Meta(index: Int, tpe: Expr)(val name: String, val source: SourceRange)
 

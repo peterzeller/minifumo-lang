@@ -16,14 +16,14 @@ object CheckMatchExpr:
     val ast.Expr.Match(scrutinee, factName, cases) = expr
     val (scrutineeExpr, scrutineeType, scrutineeErrs) = TypeChecker.infer(scrutinee)
     val branchFactName = factName.getOrElse("match_Eq")
-    val motiveParam = LocalSymbol("x_scrut", scrutineeType, ids.freshLocalId())
+    val motiveParam = LocalSymbol("x_scrut", scrutineeType, ids.freshLocalId())("")
     val motiveBody = replaceExpr(expectedType, scrutineeExpr, TypedAst.Expr.Var(motiveParam)(expr.source))
     val motive = TypedAst.Expr.Lambda(motiveParam, motiveBody, TypedAst.Expr.UnknownType()(expr.source))(expr.source)
     val typedCases = cases.map { case ast.MatchCase(pattern, body) =>
       val patternResult = checkPattern(pattern, scrutineeType, ctx, ids)
       val patternTerm = patternToExpr(patternResult.typedPattern, patternResult.refinements, scrutineeExpr.source)
       val equalityFactType = ExprBuilder.equalityConstraint(scrutineeType, scrutineeExpr, patternTerm, pattern.source)
-      val equalityFact = LocalSymbol(branchFactName, equalityFactType, ids.freshLocalId())
+      val equalityFact = LocalSymbol(branchFactName, equalityFactType, ids.freshLocalId())("")
       val caseCtx0 = ctx.copy(locals = ctx.locals ++ patternResult.bindings)
       val caseCtx = applyTypeRefinements(caseCtx0.withLocal(equalityFact), patternResult.refinements)
       val branchExpected0 = TypedAst.Expr.App(motive, patternTerm, TypedAst.Expr.UnknownType()(body.source))(body.source)
@@ -69,8 +69,8 @@ object CheckMatchExpr:
           TypedAst.Expr.AppImplicit(replaceExpr(callee, target, replacement), replaceExpr(arg, target, replacement), replaceExpr(tpe, target, replacement))(term.source)
         case TypedAst.Expr.Lambda(param, body, tpe) =>
           TypedAst.Expr.Lambda(param, replaceExpr(body, target, replacement), replaceExpr(tpe, target, replacement))(term.source)
-        case TypedAst.Expr.LetIn(symbol, isConstant, declaredType, value, body) =>
-          TypedAst.Expr.LetIn(symbol, isConstant, replaceExpr(declaredType, target, replacement), replaceExpr(value, target, replacement), replaceExpr(body, target, replacement))(term.source)
+        case letExpr@TypedAst.Expr.LetIn(symbol, isConstant, declaredType, value, body) =>
+          TypedAst.Expr.LetIn(symbol, isConstant, replaceExpr(declaredType, target, replacement), replaceExpr(value, target, replacement), replaceExpr(body, target, replacement))(term.source, letExpr.comment)
         case TypedAst.Expr.Pi(dom, cod, isImplicit) =>
           TypedAst.Expr.Pi(dom, replaceExpr(cod, target, replacement), isImplicit)(term.source)
         case TypedAst.Expr.Match(scrutinee, motive, cases) =>

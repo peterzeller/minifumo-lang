@@ -9,6 +9,7 @@ object CheckLetExpr:
   /** Checks a let-in expression against an expected body type. */
   def check(expr: ast.Expr.LetIn, expectedType: Option[TypedAst.Expr])(using ctx: TypeContext, metas: MetaContext, ids: IdSupply): (TypedAst.Expr, TypedAst.Expr, List[TypeError]) =
     val ast.Expr.LetIn(name, declaredType, value, body) = expr
+    val comment = expr.comment
     val (valueExpr, valueType, errs) = declaredType match
       case Some(tpeExpr) =>
         val (expected, errs1) = TypeChecker.checkAndElaborate(tpeExpr, TypedAst.Expr.Sort(UniverseLevel.Type1)(SourceRange.empty))
@@ -16,7 +17,7 @@ object CheckLetExpr:
         (typedValue, expected, errs1 ++ errs2)
       case None => TypeChecker.inferAndElaborate(value)
     // add new variable to the context
-    val symbol = LocalSymbol(name, valueType, ids.freshLocalId())
+    val symbol = LocalSymbol(name, valueType, ids.freshLocalId())("")
     
     // there is also a second implicit definition added: an equality proof between the sym and value
     // for let x: Int = 2 + 3, it adds a definition
@@ -27,7 +28,7 @@ object CheckLetExpr:
       valueExpr,
       expr.source
     )
-    val defSymbol = LocalSymbol(name + "_def", defType, ids.freshMetaId())
+    val defSymbol = LocalSymbol(name + "_def", defType, ids.freshMetaId())("")
 
     val bodyCtx = ctx.withLocal(symbol, Some(valueExpr)).withLocal(defSymbol)
 
@@ -38,5 +39,5 @@ object CheckLetExpr:
       case None =>
         TypeChecker.infer(body)(using bodyCtx, metas, ids)
     }
-    val typedAst = TypedAst.Expr.LetIn(symbol, isConstant = false, valueType, valueExpr, bodyExpr)(expr.source)
+    val typedAst = TypedAst.Expr.LetIn(symbol, isConstant = false, valueType, valueExpr, bodyExpr)(expr.source, comment)
     (typedAst, bodyType, errs ++ bodyErrs)

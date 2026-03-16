@@ -17,10 +17,11 @@ object Lexer:
     var line = 1
     var col = 1
     var atLineStart = true
+    val commentBuffer = new StringBuilder
 
     def pos = SourcePos(line, col)
     def peek(offset: Int = 0): Char = if i + offset < input.length then input.charAt(i + offset) else 0.toChar
-    def emit(kind: TokenKind, text: String, start: SourcePos, end: SourcePos): Unit = out += Right(Token(kind, text, SourceRange(start, end)))
+    def emit(kind: TokenKind, text: String, start: SourcePos, end: SourcePos, commentText: String = ""): Unit = out += Right(Token(kind, text, SourceRange(start, end), commentText))
 
     def advance(): Char =
       val c = input.charAt(i)
@@ -54,15 +55,19 @@ object Lexer:
         advance()
         emit(TokenKind.NL, "\\n", start, start)
       else if ch == '/' && peek(1) == '/' then
-        while i < input.length && peek() != '\n' do advanceUnit()
+        advance(); advance()
+        while i < input.length && peek() != '\n' do commentBuffer += advance()
       else if ch == '/' && peek(1) == '*' then
         val start = pos
         advance(); advance()
         var closed = false
         while i < input.length && !closed do
           if peek() == '*' && peek(1) == '/' then
-            advance(); advance(); closed = true
-          else advanceUnit()
+            advance(); advance()
+            closed = true
+          else
+            val c = advance()
+            commentBuffer.append(c)
         if !closed then out += Left(SyntaxError(start, "Unterminated block comment."))
       else if ch == '"' then
         val start = pos
@@ -90,7 +95,8 @@ object Lexer:
         val b = new StringBuilder
         while peek().isLetterOrDigit || peek() == '_' do b += advance()
         val text = b.result()
-        emit(keyword(text), text, start, SourcePos(line, col - 1))
+        emit(keyword(text), text, start, SourcePos(line, col - 1), commentBuffer.toString())
+        commentBuffer.clear()
         atLineStart = false
       else
         val start = pos

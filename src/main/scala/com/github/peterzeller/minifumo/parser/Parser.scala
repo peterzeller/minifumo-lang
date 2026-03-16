@@ -34,7 +34,7 @@ private class HandwrittenParser(tokens: Vector[Token]):
     val items = scala.collection.mutable.ListBuffer.empty[TopLevel]
     while !isAtEnd do
       if check(TokenKind.NL) then
-      advanceUnit()
+        advanceUnit()
       else if check(TokenKind.IMPORT) then imports += parseImport()
       else if check(TokenKind.DATA) || check(TokenKind.EXPORT) || check(TokenKind.FUN) || check(TokenKind.LEMMA) then
         parseTopLevel() match
@@ -62,15 +62,16 @@ private class HandwrittenParser(tokens: Vector[Token]):
   /** Parses one top-level declaration. */
   private def parseTopLevel(): Option[TopLevel] =
     val exported = matchKind(TokenKind.EXPORT)
-    if matchKind(TokenKind.DATA) then Some(parseDataDecl(exported, previous))
-    else if matchKind(TokenKind.FUN) then Some(parseFunDecl(exported, previous))
-    else if matchKind(TokenKind.LEMMA) then Some(parseLemmaDecl(exported, previous))
+    if check(TokenKind.DATA) then Some(parseDataDecl(exported, previous))
+    else if check(TokenKind.FUN) then Some(parseFunDecl(exported, previous))
+    else if check(TokenKind.LEMMA) then Some(parseLemmaDecl(exported, previous))
     else
       error(current, "Expected data, fun, or lemma declaration.")
       None
 
   /** Parses a data declaration and constructors. */
   private def parseDataDecl(exported: Boolean, start: Token): TopLevel =
+    val keyword = consume(TokenKind.DATA, "expected 'data'")
     val name = consume(TokenKind.ID, "Expected type name.")
     val implicitParams = parseImplicitParamsFun()
     val params = parseExplicitParamsFun()
@@ -84,12 +85,15 @@ private class HandwrittenParser(tokens: Vector[Token]):
     consume(TokenKind.EQ, "Expected '=' in data declaration.")
     val ctors = scala.collection.mutable.ListBuffer.empty[CtorDecl]
     if check(TokenKind.ID) then
-      ctors += parseCtorDecl()
-      while matchKind(TokenKind.BAR) do ctors += parseCtorDecl()
-    TopLevel.DataDecl(name.text, implicitParams, params, ctors.toList, exported, isProp)(merge(start, previous))
+      ctors += parseCtorDecl(None)
+      while check(TokenKind.BAR) do {
+        val keyword = advance()
+        ctors += parseCtorDecl(Some(keyword))
+      }
+    TopLevel.DataDecl(name.text, implicitParams, params, ctors.toList, exported, isProp)(merge(start, previous), keyword.commentBefore)
 
   /** Parses one constructor declaration with optional fields. */
-  private def parseCtorDecl(): CtorDecl =
+  private def parseCtorDecl(keyword: Option[Token]): CtorDecl =
     val name = consume(TokenKind.ID, "Expected constructor name.")
     val fields =
       if matchKind(TokenKind.PAREN_LEFT) then
@@ -100,7 +104,7 @@ private class HandwrittenParser(tokens: Vector[Token]):
     val returnType =
       if matchKind(TokenKind.COLON) then Some(parseExpr())
       else None
-    CtorDecl(name.text, fields, returnType)(merge(name, previous))
+    CtorDecl(name.text, fields, returnType)(merge(name, previous), keyword.map(_.commentBefore).getOrElse("") + name.commentBefore)
 
   /** Parses one constructor field declaration. */
   private def parseCtorField(): CtorField =
@@ -111,12 +115,14 @@ private class HandwrittenParser(tokens: Vector[Token]):
 
   /** Parses a function declaration with signature and suite body. */
   private def parseFunDecl(exported: Boolean, start: Token): TopLevel =
+    val keyword = consume(TokenKind.FUN, "expected 'fun'")
     val sig = parseFunSig(start)
     val body = parseSuite()
-    TopLevel.FunDecl(sig, body, exported)(merge(start, body.source))
+    TopLevel.FunDecl(sig, body, exported)(merge(start, body.source), keyword.commentBefore)
 
   /** Parses a lemma declaration and desugars it into a function declaration. */
   private def parseLemmaDecl(exported: Boolean, start: Token): TopLevel =
+    val keyword = consume(TokenKind.LEMMA, "expected 'lemma'")
     val name = consume(TokenKind.ID, "Expected lemma name.")
     consume(TokenKind.COLON, "Expected ':' after lemma name.")
     val hadBlock = consumeOptionalLemmaBlockStart()
@@ -144,7 +150,7 @@ private class HandwrittenParser(tokens: Vector[Token]):
     else
       val _ = matchKind(TokenKind.END)
     val sig = FunSig(name.text, implicitParams, params, returnType)(merge(start, returnType.source))
-    TopLevel.FunDecl(sig, body, exported)(merge(start, body.source))
+    TopLevel.FunDecl(sig, body, exported)(merge(start, body.source), keyword.commentBefore)
 
   /** Consumes the optional layout tokens that may surround a lemma header. */
   private def consumeOptionalLemmaBlockStart(): Boolean =
@@ -255,7 +261,8 @@ private class HandwrittenParser(tokens: Vector[Token]):
 
   /** Parses let/if/match forms with the lowest precedence. */
   private def parseLetIfMatch(): Expr =
-    if matchKind(TokenKind.LET) then
+    if check(TokenKind.LET) then
+      val keyword = advance()
       val start = previous
       val name = consume(TokenKind.ID, "Expected variable name after let.")
       val tpe = if matchKind(TokenKind.COLON) then Some(parseExpr()) else None
@@ -263,9 +270,9 @@ private class HandwrittenParser(tokens: Vector[Token]):
       val value = parseExpr()
       if matchKind(TokenKind.IN) then
         val body = parseExpr()
-        Expr.LetIn(name.text, tpe, value, body)(merge(start, body.source))
+        Expr.LetIn(name.text, tpe, value, body)(merge(start, body.source), keyword.commentBefore)
       else
-        Expr.LetIn(name.text, tpe, value, Expr.Hole()(value.source))(merge(start, value.source))
+        Expr.LetIn(name.text, tpe, value, Expr.Hole()(value.source))(merge(start, value.source), keyword.commentBefore)
     else if matchKind(TokenKind.IF) then parseIfExpr(previous)
     else if matchKind(TokenKind.MATCH) then parseMatchExpr(previous)
     else parseForall()
@@ -585,10 +592,11 @@ private class HandwrittenParser(tokens: Vector[Token]):
       case Nil => Expr.Lit(Literal.UnitLit()(SourceRange.empty))(SourceRange.empty)
       case List(e) => e
       case head :: tail =>
+        val desugaredTail = desugarBlock(tail)
         head match
-          case Expr.LetIn(name, tpe, value, Expr.Hole()) =>
-            Expr.LetIn(name, tpe, value, desugarBlock(tail))(head.source)
-          case other => Expr.LetIn("_", None, other, desugarBlock(tail))(other.source)
+          case l@Expr.LetIn(name, tpe, value, Expr.Hole()) =>
+            Expr.LetIn(name, tpe, value, desugaredTail)(l.source.merge(desugaredTail.source), l.comment)
+          case other => Expr.LetIn("_", None, other, desugaredTail)(other.source.merge(desugaredTail.source), "")
 
   /** Desugars if expressions into boolean pattern matching. */
   private def boolMatch(cond: Expr, factName: Option[String], thenExpr: Expr, elseExpr: Expr, source: SourceRange): Expr =
@@ -672,7 +680,7 @@ private class HandwrittenParser(tokens: Vector[Token]):
   private def consume(kind: TokenKind, message: String): Token =
     if check(kind) then advance()
     else {
-      error(current, message)
+      error(current, message + s", but found ${current.kind} '${current.text}'")
       current // or advance()
     }
 
