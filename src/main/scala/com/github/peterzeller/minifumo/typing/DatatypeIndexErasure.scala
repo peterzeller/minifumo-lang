@@ -17,7 +17,7 @@ object DatatypeIndexErasure:
     TypedAstRewriter.rewrite(program) {
       case dataDecl @ TopLevel.DataDecl(symbol, typeParams, ctors) =>
         val filteredParams = filterDatatypeParams(symbol, typeParams, datatypeMasks)
-        TopLevel.DataDecl(symbol, filteredParams, ctors)(dataDecl.comment)(dataDecl.source)
+        TopLevel.DataDecl(symbol, filteredParams, ctors)(dataDecl.source, dataDecl.comment)
       case expr: Expr =>
         rewriteDatatypeApplication(expr, datatypeMasks)
     }

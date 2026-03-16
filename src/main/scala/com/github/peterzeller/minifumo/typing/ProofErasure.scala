@@ -14,16 +14,16 @@ object ProofErasure:
   private def eraseTopLevel(topLevel: TopLevel): TopLevel =
     topLevel match
       case dataDecl@TopLevel.DataDecl(symbol, _, ctors) =>
-        TopLevel.DataDecl(symbol, List(), ctors.map(eraseCtor))(dataDecl.comment)(topLevel.source)
+        TopLevel.DataDecl(symbol, List(), ctors.map(eraseCtor))(topLevel.source, dataDecl.comment)
       case funDecl@TopLevel.FunDecl(sig, body) =>
         val keptParams = sig.params.filterNot(param => isErasedParameterType(param.tpe))
         val erasedSig = FunSig(sig.symbol, List(), keptParams, eraseExpr(sig.returnType))
-        TopLevel.FunDecl(erasedSig, eraseExpr(body))(funDecl.comment)(topLevel.source)
+        TopLevel.FunDecl(erasedSig, eraseExpr(body))(topLevel.source, funDecl.comment)
 
 
   /** Erases all constructor fields so constructors carry no runtime payload. */
   private def eraseCtor(ctor: CtorDecl): CtorDecl =
-    CtorDecl(ctor.symbol, List(), List(), eraseExpr(ctor.returnType), eraseExpr(ctor.tpe))(ctor.comment)(ctor.source)
+    CtorDecl(ctor.symbol, List(), List(), eraseExpr(ctor.returnType), eraseExpr(ctor.tpe))(ctor.source, ctor.comment)
 
   /** Erases proof and type terms inside one expression tree. */
   private def eraseExpr(expr: Expr): Expr =
@@ -44,7 +44,7 @@ object ProofErasure:
         case Expr.Lambda(param, body, tpe) =>
           Expr.Lambda(param, eraseExpr(body), eraseExpr(tpe))(expr.source)
         case letExpr@Expr.LetIn(symbol, isConstant, declaredType, value, body) =>
-          Expr.LetIn(symbol, isConstant, eraseExpr(declaredType), eraseExpr(value), eraseExpr(body))(letExpr.comment)(expr.source)
+          Expr.LetIn(symbol, isConstant, eraseExpr(declaredType), eraseExpr(value), eraseExpr(body))(expr.source, letExpr.comment)
         case Expr.Match(scrutinee, motive, cases) =>
           if isErasedValue(scrutinee) then
             eraseExpr(cases.headOption.map(_.body).getOrElse(unitExpr(expr.source)))

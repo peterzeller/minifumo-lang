@@ -30,6 +30,11 @@ object CompilerApi:
   /** Represents hover information at one source position. */
   class HoverInfo(val typeText: String, val comment: js.UndefOr[String]) extends js.Object
 
+  /** Provides source code for standard library */
+  @JSExport
+  def standardLibrarySource(): String =
+    Standard.loadStandardSource()
+
   /** Compiles source code and optionally runs a named function from the resulting program. */
   @JSExport
   def compileAndRun(source: String, functionName: String = "main", runFunction: Boolean = true): CompileResult =

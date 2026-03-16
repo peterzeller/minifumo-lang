@@ -9,7 +9,10 @@ export function computeDefinition(source: string, uri: string, position: Positio
   if (definition === undefined) {
     return null
   }
-  return Location.create(definitionUri(uri, currentFile, definition.file), toRange(definition))
+  let u = definitionUri(uri, currentFile, definition.file)
+  console.log(`definition uri`, u)
+  u = "minifumovirtual:/standard.minifumo"
+  return Location.create(u, toRange(definition))
 }
 
 /** Converts a compiler 1-based range into an LSP-safe 0-based range. */

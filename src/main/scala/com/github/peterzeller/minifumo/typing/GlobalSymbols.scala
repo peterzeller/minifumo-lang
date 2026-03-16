@@ -91,7 +91,7 @@ sealed trait TermSymbol extends Symbol
 sealed trait GlobalSymbol extends Symbol:
   def file: String
 
-final case class LocalSymbol(name: String, tpe: Expr, id: Int) extends TermSymbol
+final case class LocalSymbol(name: String, tpe: Expr, id: Int)(val comment: String) extends TermSymbol
 
 final case class BuiltinValueSymbol(name: String, tpe: Expr) extends TermSymbol // TODO do we need this?
 
@@ -132,7 +132,7 @@ final case class DatatypeSymbol(file: String, name: String)(val continuationData
       for p <- data.declAst.implicitParams yield
         val (t, errors) = TypeChecker.checkAndElaborate(p.tpe, TypedAst.Expr.Sort(UniverseLevel.Type1)(SourceRange.empty))(using ctx, metas, data.idSupply)
         allErrors ++= errors
-        val pSym = LocalSymbol(p.name, t, data.idSupply.freshLocalId())
+        val pSym = LocalSymbol(p.name, t, data.idSupply.freshLocalId())("")
         ctx = ctx.withLocal(pSym)
         pSym
 
@@ -140,7 +140,7 @@ final case class DatatypeSymbol(file: String, name: String)(val continuationData
       for p <- data.declAst.params yield
         val (t, errors) = TypeChecker.checkAndElaborate(p.tpe, TypedAst.Expr.Sort(UniverseLevel.Type1)(SourceRange.empty))(using ctx, metas, data.idSupply)
         allErrors ++= errors
-        val pSym = LocalSymbol(p.name, t, data.idSupply.freshLocalId())
+        val pSym = LocalSymbol(p.name, t, data.idSupply.freshLocalId())("")
         ctx = ctx.withLocal(pSym)
         pSym
 
@@ -163,7 +163,7 @@ final case class DatatypeSymbol(file: String, name: String)(val continuationData
       case Some(value) => value
       case None =>
         // return dummy data decl
-        return TypedAst.TopLevel.DataDecl(this, List(), List())(None)(SourceRange.empty)
+        return TypedAst.TopLevel.DataDecl(this, List(), List())(SourceRange.empty, "")
     }
     val typeInfo = typeCalculated.get
     val globals = data.globalNames.globalEnv(file)
@@ -177,7 +177,7 @@ final case class DatatypeSymbol(file: String, name: String)(val continuationData
           for p <- ctor.fields yield
             val (t, errors) = TypeChecker.checkAndElaborate(p.tpe, TypedAst.Expr.Sort(UniverseLevel.Type1)(SourceRange.empty))(using ctx, metas, data.idSupply)
             allErrors ++= errors
-            val pSym = LocalSymbol(p.name, t, data.idSupply.freshLocalId())
+            val pSym = LocalSymbol(p.name, t, data.idSupply.freshLocalId())("")
             ctx = ctx.withLocal(pSym)
             pSym
 
@@ -212,14 +212,14 @@ final case class DatatypeSymbol(file: String, name: String)(val continuationData
         val instantiatedFields = fields.map(p => TypeChecker.instantiateLocalSymbol(p)(using metas))
         val instantiatedReturnType = TypeChecker.instantiate(returnType)(using metas)
         val instantiatedType = TypeChecker.instantiate(tpe)(using metas)
-        TypedAst.CtorDecl(ctorSym, instantiatedImplicitFields, instantiatedFields, instantiatedReturnType, instantiatedType)(ctor.comment)(ctor.source)
+        TypedAst.CtorDecl(ctorSym, instantiatedImplicitFields, instantiatedFields, instantiatedReturnType, instantiatedType)(ctor.source, ctor.comment)
 
 
     TypedAst.TopLevel.DataDecl(
       this,
       typeInfo.params,
       ctors
-    )(data.declAst.comment)(data.declAst.source)
+    )(data.declAst.source, data.declAst.comment)
   }
 
 def buildPiType(implicitParams: List[LocalSymbol], explicitParams: List[LocalSymbol], result: TypedAst.Expr): TypedAst.Expr =
@@ -301,7 +301,7 @@ final case class FunctionSymbol(
         val completenessErrors = TypeChecker.checkMatchCompletenessInExpr(elaboratedBody)(using s.continuationContext, s.metaStore)
         allErrors ++= completenessErrors
 
-        state = FunctionSymbolCheckState.BodyCalculated(TypedAst.TopLevel.FunDecl(s.sig, elaboratedBody)(f.comment)(f.source))
+        state = FunctionSymbolCheckState.BodyCalculated(TypedAst.TopLevel.FunDecl(s.sig, elaboratedBody)(f.source, f.comment))
         Some(elaboratedBody)
       case s: FunctionSymbolCheckState.BodyCalculated =>
         Some(s.fun.body)
@@ -381,7 +381,7 @@ object GlobalSymbols:
           )(source)
         )
       )(source)
-    ast.TopLevel.FunDecl(signature, body, exported = dataDecl.exported)(None)(source)
+    ast.TopLevel.FunDecl(signature, body, exported = dataDecl.exported)(source, "")
 
   // Checks whether an expression references any variable from a given name set.
   private def referencesAny(expr: ast.Expr, names: Set[String]): Boolean =

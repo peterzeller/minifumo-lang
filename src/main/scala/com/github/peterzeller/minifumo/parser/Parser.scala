@@ -35,18 +35,14 @@ private class HandwrittenParser(tokens: Vector[Token]):
     while !isAtEnd do
       if check(TokenKind.NL) then
         advanceUnit()
+      else if check(TokenKind.IMPORT) then imports += parseImport()
+      else if check(TokenKind.DATA) || check(TokenKind.EXPORT) || check(TokenKind.FUN) || check(TokenKind.LEMMA) then
+        parseTopLevel() match
+          case Some(t) => items += t
+          case None => synchronizeTopLevel()
       else
-        val comment = consumeDocCommentIfDirect()
-        if check(TokenKind.IMPORT) then imports += parseImport()
-        else if check(TokenKind.DATA) || check(TokenKind.EXPORT) || check(TokenKind.FUN) || check(TokenKind.LEMMA) then
-          parseTopLevel(comment) match
-            case Some(t) => items += t
-            case None => synchronizeTopLevel()
-        else if comment.nonEmpty then
-          ()
-        else
-          error(current, "Expected import, data, fun, or lemma declaration.")
-          synchronizeTopLevel()
+        error(current, "Expected import, data, fun, or lemma declaration.")
+        synchronizeTopLevel()
     val src = SourceRange(SourcePos(1, 1), previous.source.end)
     ProgramFile(imports.toList, items.toList)(src)
 
@@ -64,17 +60,18 @@ private class HandwrittenParser(tokens: Vector[Token]):
     ImportStatement(name.text, from, inRepo)(merge(start, previous))
 
   /** Parses one top-level declaration. */
-  private def parseTopLevel(comment: Option[DocComment]): Option[TopLevel] =
+  private def parseTopLevel(): Option[TopLevel] =
     val exported = matchKind(TokenKind.EXPORT)
-    if matchKind(TokenKind.DATA) then Some(parseDataDecl(exported, previous, comment))
-    else if matchKind(TokenKind.FUN) then Some(parseFunDecl(exported, previous, comment))
-    else if matchKind(TokenKind.LEMMA) then Some(parseLemmaDecl(exported, previous, comment))
+    if check(TokenKind.DATA) then Some(parseDataDecl(exported, previous))
+    else if check(TokenKind.FUN) then Some(parseFunDecl(exported, previous))
+    else if check(TokenKind.LEMMA) then Some(parseLemmaDecl(exported, previous))
     else
       error(current, "Expected data, fun, or lemma declaration.")
       None
 
   /** Parses a data declaration and constructors. */
-  private def parseDataDecl(exported: Boolean, start: Token, comment: Option[DocComment]): TopLevel =
+  private def parseDataDecl(exported: Boolean, start: Token): TopLevel =
+    val keyword = consume(TokenKind.DATA, "expected 'data'")
     val name = consume(TokenKind.ID, "Expected type name.")
     val implicitParams = parseImplicitParamsFun()
     val params = parseExplicitParamsFun()
@@ -87,16 +84,16 @@ private class HandwrittenParser(tokens: Vector[Token]):
       else false
     consume(TokenKind.EQ, "Expected '=' in data declaration.")
     val ctors = scala.collection.mutable.ListBuffer.empty[CtorDecl]
-    var ctorComment = consumeDocCommentIfDirect()
     if check(TokenKind.ID) then
-      ctors += parseCtorDecl(ctorComment)
-      while matchKind(TokenKind.BAR) do
-        ctorComment = consumeDocCommentIfDirect()
-        ctors += parseCtorDecl(ctorComment)
-    TopLevel.DataDecl(name.text, implicitParams, params, ctors.toList, exported, isProp)(comment)(merge(start, previous))
+      ctors += parseCtorDecl(None)
+      while check(TokenKind.BAR) do {
+        val keyword = advance()
+        ctors += parseCtorDecl(Some(keyword))
+      }
+    TopLevel.DataDecl(name.text, implicitParams, params, ctors.toList, exported, isProp)(merge(start, previous), keyword.commentBefore)
 
   /** Parses one constructor declaration with optional fields. */
-  private def parseCtorDecl(comment: Option[DocComment]): CtorDecl =
+  private def parseCtorDecl(keyword: Option[Token]): CtorDecl =
     val name = consume(TokenKind.ID, "Expected constructor name.")
     val fields =
       if matchKind(TokenKind.PAREN_LEFT) then
@@ -107,7 +104,7 @@ private class HandwrittenParser(tokens: Vector[Token]):
     val returnType =
       if matchKind(TokenKind.COLON) then Some(parseExpr())
       else None
-    CtorDecl(name.text, fields, returnType)(comment)(merge(name, previous))
+    CtorDecl(name.text, fields, returnType)(merge(name, previous), keyword.map(_.commentBefore).getOrElse("") + name.commentBefore)
 
   /** Parses one constructor field declaration. */
   private def parseCtorField(): CtorField =
@@ -117,13 +114,15 @@ private class HandwrittenParser(tokens: Vector[Token]):
     CtorField(name.text, tpe)(merge(name, tpe.source))
 
   /** Parses a function declaration with signature and suite body. */
-  private def parseFunDecl(exported: Boolean, start: Token, comment: Option[DocComment]): TopLevel =
+  private def parseFunDecl(exported: Boolean, start: Token): TopLevel =
+    val keyword = consume(TokenKind.FUN, "expected 'fun'")
     val sig = parseFunSig(start)
     val body = parseSuite()
-    TopLevel.FunDecl(sig, body, exported)(comment)(merge(start, body.source))
+    TopLevel.FunDecl(sig, body, exported)(merge(start, body.source), keyword.commentBefore)
 
   /** Parses a lemma declaration and desugars it into a function declaration. */
-  private def parseLemmaDecl(exported: Boolean, start: Token, comment: Option[DocComment]): TopLevel =
+  private def parseLemmaDecl(exported: Boolean, start: Token): TopLevel =
+    val keyword = consume(TokenKind.LEMMA, "expected 'lemma'")
     val name = consume(TokenKind.ID, "Expected lemma name.")
     consume(TokenKind.COLON, "Expected ':' after lemma name.")
     val hadBlock = consumeOptionalLemmaBlockStart()
@@ -151,7 +150,7 @@ private class HandwrittenParser(tokens: Vector[Token]):
     else
       val _ = matchKind(TokenKind.END)
     val sig = FunSig(name.text, implicitParams, params, returnType)(merge(start, returnType.source))
-    TopLevel.FunDecl(sig, body, exported)(comment)(merge(start, body.source))
+    TopLevel.FunDecl(sig, body, exported)(merge(start, body.source), keyword.commentBefore)
 
   /** Consumes the optional layout tokens that may surround a lemma header. */
   private def consumeOptionalLemmaBlockStart(): Boolean =
@@ -249,8 +248,6 @@ private class HandwrittenParser(tokens: Vector[Token]):
     val exprs = scala.collection.mutable.ListBuffer.empty[Expr]
     while !check(TokenKind.END) && !isAtEnd && !isSuiteRecoveryPoint() do
       while matchKind(TokenKind.NL) do ()
-      if check(TokenKind.COMMENT) then
-        pendingLetComment = consumeDocCommentIfDirect()
       if !check(TokenKind.END) && !isSuiteRecoveryPoint() then
         exprs += parseExpr()
       else if isSuiteRecoveryPoint() then
@@ -264,9 +261,8 @@ private class HandwrittenParser(tokens: Vector[Token]):
 
   /** Parses let/if/match forms with the lowest precedence. */
   private def parseLetIfMatch(): Expr =
-    if !check(TokenKind.LET) then
-      pendingLetComment = None
-    if matchKind(TokenKind.LET) then
+    if check(TokenKind.LET) then
+      val keyword = advance()
       val start = previous
       val name = consume(TokenKind.ID, "Expected variable name after let.")
       val tpe = if matchKind(TokenKind.COLON) then Some(parseExpr()) else None
@@ -274,9 +270,9 @@ private class HandwrittenParser(tokens: Vector[Token]):
       val value = parseExpr()
       if matchKind(TokenKind.IN) then
         val body = parseExpr()
-        Expr.LetIn(name.text, tpe, value, body)(takePendingLetComment())(merge(start, body.source))
+        Expr.LetIn(name.text, tpe, value, body)(merge(start, body.source), keyword.commentBefore)
       else
-        Expr.LetIn(name.text, tpe, value, Expr.Hole()(value.source))(takePendingLetComment())(merge(start, value.source))
+        Expr.LetIn(name.text, tpe, value, Expr.Hole()(value.source))(merge(start, value.source), keyword.commentBefore)
     else if matchKind(TokenKind.IF) then parseIfExpr(previous)
     else if matchKind(TokenKind.MATCH) then parseMatchExpr(previous)
     else parseForall()
@@ -596,10 +592,11 @@ private class HandwrittenParser(tokens: Vector[Token]):
       case Nil => Expr.Lit(Literal.UnitLit()(SourceRange.empty))(SourceRange.empty)
       case List(e) => e
       case head :: tail =>
+        val desugaredTail = desugarBlock(tail)
         head match
-          case letExpr@Expr.LetIn(name, tpe, value, Expr.Hole()) =>
-            Expr.LetIn(name, tpe, value, desugarBlock(tail))(letExpr.comment)(head.source)
-          case other => Expr.LetIn("_", None, other, desugarBlock(tail))(None)(other.source)
+          case l@Expr.LetIn(name, tpe, value, Expr.Hole()) =>
+            Expr.LetIn(name, tpe, value, desugaredTail)(l.source.merge(desugaredTail.source), l.comment)
+          case other => Expr.LetIn("_", None, other, desugaredTail)(other.source.merge(desugaredTail.source), "")
 
   /** Desugars if expressions into boolean pattern matching. */
   private def boolMatch(cond: Expr, factName: Option[String], thenExpr: Expr, elseExpr: Expr, source: SourceRange): Expr =
@@ -643,25 +640,6 @@ private class HandwrittenParser(tokens: Vector[Token]):
     while matchKind(TokenKind.COMMA) do out += item()
     out.toList
 
-  // Stores a doc comment candidate for the next let binder in a suite.
-  private var pendingLetComment: Option[DocComment] = None
-
-  /** Consumes one comment token as doc-comment when it is directly above a declaration. */
-  private def consumeDocCommentIfDirect(): Option[DocComment] =
-    if check(TokenKind.COMMENT) then
-      val token = advance()
-      val comment = DocComment(token.text)(token.source)
-      while check(TokenKind.NL) do
-        advanceUnit()
-      Some(comment)
-    else None
-
-  /** Returns and clears the pending let-binder doc comment. */
-  private def takePendingLetComment(): Option[DocComment] =
-    val comment = pendingLetComment
-    pendingLetComment = None
-    comment
-
   /** Consumes a trailing newline when present. */
   private def consumeOptionalNl(): Unit =
     if check(TokenKind.NL) then
@@ -676,7 +654,7 @@ private class HandwrittenParser(tokens: Vector[Token]):
 
   /** Returns true for tokens that can safely restart top-level parsing. */
   private def isTopLevelSyncPoint(kind: TokenKind = current.kind): Boolean =
-    Set(TokenKind.NL, TokenKind.END, TokenKind.FUN, TokenKind.LEMMA, TokenKind.DATA, TokenKind.IMPORT, TokenKind.COMMENT).contains(kind)
+    Set(TokenKind.NL, TokenKind.END, TokenKind.FUN, TokenKind.LEMMA, TokenKind.DATA, TokenKind.IMPORT).contains(kind)
 
   /** Returns true when suite parsing should recover to surrounding structure. */
   private def isSuiteRecoveryPoint(): Boolean =
@@ -702,7 +680,7 @@ private class HandwrittenParser(tokens: Vector[Token]):
   private def consume(kind: TokenKind, message: String): Token =
     if check(kind) then advance()
     else {
-      error(current, message)
+      error(current, message + s", but found ${current.kind} '${current.text}'")
       current // or advance()
     }
 

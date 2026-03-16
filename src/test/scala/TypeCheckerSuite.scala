@@ -24,7 +24,7 @@ class TypeCheckerSuite extends munit.FunSuite:
 
   test("whnf reduces lambda application") {
     val source = ast.SourceRange.empty
-    val param = LocalSymbol("x", TypedAst.Expr.UnknownType()(source), 0)
+    val param = LocalSymbol("x", TypedAst.Expr.UnknownType()(source), 0)("")
     val body = TypedAst.Expr.Var(param)(source)
     val lambda = TypedAst.Expr.Lambda(param, body, TypedAst.Expr.UnknownType()(source))(source)
     val literal = TypedAst.Expr.Lit(ast.Literal.IntLit("1")(source))(source)
@@ -37,8 +37,8 @@ class TypeCheckerSuite extends munit.FunSuite:
 
   test("substitution replaces matching symbols") {
     val source = ast.SourceRange.empty
-    val symbol = LocalSymbol("x", TypedAst.Expr.UnknownType()(source), 1)
-    val other = LocalSymbol("y", TypedAst.Expr.UnknownType()(source), 2)
+    val symbol = LocalSymbol("x", TypedAst.Expr.UnknownType()(source), 1)("")
+    val other = LocalSymbol("y", TypedAst.Expr.UnknownType()(source), 2)("")
     val value = TypedAst.Expr.Lit(ast.Literal.IntLit("42")(source))(source)
     val term = TypedAst.Expr.App(
       TypedAst.Expr.Var(symbol)(source),

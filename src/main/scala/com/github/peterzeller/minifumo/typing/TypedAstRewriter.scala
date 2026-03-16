@@ -22,9 +22,9 @@ object TypedAstRewriter:
       case dataDecl@TopLevel.DataDecl(symbol, typeParams, ctors) =>
         val rewrittenTypeParams = typeParams.map(param => rewriteLocalSymbol(param, rule))
         val rewrittenCtors = ctors.map(ctor => rewrite(ctor)(rule))
-        TopLevel.DataDecl(symbol, rewrittenTypeParams, rewrittenCtors)(dataDecl.comment)(node.source)
+        TopLevel.DataDecl(symbol, rewrittenTypeParams, rewrittenCtors)(node.source, dataDecl.comment)
       case funDecl@TopLevel.FunDecl(sig, body) =>
-        TopLevel.FunDecl(rewrite(sig)(rule), rewrite(body)(rule))(funDecl.comment)(node.source)
+        TopLevel.FunDecl(rewrite(sig)(rule), rewrite(body)(rule))(node.source, funDecl.comment)
       case funSig: FunSig =>
         val rewrittenTypeParams = funSig.typeParams.map(param => rewriteLocalSymbol(param, rule))
         val rewrittenParams = funSig.params.map(param => rewriteLocalSymbol(param, rule))
@@ -35,7 +35,7 @@ object TypedAstRewriter:
         val rewrittenFields = ctorDecl.fields.map(field => rewriteLocalSymbol(field, rule))
         val rewrittenReturnType = rewrite(ctorDecl.returnType)(rule)
         val rewrittenType = rewrite(ctorDecl.tpe)(rule)
-        CtorDecl(ctorDecl.symbol, rewrittenImplicitFields, rewrittenFields, rewrittenReturnType, rewrittenType)(ctorDecl.comment)(node.source)
+        CtorDecl(ctorDecl.symbol, rewrittenImplicitFields, rewrittenFields, rewrittenReturnType, rewrittenType)(node.source, ctorDecl.comment)
       case Expr.App(callee, arg, tpe) =>
         Expr.App(rewrite(callee)(rule), rewrite(arg)(rule), rewrite(tpe)(rule))(node.source)
       case Expr.AppImplicit(callee, arg, tpe) =>
@@ -51,7 +51,7 @@ object TypedAstRewriter:
           rewrite(declaredType)(rule),
           rewrite(value)(rule),
           rewrite(body)(rule)
-        )(letExpr.comment)(node.source)
+        )(node.source, letExpr.comment)
       case meta: Expr.Meta =>
         Expr.Meta(meta.index, rewrite(meta.tpe)(rule))(meta.name, node.source)
       case Expr.Match(scrutinee, motive, cases) =>
@@ -68,5 +68,5 @@ object TypedAstRewriter:
 
   /** Rewrites a local symbol by rewriting its type annotation while preserving identity metadata. */
   private def rewriteLocalSymbol(symbol: LocalSymbol, rule: PartialFunction[TypedAst, TypedAst]): LocalSymbol =
-    LocalSymbol(symbol.name, rewrite(symbol.tpe)(rule), symbol.id)
+    LocalSymbol(symbol.name, rewrite(symbol.tpe)(rule), symbol.id)(symbol.comment)
 

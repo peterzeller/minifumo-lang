@@ -1,6 +1,7 @@
 import * as path from 'node:path'
 import * as vscode from 'vscode'
 import { LanguageClient, LanguageClientOptions, ServerOptions, TransportKind } from 'vscode-languageclient/node'
+import { MinifumoCompiler } from '../../web/src/generated/minifumo-compiler'
 
 let client: LanguageClient | undefined
 
@@ -17,6 +18,17 @@ export function activate(context: vscode.ExtensionContext): void {
       fileEvents: vscode.workspace.createFileSystemWatcher('**/*.minifumo')
     }
   }
+
+const provider: vscode.TextDocumentContentProvider = {
+    provideTextDocumentContent(uri: vscode.Uri): string {
+      return MinifumoCompiler.standardLibrarySource()
+    },
+  };
+
+  context.subscriptions.push(
+    vscode.workspace.registerTextDocumentContentProvider("minifumovirtual", provider)
+  );
+
   client = new LanguageClient('minifumoLanguageServer', 'Minifumo Language Server', serverOptions, clientOptions)
   context.subscriptions.push(client)
   void client.start()

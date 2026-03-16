@@ -19,8 +19,8 @@ object CheckLambdaExpr:
         // TODO add a meta
         TypedAst.Expr.UnknownType()(expr.source)
     }
-    val localSymbol = LocalSymbol(expr.param.name, paramType, ids.freshLocalId())
-    val localSymbol2 = LocalSymbol(expr.param.name, paramType, ids.freshLocalId())
+    val localSymbol = LocalSymbol(expr.param.name, paramType, ids.freshLocalId())("")
+    val localSymbol2 = LocalSymbol(expr.param.name, paramType, ids.freshLocalId())("")
     val bodyCtx = ctx.withLocal(localSymbol)
     val (bodyExpr, bodyType, errs) = TypeChecker.infer(expr.body)(using bodyCtx, metas, ids)
     allErrors ++= errs
@@ -32,7 +32,7 @@ object CheckLambdaExpr:
     val expectedNorm = whnf(expectedType)
     expectedNorm match
       case TypedAst.Expr.Pi(dom, cod, false) =>
-        val p = LocalSymbol(expr.param.name, dom.tpe, ids.freshLocalId())
+        val p = LocalSymbol(expr.param.name, dom.tpe, ids.freshLocalId())("")
         val bodyCtx = ctx.withLocal(p)
         val (typedBody, errs) = TypeChecker.check(expr.body, cod)(using bodyCtx, metas, ids)
         (TypedAst.Expr.Lambda(p, typedBody, expectedNorm)(expr.source), errs)

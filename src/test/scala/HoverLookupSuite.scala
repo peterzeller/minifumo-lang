@@ -38,6 +38,24 @@ class HoverLookupSuite extends munit.FunSuite:
     assert(hover.nonEmpty)
   }
 
+  test("hoverAt works in let binding") {
+    val sourceWithCursor =
+      """// returns the input
+        |fun target(n: Int): Int
+        |  n
+        |
+        |fun main(): Int
+        |  let x = 5
+        |  ta|rget(x)
+        |""".stripMargin
+    val (source, cursor) = extractCursor(sourceWithCursor)
+    val typedProgram = checkTyped(source)
+
+    val hover = HoverLookup.hoverAt(typedProgram, cursor, testFile)
+    assert(hover.nonEmpty)
+    assert(hover.get.typeText.contains("Int"), s"hover is $hover")
+  }
+
   private def checkTyped(source: String) =
     val ids = TypeChecker.IdSupply()
     val symbolCache = ProjectSymbolCache(new GlobalSymbolsIo(Path.of(".")), ids)

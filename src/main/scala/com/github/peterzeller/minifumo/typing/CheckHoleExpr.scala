@@ -9,5 +9,5 @@ object CheckHoleExpr:
   def infer(expr: ast.Expr.Hole)(using ctx: TypeContext, metas: MetaContext, ids: IdSupply): (TypedAst.Expr, TypedAst.Expr, List[TypeError]) =
     val meta = freshMeta("holeType", TypedAst.Expr.Sort(UniverseLevel.Type1)(expr.source), expr.source)
     metas.addConstraint(HoleConstraint(meta, expr.source))
-    val sym = LocalSymbol("hole", meta, ids.freshLocalId())
+    val sym = LocalSymbol("hole", meta, ids.freshLocalId())("")
     (TypedAst.Expr.Var(sym)(expr.source), meta, List())
