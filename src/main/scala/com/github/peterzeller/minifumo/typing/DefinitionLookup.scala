@@ -39,14 +39,16 @@ object DefinitionLookup:
     }
 
   /** Finds the innermost typed AST node that still contains the cursor position. */
-  def findElementAtCursor(root: com.github.peterzeller.minifumo.typing.TypedAst, pos: SourcePos): Option[com.github.peterzeller.minifumo.typing.TypedAst] =
+  def findElementAtCursor(root: com.github.peterzeller.minifumo.typing.TypedAst, pos: SourcePos): Option[com.github.peterzeller.minifumo.typing.TypedAst] = {
     if !root.source.contains(pos) then
       None
     else
-      val matchingChildren = root.children
-        .filter(child => child.source.contains(pos) && isStrictlyNarrower(child.source, root.source))
+      val matchingChildren =
+        root.children
+        .filter(child => child.source.contains(pos))
         .sortBy(nodeWidth)
       matchingChildren.view.flatMap(child => findElementAtCursor(child, pos)).headOption.orElse(Some(root))
+  }
 
   /** Computes an ordering key that prefers narrower source ranges. */
   private def nodeWidth(node: com.github.peterzeller.minifumo.typing.TypedAst): Int =
@@ -59,8 +61,7 @@ object DefinitionLookup:
     lineSpan * 10000 + columnSpan
 
   /** Checks whether the child range is narrower than the parent range. */
-  private def isStrictlyNarrower(child: SourceRange, parent: SourceRange): Boolean =
-    child.start != parent.start || child.end != parent.end
+  
 
   /** Collects known local-symbol definition ranges keyed by local symbol id. */
   private def collectLocalDefinitions(program: TypedAst.Program): Map[Int, SourceRange] =
@@ -181,5 +182,10 @@ object DefinitionLookup:
         None
 
   /** Normalizes empty symbol file names to the current source file path. */
-  private def normalizeFile(file: String, currentFile: String): String =
-    if file == null || file.isBlank then currentFile else file
+  private def normalizeFile(file: String, currentFile: String): String = {
+    if file == "standard.minifumo" then
+      "minifumovirtual:/standard.minifumo"
+    else if file == null || file.isBlank then
+      currentFile
+    else file
+  }

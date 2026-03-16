@@ -8,6 +8,7 @@ import {
 import { TextDocument } from 'vscode-languageserver-textdocument'
 import { computeDiagnostics } from './diagnostics'
 import { computeDefinition } from './definition'
+import { computeHover } from './hover'
 
 /** Starts the Minifumo language server using a provided LSP connection. */
 export function startMinifumoLanguageServer(connection: Connection): void {
@@ -22,6 +23,13 @@ export function startMinifumoLanguageServer(connection: Connection): void {
       return null
     }
     return computeDefinition(document.getText(), document.uri, params.position)
+  })
+  connection.onHover((params) => {
+    const document = documents.get(params.textDocument.uri)
+    if (document === undefined) {
+      return null
+    }
+    return computeHover(document.getText(), document.uri, params.position)
   })
   documents.onDidClose((event) =>
     connection.sendDiagnostics({
@@ -39,7 +47,8 @@ function handleInitialize(_params: InitializeParams): InitializeResult {
   return {
     capabilities: {
       textDocumentSync: TextDocumentSyncKind.Incremental,
-      definitionProvider: true
+      definitionProvider: true,
+      hoverProvider: true
     }
   }
 }

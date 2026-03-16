@@ -16,7 +16,7 @@ enum TokenKind:
   case ARROW, FAT_ARROW
 
 /** Stores one token with source coordinates and original text. */
-case class Token(kind: TokenKind, text: String, source: SourceRange)
+case class Token(kind: TokenKind, text: String, source: SourceRange, commentBefore: String = "")
 
 object Token:
   /** Creates an EOF token at a single source position. */

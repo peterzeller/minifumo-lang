@@ -20,3 +20,13 @@ export function compileMinifumoSource(source: string): CompilerError[] {
 export function findDefinition(source: string, line: number, column: number, currentFile: string): CompilerDefinitionLocation | undefined {
   return MinifumoCompiler.definitionAt(source, line, column, currentFile)
 }
+
+
+export interface CompilerHoverInfo {
+  typeText: string
+  comment?: string
+}
+
+export function findHover(source: string, line: number, column: number, currentFile: string): CompilerHoverInfo | undefined {
+  return MinifumoCompiler.hoverAt(source, line, column, currentFile)
+}
