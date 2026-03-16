@@ -204,6 +204,52 @@ class MySuite extends munit.FunSuite {
     assertEquals(errors, List())
   }
 
+
+  test("parser desugars equals syntax into Eq applications") {
+    val input =
+      """
+        |fun same(x: Int, y: Int): x = y
+        |    refl[Int][x]
+      """.stripMargin
+    val (ast, parseErrors) = parseInput(input)
+    assertEquals(parseErrors, List())
+    val sig = ast.items.collectFirst { case fun: com.github.peterzeller.minifumo.ast.TopLevel.FunDecl if fun.sig.name == "same" => fun.sig }
+    assert(sig.nonEmpty)
+    sig.get.returnType match
+      case com.github.peterzeller.minifumo.ast.Expr.Call(
+            com.github.peterzeller.minifumo.ast.Expr.Call(com.github.peterzeller.minifumo.ast.Expr.Var("Eq"), com.github.peterzeller.minifumo.ast.Expr.Var("x")),
+            com.github.peterzeller.minifumo.ast.Expr.Var("y")
+          ) => ()
+      case other => fail(s"expected Eq call structure, got: $other")
+  }
+
+  test("expr printer flattens chained explicit and implicit applications") {
+    val src = com.github.peterzeller.minifumo.ast.SourceRange.empty
+    val f = com.github.peterzeller.minifumo.ast.Expr.Var("f")(src)
+    val x = com.github.peterzeller.minifumo.ast.Expr.Var("x")(src)
+    val y = com.github.peterzeller.minifumo.ast.Expr.Var("y")(src)
+    val t = com.github.peterzeller.minifumo.ast.Expr.Var("T")(src)
+    val u = com.github.peterzeller.minifumo.ast.Expr.Var("U")(src)
+
+    val explicit = com.github.peterzeller.minifumo.ast.Expr.Call(com.github.peterzeller.minifumo.ast.Expr.Call(f, x)(src), y)(src)
+    assertEquals(explicit.toString, "f(x, y)")
+
+    val mixed = com.github.peterzeller.minifumo.ast.Expr.Call(
+      com.github.peterzeller.minifumo.ast.Expr.CallImplicit(
+        com.github.peterzeller.minifumo.ast.Expr.CallImplicit(f, t)(src),
+        u
+      )(src),
+      x
+    )(src)
+    assertEquals(mixed.toString, "f[T, U](x)")
+
+    val eqExpr = com.github.peterzeller.minifumo.ast.Expr.Call(
+      com.github.peterzeller.minifumo.ast.Expr.Call(com.github.peterzeller.minifumo.ast.Expr.Var("Eq")(src), x)(src),
+      y
+    )(src)
+    assertEquals(eqExpr.toString, "x = y")
+  }
+
   test("Eq refl pattern with omitted implicit datatype params matches at runtime") {
     val input =
       """

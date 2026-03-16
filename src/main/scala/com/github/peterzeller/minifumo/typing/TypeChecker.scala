@@ -1109,12 +1109,36 @@ object TypeChecker:
       case TypedAst.Expr.Lit(ast.Literal.UnitLit()) => "unit"
       case TypedAst.Expr.Pi(dom, cod, true) => s"(implicit ${dom.name}: ${prettyExpr(dom.tpe)}) -> ${prettyExpr(cod)}"
       case TypedAst.Expr.Pi(dom, cod, false) => s"${dom.name}: ${prettyExpr(dom.tpe)} -> ${prettyExpr(cod)}"
-      case TypedAst.Expr.App(callee, arg, _) => s"${prettyExpr(callee)}(${prettyExpr(arg)})"
-      case TypedAst.Expr.AppImplicit(callee, arg, _) => s"${prettyExpr(callee)}[${prettyExpr(arg)}]"
+      case app @ TypedAst.Expr.App(_, _, _) => prettyApplicationExpr(app)
+      case app @ TypedAst.Expr.AppImplicit(_, _, _) => prettyApplicationExpr(app)
       case TypedAst.Expr.Lambda(param, t, body) => s"(lambda (${param.name}: $t)  => $body)"
       case TypedAst.Expr.LetIn(symbol, _, t, v, body) => s"(let ${symbol.name}: $t = $v in $body)"
       case TypedAst.Expr.Match(s, m, cs) => s"(match ${prettyExpr(s)} with motive ${prettyExpr(m)} ${cs.map(prettyCase).mkString(" ")})"
       case m@TypedAst.Expr.Meta(index, tpe) => s"?${m.name}_$index : ${prettyExpr(tpe)}"
+
+
+  // Renders nested explicit and implicit applications in a single compact call form.
+  private def prettyApplicationExpr(expr: TypedAst.Expr): String =
+    val (callee, implicitArgs, explicitArgs) = collectApplicationParts(expr)
+    callee match
+      case TypedAst.Expr.Var(symbol: DatatypeSymbol) if symbol.name == "Eq" && implicitArgs.isEmpty && explicitArgs.length == 2 =>
+        s"${prettyExpr(explicitArgs.head)} = ${prettyExpr(explicitArgs(1))}"
+      case _ =>
+        val base = prettyExpr(callee)
+        val withImplicit =
+          if implicitArgs.isEmpty then base
+          else s"$base[${implicitArgs.map(prettyExpr).mkString(", ")}]"
+        if explicitArgs.isEmpty then withImplicit
+        else s"$withImplicit(${explicitArgs.map(prettyExpr).mkString(", ")})"
+
+  // Flattens nested application nodes into one callee with ordered implicit and explicit arguments.
+  private def collectApplicationParts(expr: TypedAst.Expr): (TypedAst.Expr, List[TypedAst.Expr], List[TypedAst.Expr]) =
+    def loop(current: TypedAst.Expr, implicitRev: List[TypedAst.Expr], explicitRev: List[TypedAst.Expr]): (TypedAst.Expr, List[TypedAst.Expr], List[TypedAst.Expr]) =
+      current match
+        case TypedAst.Expr.App(callee, arg, _) => loop(callee, implicitRev, arg :: explicitRev)
+        case TypedAst.Expr.AppImplicit(callee, arg, _) => loop(callee, arg :: implicitRev, explicitRev)
+        case other => (other, implicitRev, explicitRev)
+    loop(expr, Nil, Nil)
 
   private def prettyCase(m: MatchCase): String =
     s"case ${prettyPattern(m.pattern)} => ${m.body}"
