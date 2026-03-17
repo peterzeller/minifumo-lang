@@ -1,0 +1,102 @@
+// This example shows some simple logical equalities
+
+fun Nat_zero_less_or_equal[a: Nat](): natLe(Zero, a)
+    // proof by induction on a
+    match a
+        case Zero
+            // 0 is less than or equal to 0
+            refl
+        case Suc(a1)
+            refl
+
+
+fun Eq_symmetric[T: Type, x: T, y: T](h: Eq(x, y)): Eq(y, x)
+    // proof by induction on a
+    match h
+        case refl
+            refl
+
+fun bool_to_prop(a: Bool): Prop
+    match a
+        case True
+            TrueProp
+        case False
+            FalseProp
+
+fun bool_distinct1(h: Eq(True, False)): FalseProp
+    // impossible case: true cannot be equal to false
+    match h
+
+
+fun bool_distinct[a: Bool](h1: Eq(a, True), h2: Eq(a, False)): FalseProp
+    // proof by induction on a
+    match a
+        case True
+            let h: (a = True) = match_Eq
+            // TODO should also work with
+            // let q: Eq(True, False) = subst(match_Eq, h2)
+            let q: Eq(True, False) = subst[Bool, a, True, (x) => Eq(x, False)](match_Eq, h2)
+            match q
+        case False
+            let h: Eq(a, False) = match_Eq
+            let q: Eq(False, True) = subst[Bool, a, False, (x) => Eq(x, True)](match_Eq, h1)
+            match q
+
+fun natLe_zero_is_zero[a: Nat](h: natLe(a, Zero)): Eq(a, Zero)
+    // proof by induction on a
+    match a
+        case Zero
+            // if 0 is less than or equal to 0, then a must be zero
+            refl
+        case Suc(a1)
+            // if 0 is less than or equal to Suc(a1), then a1 must be zero
+            let is_false: Eq(natLe(Suc(a1), Zero), False) = refl
+            let e: Eq(a, Suc(a1)) = match_Eq
+            let is_false2: Eq(natLe(a, Zero), False) = subst(Eq_symmetric(e), is_false)
+            match bool_distinct(h, is_false2)
+
+
+fun Nat_natLe_greater[a: Nat, b: Nat](h: natLe(a, b)): natLe(a, Suc(b))
+    match a_match: a
+        case Zero
+            // if 0 is less than or equal to b, then 0 is also less than or equal to Suc(b)
+            Nat_zero_less_or_equal[Suc(b)]
+        case Suc(a1)
+            match b_match: b
+                case Zero
+                    // this case is impossible, since Suc(a1) cannot be less than or equal to 0
+                    let is_false1: Eq(natLe(Suc(a1), Zero), False) = refl
+                    let is_false2: Eq(natLe(a, Zero), False) = subst(Eq_symmetric(a_match), is_false1)
+                    let is_false3: Eq(natLe(a, b), False) = subst[Nat, Zero, b, (x) => Eq(natLe(a, x), False)](Eq_symmetric(b_match), is_false2)
+                    match bool_distinct[natLe(a, b)](h, is_false3)
+                case Suc(b1)
+                    // from h have natLe(Suc(a1), Suc(b1)), we can conclude natLe(a1, b1)
+                    let h1: natLe(Suc(a1), Suc(b1)) = subst(b_match, subst(a_match, h))
+                    let h2: natLe(a1, b1) = h1 // TODO should reduce further
+                    let IH: natLe(a1, Suc(b1)) = Nat_natLe_greater(h2)
+                    let h3: natLe(Suc(a1), Suc(Suc(b1))) = IH // TODO should reduce further
+                    h3
+
+fun Nat_natLe_transitive[a: Nat, b: Nat, c: Nat](h1: natLe(a, b), h2: natLe(b, c)): natLe(a, c)
+    // proof by induction on a
+    match s: c
+        case Zero
+            // from h2 we know that b is zero:
+            let h2_: natLe(b, Zero) = subst(s, h2)
+            let b_is_zero: Eq(b, Zero) = natLe_zero_is_zero(h2_)
+            // with h1 we know that a is also zero:
+            let h1_: natLe(a, Zero) = subst(b_is_zero, h1)
+            let a_is_zero: Eq(a, Zero) = natLe_zero_is_zero(h1_)
+            // thus we need to prove natLe(Zero, Zero), which is true
+            subst(Eq_symmetric(a_is_zero), Nat_zero_less_or_equal[Zero])
+        case Suc(c1)
+            match cs: natLe(b, c1)
+                case True
+                    let ih: natLe(a, c1) = Nat_natLe_transitive(h1, cs)
+                    let ih2: natLe(a, Suc(c1)) = Nat_natLe_greater(ih)
+                    ih2
+                case False
+                    // if b is not less than or equal to c1, then b must be equal to c
+                    let b_is_c: Eq(b, Suc(c1)) = axiom //subst(cs, refl)
+                    let h1_: natLe(a, Suc(c1)) = subst(b_is_c, h1)
+                    h1_

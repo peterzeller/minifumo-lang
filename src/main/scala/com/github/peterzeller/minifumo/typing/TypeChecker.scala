@@ -11,6 +11,7 @@ import com.github.peterzeller.minifumo.typing.TypedAst.Expr.{Sort, UnknownType}
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 import java.util.concurrent.atomic.AtomicInteger
+import scala.annotation.tailrec
 
 object TypeChecker:
   private val throwOnError = false
@@ -1107,8 +1108,8 @@ object TypeChecker:
       case TypedAst.Expr.Lit(ast.Literal.BoolLit(_)) => "Bool"
       case TypedAst.Expr.Lit(ast.Literal.StringLit(_)) => "String"
       case TypedAst.Expr.Lit(ast.Literal.UnitLit()) => "unit"
-      case TypedAst.Expr.Pi(dom, cod, true) => s"(implicit ${dom.name}: ${prettyExpr(dom.tpe)}) -> ${prettyExpr(cod)}"
-      case TypedAst.Expr.Pi(dom, cod, false) => s"${dom.name}: ${prettyExpr(dom.tpe)} -> ${prettyExpr(cod)}"
+      case TypedAst.Expr.Pi(dom, cod, true) => s"[${dom.name}: ${prettyExpr(dom.tpe)}] -> ${prettyExpr(cod)}"
+      case TypedAst.Expr.Pi(dom, cod, false) => s"(${dom.name}: ${prettyExpr(dom.tpe)}) -> ${prettyExpr(cod)}"
       case app @ TypedAst.Expr.App(_, _, _) => prettyApplicationExpr(app)
       case app @ TypedAst.Expr.AppImplicit(_, _, _) => prettyApplicationExpr(app)
       case TypedAst.Expr.Lambda(param, t, body) => s"(lambda (${param.name}: $t)  => $body)"
@@ -1121,8 +1122,8 @@ object TypeChecker:
   private def prettyApplicationExpr(expr: TypedAst.Expr): String =
     val (callee, implicitArgs, explicitArgs) = collectApplicationParts(expr)
     callee match
-      case TypedAst.Expr.Var(symbol: DatatypeSymbol) if symbol.name == "Eq" && implicitArgs.isEmpty && explicitArgs.length == 2 =>
-        s"${prettyExpr(explicitArgs.head)} = ${prettyExpr(explicitArgs(1))}"
+      case TypedAst.Expr.Var(symbol: DatatypeSymbol) if symbol.name == "Eq" && explicitArgs.length == 2 =>
+        s"(${prettyExpr(explicitArgs.head)} = ${prettyExpr(explicitArgs(1))})"
       case _ =>
         val base = prettyExpr(callee)
         val withImplicit =
@@ -1133,6 +1134,7 @@ object TypeChecker:
 
   // Flattens nested application nodes into one callee with ordered implicit and explicit arguments.
   private def collectApplicationParts(expr: TypedAst.Expr): (TypedAst.Expr, List[TypedAst.Expr], List[TypedAst.Expr]) =
+    @tailrec
     def loop(current: TypedAst.Expr, implicitRev: List[TypedAst.Expr], explicitRev: List[TypedAst.Expr]): (TypedAst.Expr, List[TypedAst.Expr], List[TypedAst.Expr]) =
       current match
         case TypedAst.Expr.App(callee, arg, _) => loop(callee, implicitRev, arg :: explicitRev)
