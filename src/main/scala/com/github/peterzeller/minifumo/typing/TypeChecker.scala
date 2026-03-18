@@ -571,7 +571,25 @@ object TypeChecker:
       case (TypedAst.Expr.Pi(d1, c1, i1), TypedAst.Expr.Pi(d2, c2, i2)) if i1 == i2 =>
         val alignedCodomain = substitute(c2, d2, TypedAst.Expr.Var(d1)(c2.source))
         syntacticallyEquivalent(d1.tpe, d2.tpe) && syntacticallyEquivalent(c1, alignedCodomain)
+      case (TypedAst.Expr.Match(s1, m1, cases1), TypedAst.Expr.Match(s2, m2, cases2)) =>
+        syntacticallyEquivalent(s1, s2) &&
+          syntacticallyEquivalent(m1, m2) &&
+          cases1.length == cases2.length &&
+          cases1.zip(cases2).forall { (leftCase, rightCase) =>
+            syntacticallyEquivalentPattern(leftCase.pattern, rightCase.pattern) &&
+              syntacticallyEquivalent(leftCase.body, rightCase.body)
+          }
       case (TypedAst.Expr.Meta(i1, _), TypedAst.Expr.Meta(i2, _)) => i1 == i2
+      case _ => false
+
+  /** Checks whether two patterns are structurally equivalent. */
+  private def syntacticallyEquivalentPattern(left: TypedAst.Pattern, right: TypedAst.Pattern): Boolean =
+    (left, right) match
+      case (TypedAst.Pattern.Wildcard(), TypedAst.Pattern.Wildcard()) => true
+      case (TypedAst.Pattern.Lit(v1), TypedAst.Pattern.Lit(v2)) => v1 == v2
+      case (TypedAst.Pattern.Binder(s1), TypedAst.Pattern.Binder(s2)) => symbolsEqual(s1, s2) || s1.name == s2.name
+      case (TypedAst.Pattern.Ctor(c1, args1), TypedAst.Pattern.Ctor(c2, args2)) =>
+        symbolsEqual(c1, c2) && args1.length == args2.length && args1.zip(args2).forall((p1, p2) => syntacticallyEquivalentPattern(p1, p2))
       case _ => false
 
   /** Extracts constructor-like or datatype application heads from a term. */
@@ -821,9 +839,10 @@ object TypeChecker:
     selectMatchCase(scrutinee, cases) match
       case Some(body) => reduceExpr(body, fuel)
       case None =>
-        // TODO should we reduce also the cases?
-        // val reducedCases = cases.map(c => TypedAst.MatchCase(c.pattern, reduceExpr(c.body, fuel))(c.source))
-        TypedAst.Expr.Match(scrutinee, TypedAst.Expr.UnknownType()(source), cases)(source)
+        val reducedCases =
+          if fuel <= 0 then cases
+          else cases.map(c => TypedAst.MatchCase(c.pattern, reduceExpr(c.body, fuel - 1))(c.source))
+        TypedAst.Expr.Match(scrutinee, TypedAst.Expr.UnknownType()(source), reducedCases)(source)
 
   /** Selects and specializes the first matching branch for a reduced scrutinee. */
   private def selectMatchCase(scrutinee: TypedAst.Expr, cases: List[TypedAst.MatchCase]): Option[TypedAst.Expr] =
