@@ -7,6 +7,10 @@ fun matchValue(value: MyOption[Int]): Int
         case MySome(x)
             x
 
+// same as above, but using inline syntax
+fun matchValue2(value: MyOption[Int]): Int
+    match value case MyNone => 0 case MySome(x) => x
+
 fun main(): Unit
     println(matchValue(MySome(1)), showInt())
 

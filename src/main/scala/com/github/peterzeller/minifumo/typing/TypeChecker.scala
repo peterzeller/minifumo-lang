@@ -555,24 +555,82 @@ object TypeChecker:
     s"Eq(${prettyExpr(left)}, ${prettyExpr(right)})"
 
   /** Checks whether two reduced terms are structurally equivalent. */
-  private def syntacticallyEquivalent(left: TypedAst.Expr, right: TypedAst.Expr): Boolean =
-    (left, right) match
-      case (TypedAst.Expr.UnknownType(), _) => true
-      case (_, TypedAst.Expr.UnknownType()) => true
-      case (TypedAst.Expr.Var(s1), TypedAst.Expr.Var(s2)) if symbolsEqual(s1, s2) => true
-      case (TypedAst.Expr.Var(p1: LocalSymbol), TypedAst.Expr.Var(p2: LocalSymbol)) if p1.name == p2.name => true
-      case (TypedAst.Expr.Lit(v1), TypedAst.Expr.Lit(v2)) => v1 == v2
-      case (TypedAst.Expr.Sort(_), TypedAst.Expr.Sort(_)) => true
-      case (TypedAst.Expr.App(c1, a1, _), TypedAst.Expr.App(c2, a2, _)) => syntacticallyEquivalent(c1, c2) && syntacticallyEquivalent(a1, a2)
-      case (TypedAst.Expr.AppImplicit(c1, a1, _), TypedAst.Expr.AppImplicit(c2, a2, _)) => syntacticallyEquivalent(c1, c2) && syntacticallyEquivalent(a1, a2)
-      case (TypedAst.Expr.Lambda(p1, b1, _), TypedAst.Expr.Lambda(p2, b2, _)) =>
-        val alignedBody = substitute(b2, p2, TypedAst.Expr.Var(p1)(b2.source))
-        syntacticallyEquivalent(p1.tpe, p2.tpe) && syntacticallyEquivalent(b1, alignedBody)
-      case (TypedAst.Expr.Pi(d1, c1, i1), TypedAst.Expr.Pi(d2, c2, i2)) if i1 == i2 =>
-        val alignedCodomain = substitute(c2, d2, TypedAst.Expr.Var(d1)(c2.source))
-        syntacticallyEquivalent(d1.tpe, d2.tpe) && syntacticallyEquivalent(c1, alignedCodomain)
-      case (TypedAst.Expr.Meta(i1, _), TypedAst.Expr.Meta(i2, _)) => i1 == i2
-      case _ => false
+  private def syntacticallyEquivalent(left: TypedAst.Expr, right: TypedAst.Expr): Boolean = {
+    left match {
+      case Expr.Lit(value) =>
+        right match {
+          case Expr.Lit(value2) => value == value2
+          case _ => false
+        }
+      case Expr.Var(symbol) =>
+        right match {
+          case Expr.Var(symbol2) => symbol == symbol2
+          case _ => false
+        }
+      case Expr.AppImplicit(callee, arg, tpe) =>
+        right match {
+          case Expr.AppImplicit(callee2, arg2, tpe) =>
+            syntacticallyEquivalent(callee, callee2)
+              && syntacticallyEquivalent(arg, arg2)
+          case _ => false
+        }
+      case Expr.App(callee, arg, tpe) =>
+        right match {
+          case Expr.App(callee2, arg2, tpe) =>
+            syntacticallyEquivalent(callee, callee2)
+              && syntacticallyEquivalent(arg, arg2)
+          case _ => false
+        }
+      case Expr.Pi(d1, c1, i1) =>
+        right match {
+          case TypedAst.Expr.Pi(d2, c2, i2) if i1 == i2 =>
+            val alignedCodomain = substitute(c2, d2, TypedAst.Expr.Var(d1)(c2.source))
+            syntacticallyEquivalent(d1.tpe, d2.tpe) && syntacticallyEquivalent(c1, alignedCodomain)
+          case _ => false
+        }
+      case Expr.Sort(level) =>
+        right match {
+          case Expr.Sort(_) =>
+            // TODO level == level2 ?
+            true
+          case _ => false
+        }
+      case Expr.Lambda(p1, b1, _) =>
+        right match {
+          case TypedAst.Expr.Lambda(p2, b2, _) =>
+            val alignedBody = substitute(b2, p2, TypedAst.Expr.Var(p1)(b2.source))
+            syntacticallyEquivalent(p1.tpe, p2.tpe) && syntacticallyEquivalent(b1, alignedBody)
+          case _ => false
+        }
+      case Expr.LetIn(symbol, _, declaredType, value, body) =>
+        right match {
+          case Expr.LetIn(symbol2, _, declaredType2, value2, body2) =>
+            syntacticallyEquivalent(declaredType, declaredType2)
+            && syntacticallyEquivalent(value, value2)
+            && syntacticallyEquivalent(body, substitute(body2, symbol2, Expr.Var(symbol)(SourceRange.empty)))
+          case _ => false
+        }
+      case Expr.Meta(index, tpe) =>
+        right match {
+          case Expr.Meta(index2, _) => index == index2
+          case _ => false
+        }
+      case Expr.UnknownType() => true
+      case Expr.Axiom() => right == Expr.Axiom()
+      case Expr.Match(scrutinee, motive, cases) =>
+        right match {
+          case Expr.Match(scrutinee2, motive2, cases2) =>
+            syntacticallyEquivalent(scrutinee, scrutinee2)
+            && syntacticallyEquivalent(motive, motive2)
+            && cases.length == cases2.length
+            && cases.sortBy(_.pattern.toString).zip(cases2.sortBy(_.pattern.toString)).forall((c1, c2) => {
+              // TODO could be more flexible if it was not dependent on var names
+              c1.pattern == c2.pattern && syntacticallyEquivalent(c1.body, c2.body)
+            })
+          case _ => false
+        }
+    }
+  }
 
   /** Extracts constructor-like or datatype application heads from a term. */
   private def extractHeadedExpr(expr: TypedAst.Expr): Option[HeadedExpr] =
@@ -1006,7 +1064,8 @@ object TypeChecker:
         collectUnresolvedMetas(scrutinee) ++ collectUnresolvedMetas(motive) ++ cases.flatMap(c => collectUnresolvedMetas(c.body)).toSet
       case _ => Set.empty
 
-  /** Substitutes a local symbol with a value in a term. */
+  /** Substitutes a local symbol with a value in a term.
+   * In 'term' replace 'symbol' by 'value'. */
   private[typing] def substitute(term: TypedAst.Expr, symbol: LocalSymbol, value: TypedAst.Expr): TypedAst.Expr =
     term match
       case TypedAst.Expr.Var(sym: LocalSymbol) if sym.id == symbol.id => value

@@ -1,5 +1,8 @@
 import com.github.peterzeller.minifumo.ast
-import com.github.peterzeller.minifumo.typing.{LocalSymbol, Symbol, TermSymbol, TypeChecker, TypedAst}
+import com.github.peterzeller.minifumo.builtins.Standard
+import com.github.peterzeller.minifumo.typing.TypeChecker.IdSupply
+import com.github.peterzeller.minifumo.typing.TypedAst.TopLevel.FunDecl
+import com.github.peterzeller.minifumo.typing.{GlobalSymbolsIo, LocalSymbol, ProjectSymbolCache, Symbol, TermSymbol, TypeChecker, TypedAst}
 
 import scala.collection.mutable
 
@@ -106,6 +109,21 @@ class TypeCheckerSuite extends munit.FunSuite:
     assert(result)
     assertEquals(assignments.get(0), Some(literal))
     assertEquals(constraintsBuf.length, 0)
+  }
+
+  test("pretty print of eq constraints") {
+    val ids = IdSupply()
+    val cache = ProjectSymbolCache(GlobalSymbolsIo.create("."), ids)
+    val (typed, errs) = TypeChecker.checkProgram("standard.minifumo", Standard.standardProgram, cache, false, ids)
+    require(errs.isEmpty)
+    val funcs = typed.items.flatMap {
+      case f: FunDecl => List(f)
+      case _ => List()
+    }
+    val substFunc = funcs.find(_.sig.symbol.name == "subst").get
+    val paramsStr = substFunc.sig.params.map(p => s"$p: ${p.tpe}").mkString(", ")
+    require(paramsStr == "h: (x = y), hx: motive(x)")
+
   }
 
 //  test("pattern matching substitutes constructor type parameters without standard library") {
