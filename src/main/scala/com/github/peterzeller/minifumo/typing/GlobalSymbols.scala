@@ -146,7 +146,7 @@ final case class DatatypeSymbol(file: String, name: String)(val continuationData
 
     val dataSortLevel = if data.declAst.isProp then UniverseLevel.Prop else UniverseLevel.Type1
     val t = buildPiType(implicitParams, explicitParams, Expr.Sort(dataSortLevel)(SourceRange.empty))
-    val (_, signatureErrors) = TypeChecker.finalizeTopLevelExpr(t)(using ctx, metas)
+    val (_, signatureErrors) = TypeChecker.finalizeTopLevelExpr(t)(using data.idSupply, ctx, metas)
     allErrors ++= signatureErrors
     val instantiatedImplicitParams = implicitParams.map(p => TypeChecker.instantiateLocalSymbol(p)(using metas))
     val instantiatedExplicitParams = explicitParams.map(p => TypeChecker.instantiateLocalSymbol(p)(using metas))
@@ -206,7 +206,7 @@ final case class DatatypeSymbol(file: String, name: String)(val continuationData
         val implicitFields = GlobalSymbols.selectRequiredDatatypeParams(typeInfo.params, referencedLocals)
 
         val tpe = buildPiType(implicitFields, fields, returnType)
-        val (_, constructorErrors) = TypeChecker.finalizeTopLevelExpr(tpe)(using ctx, metas)
+        val (_, constructorErrors) = TypeChecker.finalizeTopLevelExpr(tpe)(using data.idSupply, ctx, metas)
         allErrors ++= constructorErrors
         val instantiatedImplicitFields = implicitFields.map(p => TypeChecker.instantiateLocalSymbol(p)(using metas))
         val instantiatedFields = fields.map(p => TypeChecker.instantiateLocalSymbol(p)(using metas))
@@ -296,7 +296,7 @@ final case class FunctionSymbol(
         val f = data.declAst
         val (body, errors) = TypeChecker.check(f.body, s.sig.returnType)(using s.continuationContext, s.metaStore, data.idSupply)
         allErrors ++= errors
-        val (elaboratedBody, unresolvedMetaErrors) = TypeChecker.finalizeTopLevelExpr(body)(using s.continuationContext, s.metaStore)
+        val (elaboratedBody, unresolvedMetaErrors) = TypeChecker.finalizeTopLevelExpr(body)(using data.idSupply, s.continuationContext, s.metaStore)
         allErrors ++= unresolvedMetaErrors
         val completenessErrors = TypeChecker.checkMatchCompletenessInExpr(elaboratedBody)(using s.continuationContext, s.metaStore)
         allErrors ++= completenessErrors

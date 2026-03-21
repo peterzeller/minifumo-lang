@@ -10,12 +10,12 @@ class DatatypeIndexErasureSuite extends munit.FunSuite:
         |   SEmpty: SizedVec[T, Zero]
         | | SCons(head: T, tail: SizedVec[T, N]): SizedVec[T, Suc(N)]
         |
-        |fun append[T: Type, N: Nat, M: Nat](xs: SizedVec[T, N], ys: SizedVec[T, M]): SizedVec[T, natAdd(N, M)]
+        |fun append[T: Type, NN: Nat, M: Nat](xs: SizedVec[T, NN], ys: SizedVec[T, M]): SizedVec[T, natAdd(NN, M)]
         |  match xs
         |    case SEmpty
         |      ys
         |    case SCons(head, tail)
-        |      SCons[T][natAdd(N, M)](head, append[T][N][M](tail, ys))
+        |      SCons(head, append(tail, ys))
         |""".stripMargin
 
     val (ast, parseErrors) = parseInput(input)

@@ -3,6 +3,7 @@ package com.github.peterzeller.minifumo.typing
 import com.github.peterzeller.minifumo.ast
 import com.github.peterzeller.minifumo.ast.SourceRange
 import com.github.peterzeller.minifumo.typing.TypeChecker.*
+import com.github.peterzeller.minifumo.typing.TypedAst.Expr
 
 /** Utilities for creating and solving metavariables in the type checker. */
 object TypeCheckerMetas:
@@ -15,12 +16,13 @@ object TypeCheckerMetas:
     TypedAst.Expr.Meta(ids.freshMetaId(), tpe)(name, source)
 
   /** Solves a meta-variable if the occurs check passes. */
-  def solveMeta(metaId: Int, term: TypedAst.Expr)(implicit metas: MetaContext): Boolean =
-    if occurs(metaId, term) then
+  def solveMeta(metaId: Expr.Meta, term: TypedAst.Expr)(implicit metas: MetaContext): Boolean = {
+    if occurs(metaId.index, term) then
       false
     else
-      metas.assign(metaId, term)
+      metas.assign(metaId.index, term)
       true
+  }
 
   /** Performs an occurs check for metas in a typed term. */
   def occurs(metaId: Int, term: TypedAst.Expr): Boolean =
