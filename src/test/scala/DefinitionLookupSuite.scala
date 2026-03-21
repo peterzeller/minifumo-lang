@@ -129,6 +129,24 @@ class DefinitionLookupSuite extends munit.FunSuite:
     assert(definition.get.range.contains(ctorPos))
   }
 
+  test("definitionAt prefers same-file declarations over standard library symbols") {
+    val sourceWithCursor =
+      """fun natAdd(a: Nat, b: Nat): Nat
+        |  b
+        |
+        |fun main(): Nat
+        |  nat|Add(Zero, Zero)
+        |""".stripMargin
+    val (source, cursor) = extractCursor(sourceWithCursor)
+    val typedProgram = checkTyped(source)
+    val localNatAddPos = posOfFirst(source, "fun natAdd")
+
+    val definition = DefinitionLookup.definitionAt(typedProgram, cursor, testFile)
+    assert(definition.nonEmpty)
+    assertEquals(definition.get.file, testFile)
+    assert(definition.get.range.contains(localNatAddPos))
+  }
+
   /** Parses, type-checks, and returns a typed program with no errors. */
   private def checkTyped(source: String) =
     val ids = TypeChecker.IdSupply()

@@ -590,7 +590,8 @@ class ProjectSymbolCache(val io: GlobalSymbolsIo, val ids: TypeChecker.IdSupply)
         }
         // and we also need to include the standard library
         if path != "standard.minifumo" then
-          r ++= globalEnv("standard.minifumo").names
+          // Keep declarations from the current file/imports when they shadow standard names.
+          r = globalEnv("standard.minifumo").names ++ r
         val e = GlobalEnv(r)
         globalEnvCache += path -> e
         e

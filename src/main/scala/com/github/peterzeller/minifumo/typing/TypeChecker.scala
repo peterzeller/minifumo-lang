@@ -32,7 +32,8 @@ object TypeChecker:
       if importStandard then
         // import the standard library symbols into the program file scope
         val (standardLibSymbolMap, standardLibImportErrors) = GlobalSymbols.buildGlobalSymbols("standard.minifumo", Standard.standardProgram, globalNames, false, idSupply)
-        symbolMap ++= standardLibSymbolMap
+        // Keep file-local declarations authoritative when names collide with the standard library.
+        symbolMap = standardLibSymbolMap ++ symbolMap
         importErrors ++= standardLibImportErrors
       errors.addAll(importErrors)
       val globals = GlobalEnv(names = symbolMap)
