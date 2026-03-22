@@ -204,6 +204,20 @@ class MySuite extends munit.FunSuite {
     assertEquals(errors, List())
   }
 
+  test("exists constructor does not accept invalid equality witness") {
+    val input =
+      """
+        |fun Nat_natLe_to_exists[a: Nat, b: Nat](h: natLe(a, b)): (exists x: Nat :: natAdd(a, x) = b)
+        |    MakeExists(Zero, refl)
+    """.stripMargin
+    val (ast, _) = parseInput(input)
+    val dummyPath = "invalid-exists-witness.minifumo"
+    val dummyCache = new ProjectSymbolCache(GlobalSymbolsIo.create("."), TypeChecker.IdSupply())
+    dummyCache.addInput(dummyPath, input)
+    val (_, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
+    assert(errors.nonEmpty, s"expected type errors, got: $errors")
+  }
+
 
   test("parser desugars equals syntax into Eq applications") {
     val input =

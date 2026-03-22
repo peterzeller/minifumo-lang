@@ -522,11 +522,14 @@ object TypeChecker:
              (implicit ctx: Context, metas: MetaContext): Boolean =
     val norm1 = whnf(t1)
     val norm2 = whnf(t2)
+    if hasNonPatternMetaApplication(norm1) || hasNonPatternMetaApplication(norm2) then
+      metas.addConstraint(EqualityConstraint(t1, t2, source))
+      return true
     (norm1, norm2) match
-      case (TypedAst.Expr.Meta(id, _), other) =>
-        solveMeta(id, other)
-      case (other, TypedAst.Expr.Meta(id, _)) =>
-        solveMeta(id, other)
+      case (TypedAst.Expr.Meta(id, metaType), other) =>
+        canAssignBareMeta(metaType, other) && solveMeta(id, other)
+      case (other, TypedAst.Expr.Meta(id, metaType)) =>
+        canAssignBareMeta(metaType, other) && solveMeta(id, other)
       case _ if solvePatternMetaApplication(norm1, norm2) =>
         true
       case _ if solvePatternMetaApplication(norm2, norm1) =>
@@ -600,7 +603,8 @@ object TypeChecker:
         if distinctArgIds.length != args.length then
           false
         else
-          solveMeta(metaId, buildPatternMetaSolution(metaType, args, right, left.source, metaId))
+          val solution = buildPatternMetaSolution(metaType, args, right, left.source, metaId)
+          matchesMetaShape(metaType, solution) && solveMeta(metaId, solution)
       case None =>
         false
 
@@ -621,21 +625,26 @@ object TypeChecker:
 
   /** Builds a solved meta as lambdas over distinct arguments from the higher-order pattern fragment. */
   private def buildPatternMetaSolution(metaType: TypedAst.Expr, args: List[LocalSymbol], target: TypedAst.Expr, source: SourceRange, metaId: Int)(implicit metas: MetaContext): TypedAst.Expr =
+    var currentType = instantiate(metaType)
     val binders = args.zipWithIndex.map { case (arg, index) =>
-      LocalSymbol(s"m${metaId}_${index}", arg.tpe, freshSyntheticLocalId())("")
+      val binderType = instantiate(currentType) match
+        case TypedAst.Expr.Pi(dom, cod, _) =>
+          dom.tpe
+        case _ =>
+          arg.tpe
+      val binder = LocalSymbol(s"m${metaId}_${index}", binderType, freshSyntheticLocalId())("")
+      instantiate(currentType) match
+        case TypedAst.Expr.Pi(dom, cod, _) =>
+          currentType = substitute(cod, dom, TypedAst.Expr.Var(binder)(source))
+        case _ =>
+          ()
+      binder
     }
     val abstractedBody = args.zip(binders).foldLeft(target) { case (current, (arg, binder)) =>
       substitute(current, arg, TypedAst.Expr.Var(binder)(source))
     }
-    val lambdaTypes = ListBuffer[TypedAst.Expr]()
-    var currentType = metaType
-    for binder <- binders do
-      lambdaTypes.addOne(currentType)
-      currentType = (instantiate(currentType) match
-        case TypedAst.Expr.Pi(dom, cod, _) => substitute(cod, dom, TypedAst.Expr.Var(binder)(source))
-        case _ => TypedAst.Expr.UnknownType()(source))
-    binders.zip(lambdaTypes).reverse.foldLeft(abstractedBody) { case (currentBody, (binder, binderType)) =>
-      TypedAst.Expr.Lambda(binder, currentBody, binderType)(source)
+    binders.reverse.foldLeft(abstractedBody) { case (currentBody, binder) =>
+      TypedAst.Expr.Lambda(binder, currentBody, TypedAst.Expr.UnknownType()(source))(source)
     }
 
   /** Classifies heads that represent constructors or type constructors. */
@@ -689,6 +698,8 @@ object TypeChecker:
                                 (implicit ctx: Context, metas: MetaContext): Option[(EqualityConstraint, TypedAst.Expr, TypedAst.Expr)] = {
     val left = instantiate(constraint.left)
     val right = instantiate(constraint.right)
+    if hasNonPatternMetaApplication(left) || hasNonPatternMetaApplication(right) then
+      return Some((EqualityConstraint(left, right, constraint.source), left, right))
     if canSolveByUnification(left, right) then
       None
     else {
@@ -704,6 +715,18 @@ object TypeChecker:
     }
   }
 
+  /** Detects a meta-variable application that cannot be solved by pattern unification. */
+  private def hasNonPatternMetaApplication(expr: TypedAst.Expr): Boolean =
+    val (head, args) = decomposeApplication(expr)
+    head match
+      case TypedAst.Expr.Meta(_, _) =>
+        args.nonEmpty && !args.forall {
+          case TypedAst.Expr.Var(_: LocalSymbol) => true
+          case _ => false
+        }
+      case _ =>
+        false
+
   /** Solves equality by recursively assigning metas and matching term structure. */
   private def canSolveByUnification(left: TypedAst.Expr, right: TypedAst.Expr)
                                    (implicit metas: MetaContext): Boolean =
@@ -711,10 +734,11 @@ object TypeChecker:
       true
     else
       (left, right) match
-        case (TypedAst.Expr.Meta(id, _), other) => solveMeta(id, other)
-        case (other, TypedAst.Expr.Meta(id, _)) => solveMeta(id, other)
+        case (TypedAst.Expr.Meta(id, metaType), other) => canAssignBareMeta(metaType, other) && solveMeta(id, other)
+        case (other, TypedAst.Expr.Meta(id, metaType)) => canAssignBareMeta(metaType, other) && solveMeta(id, other)
         case _ if solvePatternMetaApplication(left, right) => true
         case _ if solvePatternMetaApplication(right, left) => true
+        case _ if hasAppliedMetaHead(left) || hasAppliedMetaHead(right) => false
         case (TypedAst.Expr.App(c1, a1, _), TypedAst.Expr.App(c2, a2, _)) =>
           canSolveByUnification(c1, c2) && canSolveByUnification(a1, a2)
         case (TypedAst.Expr.AppImplicit(c1, a1, _), TypedAst.Expr.AppImplicit(c2, a2, _)) =>
@@ -726,6 +750,37 @@ object TypeChecker:
           val alignedBody = substitute(b2, p2, TypedAst.Expr.Var(p1)(b2.source))
           canSolveByUnification(p1.tpe, p2.tpe) && canSolveByUnification(b1, alignedBody)
         case _ => false
+
+  /** Allows assigning bare metas only for non-function types or lambda-like terms. */
+  private def canAssignBareMeta(metaType: TypedAst.Expr, term: TypedAst.Expr)
+                               (implicit metas: MetaContext): Boolean =
+    instantiate(metaType) match
+      case TypedAst.Expr.Pi(_, _, _) =>
+        (instantiate(term) match
+          case TypedAst.Expr.Lambda(_, _, _) => true
+          case TypedAst.Expr.Meta(_, _) => true
+          case _ => false) && matchesMetaShape(metaType, term)
+      case _ =>
+        true
+
+  /** Detects applications where the head is a meta-variable and at least one argument is applied. */
+  private def hasAppliedMetaHead(expr: TypedAst.Expr): Boolean =
+    val (head, args) = decomposeApplication(expr)
+    head.isInstanceOf[TypedAst.Expr.Meta] && args.nonEmpty
+
+  /** Checks that a meta solution has the expected lambda shape and binder types. */
+  private def matchesMetaShape(metaType: TypedAst.Expr, term: TypedAst.Expr)
+                              (implicit metas: MetaContext): Boolean =
+    (instantiate(metaType), instantiate(term)) match
+      case (TypedAst.Expr.Pi(dom, cod, _), TypedAst.Expr.Lambda(param, body, _)) =>
+        syntacticallyEquivalent(dom.tpe, param.tpe) &&
+          matchesMetaShape(substitute(cod, dom, TypedAst.Expr.Var(param)(term.source)), body)
+      case (TypedAst.Expr.Pi(_, _, _), TypedAst.Expr.Meta(_, _)) =>
+        true
+      case (TypedAst.Expr.Pi(_, _, _), _) =>
+        false
+      case _ =>
+        true
 
   /** Fully reduces a term with a fuel budget to keep normalization bounded. */
   private def reduceExpr(term: TypedAst.Expr, fuel: Int)(implicit ctx: Context, metas: MetaContext): TypedAst.Expr =
@@ -1014,11 +1069,24 @@ object TypeChecker:
       case TypedAst.Expr.AppImplicit(callee, arg, tpe) =>
         TypedAst.Expr.AppImplicit(substitute(callee, symbol, value), substitute(arg, symbol, value), tpe)(term.source)
       case TypedAst.Expr.Lambda(param, body, tpe) =>
-        TypedAst.Expr.Lambda(param, substitute(body, symbol, value), tpe)(term.source)
+        val substitutedType = substitute(tpe, symbol, value)
+        if param.id == symbol.id then
+          TypedAst.Expr.Lambda(param, body, substitutedType)(term.source)
+        else
+          TypedAst.Expr.Lambda(param, substitute(body, symbol, value), substitutedType)(term.source)
       case letExpr@TypedAst.Expr.LetIn(sym, isConstant, declaredType, valExpr, body) =>
-        TypedAst.Expr.LetIn(sym, isConstant, declaredType, substitute(valExpr, symbol, value), substitute(body, symbol, value))(term.source, letExpr.comment)
+        val substitutedValue = substitute(valExpr, symbol, value)
+        val substitutedDeclaredType = substitute(declaredType, symbol, value)
+        if sym.id == symbol.id then
+          TypedAst.Expr.LetIn(sym, isConstant, substitutedDeclaredType, substitutedValue, body)(term.source, letExpr.comment)
+        else
+          TypedAst.Expr.LetIn(sym, isConstant, substitutedDeclaredType, substitutedValue, substitute(body, symbol, value))(term.source, letExpr.comment)
       case TypedAst.Expr.Pi(dom, cod, isImplicit) =>
-        TypedAst.Expr.Pi(substituteInLocalSymbol(dom, symbol, value), substitute(cod, symbol, value), isImplicit)(term.source)
+        val substitutedDom = substituteInLocalSymbol(dom, symbol, value)
+        if dom.id == symbol.id then
+          TypedAst.Expr.Pi(substitutedDom, cod, isImplicit)(term.source)
+        else
+          TypedAst.Expr.Pi(substitutedDom, substitute(cod, symbol, value), isImplicit)(term.source)
       case TypedAst.Expr.Match(scrutinee, motive, cases) =>
         val newCases = cases.map(c => TypedAst.MatchCase(c.pattern, substitute(c.body, symbol, value))(c.source))
         TypedAst.Expr.Match(substitute(scrutinee, symbol, value), substitute(motive, symbol, value), newCases)(term.source)
