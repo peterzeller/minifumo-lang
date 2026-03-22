@@ -403,6 +403,7 @@ object GlobalSymbols:
       case ast.Expr.Match(scrutinee, _, cases) =>
         collectVarNames(scrutinee) ++ cases.flatMap(matchCase => collectVarNames(matchCase.body)).toSet
       case ast.Expr.Hole() => Set()
+      case ast.Expr.Axiom() => Set()
 
   // Collects local symbols referenced by an expression list.
   private def collectReferencedLocalSymbols(expressions: Iterable[TypedAst.Expr]): Set[LocalSymbol] =

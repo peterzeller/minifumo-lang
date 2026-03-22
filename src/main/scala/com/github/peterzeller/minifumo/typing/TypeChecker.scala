@@ -709,8 +709,6 @@ object TypeChecker:
     var constraintCount = pending.length
     var changed = true
     while changed do
-      println(s"$constraintCount pending = $pending")
-      println(s"assigned metas ${metas}")
       changed = false
       val nextPending = ListBuffer[(Constraint, List[TypeError])]()
       for constraint <- pending do
@@ -721,7 +719,6 @@ object TypeChecker:
             nextPending.addOne(unresolved)
       pending = nextPending.toList.map(_._1)
       if metas.constraints.length > constraintCount then
-        println(s"new constraints were created")
         val newConstraints = metas.constraints.drop(constraintCount)
         constraintCount += newConstraints.length
         pending = pending ++ newConstraints
