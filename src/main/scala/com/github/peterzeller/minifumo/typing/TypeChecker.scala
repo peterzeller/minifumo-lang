@@ -486,10 +486,11 @@ object TypeChecker:
   /** Resolves metas at the end of a declaration and reports unresolved placeholders. */
   private[typing] def finalizeTopLevelExpr(expr: TypedAst.Expr)
                                (implicit ids: IdSupply, ctx: Context, metas: MetaContext): (TypedAst.Expr, List[TypeError]) =
-    val constraintErrors = solveOpenConstraints(defaultConstraintFuel)
+    val constraintErrors = solveOpenConstraints(defaultConstraintFuel, ids, ctx, metas)
     val unresolved = collectUnresolvedMetas(expr)
     val metaErrors = unresolved.toList.map(meta => TypeError(s"Could not infer implicit argument ${prettyExpr(meta)}", meta.source))
-    (instantiate(expr), metaErrors ++ constraintErrors)
+    val initiated = instantiate(expr)
+    (initiated, metaErrors ++ constraintErrors)
 
   /** Instantiates all local symbol types and values in a type-checking context. */
   private[typing] def instantiateTypeContext(ctx: TypeContext)(implicit metas: MetaContext): TypeContext =
@@ -701,19 +702,30 @@ object TypeChecker:
       case _ => None
 
   /** Tries to solve deferred equality constraints by normalizing both sides. */
-  private def solveOpenConstraints(fuel: Int)(implicit ids: IdSupply, ctx: Context, metas: MetaContext): List[TypeError] =
+  private def solveOpenConstraints(fuel: Int, ids: IdSupply, ctx: Context, metas: MetaContext): List[TypeError] =
     var pending = metas.constraints
+    if pending.isEmpty then
+      return List()
+    var constraintCount = pending.length
     var changed = true
     while changed do
+      println(s"$constraintCount pending = $pending")
+      println(s"assigned metas ${metas}")
       changed = false
       val nextPending = ListBuffer[(Constraint, List[TypeError])]()
       for constraint <- pending do
-        trySolveConstraint(constraint, fuel) match
+        trySolveConstraint(constraint, fuel)(using ids, ctx, metas) match
           case None =>
             changed = true
           case Some(unresolved) =>
             nextPending.addOne(unresolved)
       pending = nextPending.toList.map(_._1)
+      if metas.constraints.length > constraintCount then
+        println(s"new constraints were created")
+        val newConstraints = metas.constraints.drop(constraintCount)
+        constraintCount += newConstraints.length
+        pending = pending ++ newConstraints
+        changed = true
       if !changed then
         return nextPending.iterator.flatMap(_._2).toList
     List.empty

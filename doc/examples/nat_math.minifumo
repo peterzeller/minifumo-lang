@@ -99,6 +99,33 @@ fun Nat_natLe_greater[a: Nat, b: Nat](h: natLe(a, b)): natLe(a, Suc(b))
                     let h3: natLe(Suc(a1), Suc(Suc(b1))) = subst[Bool, natLe(a1, Suc(b1)), natLe(Suc(a1), Suc(Suc(b1))), (x) => Eq(x, True)](Eq_symmetric(show_natLe_suc), IH) // TODO should be able to infer motive
                     h3
 
+fun Nat_natLe_to_exists[a: Nat, b: Nat](h: natLe(a, b)): exists x: Nat :: natAdd(a, x) = b
+    match b
+        case Zero
+            // if a is less than or equal to 0, then a must be 0, and we can choose x = 0
+            let a_is_zero: Eq(a, Zero) = natLe_zero_is_zero(subst(match_Eq, h))
+            let eq: Eq(natAdd(a, Zero), Zero) = subst(Eq_symmetric(a_is_zero), refl)
+            MakeExists(Zero, eq)
+        case Suc(b1)
+            match a
+                case Zero
+                    // if 0 is less than or equal to Suc(b1), then we can choose x = Suc(b1)
+                    let x: Nat = Suc(b1)
+                    MakeExists(x, refl)
+                case Suc(a1)
+                    MakeExists(Zero, refl)
+                    /*
+                    // from h have natLe(Suc(a1), Suc(b1)), we can conclude natLe(a1, b1)
+                    let h1: natLe(Suc(a1), Suc(b1)) = subst(refl2, h)
+                    let h2: natLe(a1, b1) = subst[Bool, natLe(Suc(a1), Suc(b1)), natLe(a1, b1), (x) => Eq(x, True)](show_natLe_suc, h1) // TODO should be able to infer motive
+                    let IH: (exists x: Nat :: natAdd(a1, x) = b1) = Nat_natLe_to_exists(h2)
+                    match IH
+                        case MakeExists(x, eq)
+                            let new_x: Nat = Suc(x)
+                            let new_eq: Eq(natAdd(Suc(a1), new_x), b) = subst[Bool, natAdd(Suc(a1), new_x), b, (x) => Eq(x, b)](refl2, subst[Bool, natAdd(a1, x), b1, (x) => Eq(natAdd(Suc(a1), new_x), b)](refl2, eq))
+                            MakeExists(new_x, new_eq)
+*/
+
 fun Nat_natLe_not[a: Nat, b: Nat](h: (natLe(a, b) = False)): natLt(b, a)
     axiom
 

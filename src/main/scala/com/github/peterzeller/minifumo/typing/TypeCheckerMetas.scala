@@ -20,8 +20,15 @@ object TypeCheckerMetas:
     if occurs(metaId.index, term) then
       false
     else
-      metas.assign(metaId.index, term)
-      true
+      metas.getAssignment(metaId.index) match {
+        case Some(value) =>
+          // The meta is already assigned, add constraint that already assigned value must be equal to the value we wanted to assign
+          metas.addConstraint(EqualityConstraint(value, term, metaId.source))
+          true
+        case None =>
+          metas.assign(metaId.index, term)
+          true
+      }
   }
 
   /** Performs an occurs check for metas in a typed term. */
