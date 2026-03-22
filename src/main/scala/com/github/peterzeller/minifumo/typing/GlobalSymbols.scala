@@ -298,6 +298,8 @@ final case class FunctionSymbol(
         allErrors ++= errors
         val (elaboratedBody, unresolvedMetaErrors) = TypeChecker.finalizeTopLevelExpr(body)(using s.continuationContext, s.metaStore)
         allErrors ++= unresolvedMetaErrors
+        val (_, signatureMetaErrors) = TypeChecker.finalizeTopLevelExpr(s.sig.functionType)(using s.continuationContext, s.metaStore)
+        allErrors ++= signatureMetaErrors
         val completenessErrors = TypeChecker.checkMatchCompletenessInExpr(elaboratedBody)(using s.continuationContext, s.metaStore)
         allErrors ++= completenessErrors
 
