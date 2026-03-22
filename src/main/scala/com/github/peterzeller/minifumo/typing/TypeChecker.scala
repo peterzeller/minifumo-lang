@@ -1263,23 +1263,34 @@ object TypeChecker:
         ctx.globals.names.get(name) match
           case Some(symbol) =>
             val (ctorSymbol, ctorErrors) = globalSymbolToCtorSymbol(symbol, pattern.source)
-            val fieldTypes = extractCtorFieldTypes(ctorSymbol.tpe, expectedType)
-            val paddedFieldTypes = fieldTypes.padTo(args.length, TypedAst.Expr.UnknownType()(pattern.source))
-            val argResults = args.zip(paddedFieldTypes).map { (arg, fieldType) =>
-              checkPattern(arg, fieldType, ctx, ids)
+            val (ctorFields, ctorResultType) = decomposeCtorTypeWithFields(ctorSymbol.tpe)
+            val ctorParamIds = collectParamIds(ctorResultType)
+            val ctorTypeSubst = collectTypeParamSubst(ctorResultType, expectedType, ctorParamIds, Map())
+            val initialAcc = (List.empty[TypedAst.Pattern], Map.empty[String, LocalBinding], Map.empty[Int, TypedAst.Expr], List.empty[TypeError])
+            val (typedArgsRev, bindings, nestedRefinements, argErrors) = args.zipWithIndex.foldLeft(initialAcc) {
+              case ((typedAcc, bindingsAcc, refinementAcc, errorsAcc), (argPattern, index)) =>
+                val expectedFieldType = ctorFields.lift(index) match
+                  case Some(fieldSymbol) => substituteTypeParams(fieldSymbol.tpe, ctorTypeSubst ++ refinementAcc)
+                  case None => TypedAst.Expr.UnknownType()(argPattern.source)
+                val argResult = checkPattern(argPattern, expectedFieldType, ctx, ids)
+                val argExpr = patternToExpr(argResult.typedPattern, argResult.refinements, argPattern.source)
+                val updatedRefinements = ctorFields.lift(index) match
+                  case Some(fieldSymbol) => refinementAcc + (fieldSymbol.id -> argExpr)
+                  case None => refinementAcc
+                (
+                  argResult.typedPattern :: typedAcc,
+                  bindingsAcc ++ argResult.bindings,
+                  updatedRefinements ++ argResult.refinements,
+                  errorsAcc ++ argResult.errors
+                )
             }
-            // Merges nested argument bindings/refinements so dependent information from
-            // constructor arguments is available in the branch body.
-            val errors = argResults.flatMap(_.errors)
-            val bindings = argResults.flatMap(_.bindings).toMap
-            val nestedRefinements = argResults.foldLeft(Map[Int, TypedAst.Expr]())((acc, result) => acc ++ result.refinements)
-            val typedArgs = argResults.map(_.typedPattern)
+            val typedArgs = typedArgsRev.reverse
             val ctorRefinement = extractPatternRefinement(ctorSymbol.tpe, expectedType)
             PatternCheckResult(
               TypedAst.Pattern.Ctor(ctorSymbol, typedArgs)(pattern.source),
               bindings,
               nestedRefinements ++ ctorRefinement,
-              errors ++ ctorErrors
+              argErrors ++ ctorErrors
             )
           case None =>
             val symbol = ErrorSymbols.constructor(name)
@@ -1334,6 +1345,39 @@ object TypeChecker:
         case _ =>
           (fields, tpe)
     loop(ctorType, Nil)
+
+
+  /** Collects explicit constructor fields together with their binders and the constructor result type. */
+  private def decomposeCtorTypeWithFields(ctorType: TypedAst.Expr): (List[LocalSymbol], TypedAst.Expr) =
+    def loop(tpe: TypedAst.Expr, fields: List[LocalSymbol]): (List[LocalSymbol], TypedAst.Expr) =
+      tpe match
+        case TypedAst.Expr.Pi(dom, cod, false) =>
+          loop(cod, fields :+ dom)
+        case TypedAst.Expr.Pi(_, cod, true) =>
+          loop(cod, fields)
+        case _ =>
+          (fields, tpe)
+    loop(ctorType, Nil)
+
+  /** Converts a typed pattern to an expression for dependent field substitution. */
+  private def patternToExpr(pattern: TypedAst.Pattern, refinements: Map[Int, TypedAst.Expr], source: ast.SourceRange): TypedAst.Expr =
+    pattern match
+      case TypedAst.Pattern.Wildcard() => TypedAst.Expr.UnknownType()(source)
+      case TypedAst.Pattern.Lit(value) => TypedAst.Expr.Lit(value)(source)
+      case TypedAst.Pattern.Binder(symbol) => TypedAst.Expr.Var(symbol)(source)
+      case TypedAst.Pattern.Ctor(symbol, args) =>
+        val ctorDecl = symbol.dt.typed.ctors.find(_.symbol.name == symbol.name)
+        val baseCtor = ctorDecl match
+          case Some(value) =>
+            value.implicitFields.foldLeft[TypedAst.Expr](TypedAst.Expr.Var(symbol)(source)) { (callee, field) =>
+              val implicitArg = refinements.getOrElse(field.id, TypedAst.Expr.Var(field)(source))
+              TypedAst.Expr.AppImplicit(callee, implicitArg, TypedAst.Expr.UnknownType()(source))(source)
+            }
+          case None =>
+            TypedAst.Expr.Var(symbol)(source)
+        args.foldLeft[TypedAst.Expr](baseCtor) { (callee, argPattern) =>
+          TypedAst.Expr.App(callee, patternToExpr(argPattern, refinements, source), TypedAst.Expr.UnknownType()(source))(source)
+        }
 
   // Collects parameter symbol ids that appear in a type expression.
   private def collectParamIds(expr: TypedAst.Expr): Set[Int] =
