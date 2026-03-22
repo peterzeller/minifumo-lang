@@ -181,10 +181,15 @@ fun natLt(a: Nat, b: Nat): Bool
 
 // Returns True when the first Nat is less than or equal to the second.
 fun natLe(a: Nat, b: Nat): Bool
-    if natLt(a, b)
-        True
-    else
-        natEq(a, b)
+    match a
+        case Zero
+            True
+        case Suc(aTail)
+            match b
+                case Zero
+                    False
+                case Suc(bTail)
+                    natLe(aTail, bTail)
 
 // Adds two Nat values.
 export fun natAdd(a: Nat, b: Nat): Nat

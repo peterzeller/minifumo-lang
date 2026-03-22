@@ -1,5 +1,9 @@
 import com.github.peterzeller.minifumo.ast
-import com.github.peterzeller.minifumo.typing.{LocalSymbol, Symbol, TermSymbol, TypeChecker, TypedAst}
+import com.github.peterzeller.minifumo.builtins.Standard
+import com.github.peterzeller.minifumo.parser.parseInput
+import com.github.peterzeller.minifumo.typing.TypeChecker.IdSupply
+import com.github.peterzeller.minifumo.typing.TypedAst.TopLevel.FunDecl
+import com.github.peterzeller.minifumo.typing.{GlobalSymbolsIo, LocalSymbol, ProjectSymbolCache, Symbol, TermSymbol, TypeChecker, TypedAst}
 
 import scala.collection.mutable
 
@@ -95,6 +99,7 @@ class TypeCheckerSuite extends munit.FunSuite:
     val meta = TypedAst.Expr.Meta(0, TypedAst.Expr.UnknownType()(source))("T", source)
     val literal = TypedAst.Expr.Lit(ast.Literal.IntLit("7")(source))(source)
     given TypeChecker.Context = emptyContext
+    given ids: IdSupply = IdSupply()
     val assignments = mutable.Map[Int, TypedAst.Expr]()
     val constraintsBuf = mutable.ListBuffer[TypeChecker.Constraint]()
     given TypeChecker.MetaContext = new TypeChecker.MetaContext:
@@ -106,6 +111,39 @@ class TypeCheckerSuite extends munit.FunSuite:
     assert(result)
     assertEquals(assignments.get(0), Some(literal))
     assertEquals(constraintsBuf.length, 0)
+  }
+
+  test("pretty print of eq constraints") {
+    val ids = IdSupply()
+    val cache = ProjectSymbolCache(GlobalSymbolsIo.create("."), ids)
+    val (typed, errs) = TypeChecker.checkProgram("standard.minifumo", Standard.standardProgram, cache, false, ids)
+    require(errs.isEmpty)
+    val funcs = typed.items.flatMap {
+      case f: FunDecl => List(f)
+      case _ => List()
+    }
+    val substFunc = funcs.find(_.sig.symbol.name == "subst").get
+    val paramsStr = substFunc.sig.params.map(p => s"$p: ${p.tpe}").mkString(", ")
+    require(paramsStr == "h: (x = y), hx: motive(x)")
+
+  }
+
+  test("type checker substitution example") {
+    val input =
+      """
+        |fun example(x: Int, e: (x = 2)): (x+1 = 2+1)
+        |    let e1: (x+1 = x+1) = refl
+        |    let e2: (x+1 = 2+1) = subst[Int, x, 2, (y) => (x+1 = y+1)](e, e1)
+        |    e2
+    """.stripMargin
+    val (ast, _) = parseInput(input)
+    val dummyPath: String = "dummy.minifumo"
+    val dummyCache = new ProjectSymbolCache(GlobalSymbolsIo.create("."), TypeChecker.IdSupply())
+    dummyCache.addInput(dummyPath, input)
+    val (_, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
+    for e <- errors do
+      println(e)
+    assertEquals(errors, List())
   }
 
 //  test("pattern matching substitutes constructor type parameters without standard library") {

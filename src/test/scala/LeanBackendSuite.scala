@@ -108,7 +108,8 @@ class LeanBackendSuite extends FunSuite:
       "quantifier_examples.minifumo",
       "logic.minifumo",
       "eq_impossible_match.minifumo",
-      "subst_infers_motive.minifumo"
+      "subst_infers_motive.minifumo",
+      "nat_math.minifumo"
     )
 
   // Checks all well-typed examples translate to Lean and are accepted by Lean.

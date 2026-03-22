@@ -296,20 +296,31 @@ private class HandwrittenParser(tokens: Vector[Token]):
   private def parseMatchExpr(start: Token): Expr =
     val factName = parseOptionalBranchFactName()
     val scrutinee = parseExpr()
-    consume(TokenKind.NL, "Expected newline before match cases.")
-    if !check(TokenKind.BEGIN) then
+    var useIndent = false
+    if check(TokenKind.NL) then {
+      useIndent = true
+      consume(TokenKind.NL, "Expected newline before match cases.")
+    }
+    if !check(TokenKind.BEGIN) && !check(TokenKind.CASE) then
       // empty match expression
       return Expr.Match(scrutinee, factName, List())(merge(start, previous.source))
 
-    consume(TokenKind.BEGIN, "Expected begin for match cases.")
+    if useIndent then
+      consume(TokenKind.BEGIN, "Expected begin for match cases.")
     val cases = scala.collection.mutable.ListBuffer.empty[MatchCase]
-    while !check(TokenKind.END) && !isAtEnd do
+    while check(TokenKind.CASE) && !isAtEnd do
       consume(TokenKind.CASE, "Expected case branch.")
       val pat = parsePattern()
-      val body = parseSuite()
+      val body =
+        if check(TokenKind.FAT_ARROW) then {
+          consume(TokenKind.FAT_ARROW, "expected '=>'")
+          parseExpr()
+        } else
+          parseSuite()
       cases += MatchCase(pat, body)(merge(pat.source, body.source))
       while matchKind(TokenKind.NL) do ()
-    consume(TokenKind.END, "Expected end of match block.")
+    if useIndent then
+      consume(TokenKind.END, "Expected end of match block.")
     Expr.Match(scrutinee, factName, cases.toList)(merge(start, previous.source))
 
 

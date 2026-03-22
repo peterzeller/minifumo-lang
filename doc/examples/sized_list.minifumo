@@ -7,7 +7,7 @@ export fun appendSizedList[T: Type, N: Nat, M: Nat](xs: SizedList[T, N], ys: Siz
     case SizedNil
       ys
     case SizedCons(h, t)
-      SizedCons[T][natAdd(N, M)](h, appendSizedList[T][N][M](t, ys))
+      SizedCons(h, appendSizedList(t, ys))
 
 /*
 export fun sizedListToString[T: Type, PeterN: Nat](s: Show[T], list: SizedList[T, PeterN]): String

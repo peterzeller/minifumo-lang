@@ -1,0 +1,173 @@
+// This example shows some simple logical equalities
+
+fun Nat_zero_less_or_equal[a: Nat](): natLe(Zero, a)
+    // proof by induction on a
+    match a
+        case Zero
+            // 0 is less than or equal to 0
+            refl
+        case Suc(a1)
+            refl
+
+
+fun Eq_symmetric[T: Type, x: T, y: T](h: Eq(x, y)): Eq(y, x)
+    // proof by induction on a
+    match h
+        case refl
+            refl
+
+fun bool_to_prop(a: Bool): Prop
+    match a
+        case True
+            TrueProp
+        case False
+            FalseProp
+
+fun bool_distinct1(h: Eq(True, False)): FalseProp
+    // impossible case: true cannot be equal to false
+    match h
+
+
+fun bool_distinct[a: Bool](h1: Eq(a, True), h2: Eq(a, False)): FalseProp
+    // proof by induction on a
+    match a
+        case True
+            let h: (a = True) = match_Eq
+            // TODO should also work with
+            // let q: Eq(True, False) = subst(match_Eq, h2)
+            let q: Eq(True, False) = subst[Bool, a, True, (x) => Eq(x, False)](match_Eq, h2)
+            match q
+        case False
+            let h: Eq(a, False) = match_Eq
+            let q: Eq(False, True) = subst[Bool, a, False, (x) => Eq(x, True)](match_Eq, h1)
+            match q
+
+fun natLe_zero_is_zero[a: Nat](h: natLe(a, Zero)): Eq(a, Zero)
+    // proof by induction on a
+    match a
+        case Zero
+            // if 0 is less than or equal to 0, then a must be zero
+            refl
+        case Suc(a1)
+            // if 0 is less than or equal to Suc(a1), then a1 must be zero
+            let is_false: Eq(natLe(Suc(a1), Zero), False) = refl
+            let e: Eq(a, Suc(a1)) = match_Eq
+            let is_false2: Eq(natLe(a, Zero), False) = subst(Eq_symmetric(e), is_false)
+            match bool_distinct(h, is_false2)
+
+
+fun refl2[T: Type](x: T): Eq(x, x)
+    refl
+
+fun Eq_transitivity[T: Type, x: T, y: T, z: T](h1: Eq(x, y), h2: Eq(y, z)): Eq(x, z)
+    match h1
+        case refl
+            h2
+
+fun show_match_bool_eq[T: Type, c: Bool, t1: T, t2: T, f1: T, f2: T](eq_t: t1 = t2, eq_f: f1 = f2): (match c case True => t1 case False => f1) = (match c case True => t2 case False => f2)
+    let e1 = subst[T, t1, t2, (x) => ((match c case True => t1 case False => f1) = (match c case True => x case False => f1))](eq_t, refl)
+    let e2 = subst[T, f1, f2, (x) => ((match c case True => t2 case False => f1) = (match c case True => t2 case False => x))](eq_f, refl)
+    e1.transitivity(e2)
+
+
+fun show_natLe_suc[a: Nat, b: Nat](): (natLe(Suc(a), Suc(b))) = (natLe(a, b))
+    refl
+
+
+fun show_natLt_suc[a: Nat, b: Nat](): (natLt(Suc(a), Suc(b))) = (natLt(a, b))
+    refl
+
+
+fun Nat_natLe_greater[a: Nat, b: Nat](h: natLe(a, b)): natLe(a, Suc(b))
+    match a_match: a
+        case Zero
+            // if 0 is less than or equal to b, then 0 is also less than or equal to Suc(b)
+            Nat_zero_less_or_equal[Suc(b)]
+        case Suc(a1)
+            match b_match: b
+                case Zero
+                    // this case is impossible, since Suc(a1) cannot be less than or equal to 0
+                    let is_false1: Eq(natLe(Suc(a1), Zero), False) = refl
+                    let is_false2: Eq(natLe(a, Zero), False) = subst(Eq_symmetric(a_match), is_false1)
+                    let is_false3: Eq(natLe(a, b), False) = subst[Nat, Zero, b, (x) => Eq(natLe(a, x), False)](Eq_symmetric(b_match), is_false2)
+                    match bool_distinct[natLe(a, b)](h, is_false3)
+                case Suc(b1)
+                    // from h have natLe(Suc(a1), Suc(b1)), we can conclude natLe(a1, b1)
+                    let h1: natLe(Suc(a1), Suc(b1)) = subst(b_match, subst(a_match, h))
+                    let h2: natLe(a1, b1) = subst[Bool, natLe(Suc(a1), Suc(b1)), natLe(a1, b1), (x) => Eq(x, True)](show_natLe_suc, h1) // TODO should be able to infer motive
+                    let IH: natLe(a1, Suc(b1)) = Nat_natLe_greater(h2)
+                    let h3: natLe(Suc(a1), Suc(Suc(b1))) = subst[Bool, natLe(a1, Suc(b1)), natLe(Suc(a1), Suc(Suc(b1))), (x) => Eq(x, True)](Eq_symmetric(show_natLe_suc), IH) // TODO should be able to infer motive
+                    h3
+
+fun Eq_Nat_add_one_both_sides[a: Nat, b: Nat] (h: (a = b)): (Suc(a) = Suc(b))
+    subst[Nat, a, b, (x) => (Suc(a) = Suc(x))](h, refl)
+
+fun Nat_natLe_to_exists[a: Nat, b: Nat](h: natLe(a, b)): exists x: Nat :: natAdd(a, x) = b
+    match b_cases: b
+        case Zero
+            // if a is less than or equal to 0, then a must be 0, and we can choose x = 0
+            let a_is_zero: (a = Zero) = natLe_zero_is_zero(subst(b_cases, h))
+            let eq: (natAdd(a, Zero) = Zero) = subst(Eq_symmetric(a_is_zero), refl)
+            MakeExists(Zero, eq)
+        case Suc(b1)
+            match a_cases: a
+                case Zero
+                    // if 0 is less than or equal to Suc(b1), then we can choose x = Suc(b1)
+                    let x: Nat = Suc(b1)
+                    let eq: (natAdd(Zero, x) = Suc(b1)) = subst[Nat, Suc(b1), x, (y) => Eq(y, Suc(b1))](Eq_symmetric(x_def), refl)
+                    MakeExists(x, eq)
+                case Suc(a1)
+                    let h2: natLe(a1, b1) = subst(a_cases, subst(b_cases, h))
+                    let IH: (exists x: Nat :: natAdd(a1, x) = b1) = Nat_natLe_to_exists(h2)
+                    match IH
+                        case MakeExists(x, prop)
+                            let prop2: (natAdd(a1, x) = b1) = axiom // TODO this should match with prop
+                            let new_eq: (natAdd(Suc(a1), x) = Suc(b1)) = Eq_Nat_add_one_both_sides(prop2)
+                            MakeExists(x, new_eq)
+
+
+fun Nat_natLe_not[a: Nat, b: Nat](h: (natLe(a, b) = False)): natLt(b, a)
+    axiom
+
+fun Nat_naLt_Suc[a: Nat, b: Nat](h: natLt(a, Suc(b))): natLe(a, b)
+    match a_def: a
+        case Zero
+            subst(a_def, h)
+        case Suc(a1)
+            let h2: natLt(Suc(a1), Suc(b)) = subst(a_def, h)
+            match h2 // TODO this does not seem right, why should this be impossible?
+
+
+fun Nat_natLe_transitive[a: Nat, b: Nat, c: Nat](h1: natLe(a, b), h2: natLe(b, c)): natLe(a, c)
+    // proof by induction on a
+    match s: c
+        case Zero
+            // from h2 we know that b is zero:
+            let h2_: natLe(b, Zero) = subst(s, h2)
+            let b_is_zero: Eq(b, Zero) = natLe_zero_is_zero(h2_)
+            // with h1 we know that a is also zero:
+            let h1_: natLe(a, Zero) = subst(b_is_zero, h1)
+            let a_is_zero: Eq(a, Zero) = natLe_zero_is_zero(h1_)
+            // thus we need to prove natLe(Zero, Zero), which is true
+            subst(Eq_symmetric(a_is_zero), Nat_zero_less_or_equal[Zero])
+        case Suc(c1)
+            match cs: natLe(b, c1)
+                case True
+                    let ih: natLe(a, c1) = Nat_natLe_transitive(h1, cs)
+                    let ih2: natLe(a, Suc(c1)) = Nat_natLe_greater(ih)
+                    ih2
+                case False
+                    // !(b <= c1) ==> c1 < b
+                    let c1_is_less_than_b: natLt(c1, b) = Nat_natLe_not(cs)
+                    // from this have Suc(c1) < Suc(b)
+                    let suc_c1_is_less_than_suc_b: natLt(Suc(c1), Suc(b)) = subst[Bool, natLt(c1, b), natLt(Suc(c1), Suc(b)), (x) => Eq(x, True)](show_natLt_suc, c1_is_less_than_b)
+                    // from this have c < Suc(b)
+                    let c_is_less_than_suc_b: natLt(c, Suc(b)) = subst(Eq_symmetric(s), suc_c1_is_less_than_suc_b)
+                    // thus c <= b
+                    let b_is_greater_or_equal_c: natLe(c, b) = axiom
+                    // from h2 have b <= c
+                    let b_is_less_or_equal_c: natLe(b, c) = h2
+                    // if b is not less than or equal to c1, then b must be equal to c
+                    let b_is_c: Eq(b, Suc(c1)) = axiom //subst(cs, refl)
+                    let h1_: natLe(a, Suc(c1)) = subst(b_is_c, h1)
+                    h1_
