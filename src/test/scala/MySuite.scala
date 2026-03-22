@@ -483,6 +483,24 @@ class MySuite extends munit.FunSuite {
     assertEquals(errors, List())
   }
 
+
+  test("dependent pair pattern matching rewrites witness proposition") {
+    val input =
+      """
+        |fun peterTest(h: (exists x: Int :: x > 0)): exists y: Int :: y > 0
+        |    match h
+        |        case MakeExists(y, prop)
+        |            let prop2: (y > 0) = prop
+        |            MakeExists(y, prop2)
+      """.stripMargin
+    val (ast, _) = parseInput(input)
+    val dummyPath = "dependent-exists-pattern.minifumo"
+    val dummyCache = new ProjectSymbolCache(GlobalSymbolsIo.create("."), TypeChecker.IdSupply())
+    dummyCache.addInput(dummyPath, input)
+    val (_, errors) = TypeChecker.checkProgram(dummyPath, ast, dummyCache, true, dummyCache.ids)
+    assertEquals(errors, List())
+  }
+
   test("exists constructor does not accept invalid equality witness") {
     val input =
       """
