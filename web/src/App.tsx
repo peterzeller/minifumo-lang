@@ -467,7 +467,7 @@ export function App() {
         </button>
         <h1 className="topBarTitle">{activePageTitle}</h1>
         <button onClick={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))} className="themeToggleButton">
-          {theme === 'dark' ? 'Light' : 'Dark'}
+          {theme === 'dark' ? 'Bright' : 'Dark'}
         </button>
       </header>
 

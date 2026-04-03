@@ -11,6 +11,9 @@
   --button-secondary-text: #1e3a8a;
   --editor-bg: #f8fafc;
   --editor-text: #0f172a;
+  --word-card-bg: #ffffff;
+  --word-card-text: #0f172a;
+  --word-card-border: #cbd5e1;
   color-scheme: light;
 }
 
@@ -26,6 +29,9 @@
   --button-secondary-text: #dbe7ff;
   --editor-bg: #020617;
   --editor-text: #e2e8f0;
+  --word-card-bg: #1e293b;
+  --word-card-text: #f9fafb;
+  --word-card-border: #475569;
   color-scheme: dark;
 }
 
@@ -263,6 +269,23 @@ button:disabled {
   gap: 0.75rem;
   margin-top: auto;
   padding-top: 1rem;
+}
+
+.wordCard,
+.word-card,
+.sentenceWordCard,
+.sentence-word-card,
+.translationWordCard,
+.translation-word-card,
+button.wordCard,
+button.word-card,
+button.sentenceWordCard,
+button.sentence-word-card,
+button.translationWordCard,
+button.translation-word-card {
+  background: var(--word-card-bg);
+  color: var(--word-card-text);
+  border: 1px solid var(--word-card-border);
 }
 
 @media (max-width: 700px) {
