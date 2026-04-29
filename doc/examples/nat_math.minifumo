@@ -102,6 +102,12 @@ fun Nat_natLe_greater[a: Nat, b: Nat](h: natLe(a, b)): natLe(a, Suc(b))
 fun Eq_Nat_add_one_both_sides[a: Nat, b: Nat] (h: (a = b)): (Suc(a) = Suc(b))
     subst[Nat, a, b, (x) => (Suc(a) = Suc(x))](h, refl)
 
+
+fun Eq_Nat_remove_one_both_sides[a: Nat, b: Nat] (h: (Suc(a) = Suc(b))): (a = b)
+    match h
+        case refl
+            refl
+
 fun Nat_natLe_to_exists[a: Nat, b: Nat](h: natLe(a, b)): exists x: Nat :: natAdd(a, x) = b
     match b_cases: b
         case Zero
@@ -121,13 +127,102 @@ fun Nat_natLe_to_exists[a: Nat, b: Nat](h: natLe(a, b)): exists x: Nat :: natAdd
                     let IH: (exists x: Nat :: natAdd(a1, x) = b1) = Nat_natLe_to_exists(h2)
                     match IH
                         case MakeExists(x, prop)
-                            let prop2: (natAdd(a1, x) = b1) = axiom // TODO this should match with prop
-                            let new_eq: (natAdd(Suc(a1), x) = Suc(b1)) = Eq_Nat_add_one_both_sides(prop2)
+                            let new_eq: (natAdd(Suc(a1), x) = Suc(b1)) = Eq_Nat_add_one_both_sides(prop)
                             MakeExists(x, new_eq)
 
 
+fun natAdd_zero_right[a: Nat](): natAdd(a, Zero) = a
+    match a
+        case Zero
+            refl
+        case Suc(a1)
+            let IH: (natAdd(a1, Zero) = a1) = natAdd_zero_right[a1]()
+            Eq_Nat_add_one_both_sides(IH)
+
+fun natLe_symmetric[a: Nat](): natLe(a, a)
+    // proof by induction on a
+    match a
+        case Zero
+            // 0 is less than or equal to 0
+            refl
+        case Suc(a1)
+            let IH: natLe(a1, a1) = natLe_symmetric[a1]()
+            let h: natLe(Suc(a1), Suc(a1)) = subst[Bool, natLe(a1, a1), natLe(Suc(a1), Suc(a1)), (x) => Eq(x, True)](show_natLe_suc, IH)
+            h
+
+// Substitutes equal values into a dependent motive.
+export fun subst2[T: Type, motive: T -> Type, x: T, y: T](h: Eq[T](x, y), hx: motive(x)): motive(y)
+    match h
+        case refl
+            hx
+
+fun natAdd_suc_right[a: Nat, b: Nat](): (natAdd(a, Suc(b)) = Suc(natAdd(a, b)))
+    match a
+        case Zero
+            refl
+        case Suc(a1)
+            let h1: (natAdd(Suc(a1), Suc(b)) = Suc(natAdd(a1, Suc(b)))) = refl
+            let IH: (natAdd(a1, Suc(b)) = Suc(natAdd(a1, b))) = natAdd_suc_right
+            let h2: (Suc(natAdd(a1, Suc(b))) = Suc(Suc(natAdd(a1, b)))) = subst2[Nat, (y) => (Suc(natAdd(a1, Suc(b))) = Suc(y))](IH, refl)
+            h1.transitivity(h2)
+
+fun natAdd_commutes[a: Nat, b: Nat](): (natAdd(a, b) = natAdd(b, a))
+    // induction over a
+    match a_case: a
+        case Zero
+            let h1: (natAdd(Zero, b) = b) = refl
+            let h2: (b = natAdd(b, Zero)) = Eq_symmetric(natAdd_zero_right())
+            h1.transitivity(h2)
+        case Suc(a1)
+            let h1: (natAdd(Suc(a1), b) = Suc(natAdd(a1, b))) = refl
+            let IH: (natAdd(a1, b) = natAdd(b, a1)) = natAdd_commutes
+            let h2: (Suc(natAdd(a1, b)) = Suc(natAdd(b, a1))) = subst2[Nat, (y) => (Suc(natAdd(a1, b)) = Suc(y)) ](IH, refl)
+            let h3: (Suc(natAdd(b, a1)) = natAdd(b, Suc(a1))) = subst2[Nat, (y) => (Suc(natAdd(b, a1)) = y) ](Eq_symmetric(natAdd_suc_right), refl)
+            h1.transitivity(h2).transitivity(h3)
+
+fun Nat_natLe_from_exists[a: Nat, b: Nat, x: Nat](h: natAdd(x, a) = b): natLe(a, b)
+    match x_case: x
+        case Zero
+            let eq_a_b: (natAdd(x, a) = b) = subst2[Nat, (y) => Eq(y, b)](Eq_symmetric(h), refl)
+            let eq_a_b2: (a = b) = subst2(x_case, eq_a_b)
+            let le_b: natLe(b, b) = natLe_symmetric[b]
+            subst[Nat, b, a, (y) => natLe(y, b)](Eq_symmetric(eq_a_b2), le_b)
+        case Suc(x1)
+            let eq_left: (natAdd(x, a) = natAdd(Suc(x1), a)) = subst2[Nat, (y) => Eq(natAdd(x, a), natAdd(y, a))](x_case, refl)
+            let h2: (natAdd(Suc(x1), a) = b) = subst2[Nat, (y) => Eq(y, b)](eq_left, h)
+            let h3: (Suc(natAdd(x1, a)) = b) = h2
+            match b_case: b
+                case Zero
+                    let h4: (Suc(natAdd(x1, a)) = Zero) = subst2(b_case, h3)
+                    // b cannot be zero, since left hand side is Suc and rhs is zero
+                    match h4
+                case Suc(b1)
+                    let h1: (Suc(natAdd(x1, a)) = b) = subst2(x_case, h)
+                    let h2: (Suc(natAdd(x1, a)) = Suc(b1)) = subst2(b_case, h1)
+                    let h3: (natAdd(x1, a) = b1) = Eq_Nat_remove_one_both_sides(h2)
+                    let IH: (natLe(a, b1)) = Nat_natLe_from_exists(h3)
+                    // a <= b1
+                    ???
+
+fun Nat_natLe_from_exists2[a: Nat, b: Nat, x: Nat](h: natAdd(a, x) = b): natLe(a, b)
+    match x_case: x
+        case Zero
+            let eq_a_b: (natAdd(a, x) = b) = subst[Nat, b, natAdd(a, x), (y) => Eq(y, b)](Eq_symmetric(h), refl)
+            let eq_a_b2: (natAdd(a, Zero) = b) = subst(x_case, eq_a_b)
+            let eq_a_b3: (a = b) = subst(natAdd_zero_right[a], eq_a_b2)
+            let le_b: natLe(b, b) = natLe_symmetric[b]
+            subst[Nat, b, a, (y) => natLe(y, b)](Eq_symmetric(eq_a_b3), le_b)
+        case Suc(x1)
+            axiom
+
 fun Nat_natLe_not[a: Nat, b: Nat](h: (natLe(a, b) = False)): natLt(b, a)
-    axiom
+    match Nat_natLe_to_exists(h)
+        case MakeExists(x, prop)
+            // if a is not less than or equal to b, then there must be some x such that a + x = b, which means that b is less than a
+            let h2: (natAdd(a, x) = b) = eq
+            let h3: (natAdd(a, x) = b) = subst(Eq_symmetric(h2), refl)
+            let h4: (natLt(b, a)) = axiom
+            h4
 
 fun Nat_naLt_Suc[a: Nat, b: Nat](h: natLt(a, Suc(b))): natLe(a, b)
     match a_def: a

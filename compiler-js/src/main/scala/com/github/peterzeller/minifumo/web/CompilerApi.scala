@@ -43,41 +43,32 @@ object CompilerApi:
     symbolCache.addInput(inMemoryFile, source)
     try
       val (program, syntaxErrors) = parseInput(source)
-      if syntaxErrors.nonEmpty then
+      val (typedProgram, typeErrors) = TypeChecker.checkProgram(inMemoryFile, program, symbolCache, importStandard = true, ids)
+      if typeErrors.nonEmpty then
         compileResult(
           success = false,
           output = "",
-          errors = syntaxErrors.map(errorFromSyntax).toJSArray,
+          errors = (syntaxErrors.map(errorFromSyntax) ++ typeErrors.map(errorFromType)).toJSArray,
           typed = false,
           executed = false
         )
+      else if runFunction then
+        val value = Interpreter.evalProg(typedProgram, List(typedStandardProgram), functionName)
+        compileResult(
+          success = true,
+          output = value.toString,
+          errors = js.Array(),
+          typed = true,
+          executed = true
+        )
       else
-        val (typedProgram, typeErrors) = TypeChecker.checkProgram(inMemoryFile, program, symbolCache, importStandard = true, ids)
-        if typeErrors.nonEmpty then
-          compileResult(
-            success = false,
-            output = "",
-            errors = typeErrors.map(errorFromType).toJSArray,
-            typed = false,
-            executed = false
-          )
-        else if runFunction then
-          val value = Interpreter.evalProg(typedProgram, List(typedStandardProgram), functionName)
-          compileResult(
-            success = true,
-            output = value.toString,
-            errors = js.Array(),
-            typed = true,
-            executed = true
-          )
-        else
-          compileResult(
-            success = true,
-            output = s"Compilation successful. Function '${functionName}' is ready.",
-            errors = js.Array(),
-            typed = true,
-            executed = false
-          )
+        compileResult(
+          success = true,
+          output = s"Compilation successful. Function '${functionName}' is ready.",
+          errors = js.Array(),
+          typed = true,
+          executed = false
+        )
     catch
       // Converts unexpected runtime/compiler exceptions into frontend-visible diagnostics.
       case NonFatal(error) =>
