@@ -35,7 +35,7 @@ object Main:
           else
             checkFile(path)
         if failures.nonEmpty then
-          failures.foreach(Console.err.println)
+          Console.err.println(renderTypeErrors(failures).mkString("\n\n"))
           System.exit(1)
       case "compileToLean" :: filename :: Nil =>
         val path = Paths.get(filename)
@@ -140,6 +140,7 @@ object Main:
 
   def renderTypeErrors(errors: List[MinifumoErrorWithPath]): List[String] =
     var linesCache = Map[Path, Vector[String]]()
+    // Reads source lines once per path while formatting a batch of errors.
     def getLines(path: Path): Vector[String] =
       linesCache.get(path) match
         case None =>
@@ -149,23 +150,11 @@ object Main:
         case Some(r) =>
           r
 
-
-
     errors.map { errorWithPath =>
-      val error = errorWithPath.err
-      val lineIndex = error.source.start.line - 1
-      val lines = getLines(Path.of(errorWithPath.p))
-      if lineIndex >= 0 && lineIndex < lines.length then
-        val sourceLine = lines(lineIndex)
-        val startColumn = math.max(1, error.source.start.column)
-        val endColumn = math.max(startColumn, error.source.end.column)
-        val underlineWidth = math.max(1, endColumn - startColumn + 1)
-        val underline = (" " * (startColumn - 1)) + ("^" * underlineWidth)
-        s"${errorWithPath.p}:${error.source.start.line}:${error.source.start.column}\n    ${sourceLine}\n    ${underline}\n${error.message}\n\n"
-      else
-        s"${errorWithPath.p}:${error.source.start.line}:${error.source.start.column}: ${error.message}"
+      TypeChecker.formatError(errorWithPath.p, getLines(Path.of(errorWithPath.p)), errorWithPath.err)
     }
 
+// Reads source lines from a file or the bundled standard library.
 def readLines(path: Path): Vector[String] =
   try
     if path.endsWith("standard.minifumo") then
