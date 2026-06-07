@@ -1459,7 +1459,8 @@ object TypeChecker:
     }
     lambdaExpr
 
-  def formatError(path: String, sourceLines: Vector[String], error: TypeError): String =
+  /** Formats an error with its source line and a caret underline when available. */
+  def formatError(path: String, sourceLines: Vector[String], error: MinifumoError): String =
     val lineNr = error.source.start.line
     val msgHead = s"Error in $path:${lineNr}:${error.source.start.column}"
     if 0 < lineNr && lineNr <= sourceLines.length then
