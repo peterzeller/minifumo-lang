@@ -202,7 +202,11 @@ fun Nat_natLe_from_exists[a: Nat, b: Nat, x: Nat](h: natAdd(x, a) = b): natLe(a,
                     let h3: (natAdd(x1, a) = b1) = Eq_Nat_remove_one_both_sides(h2)
                     let IH: (natLe(a, b1)) = Nat_natLe_from_exists(h3)
                     // a <= b1
-                    ???
+                    let le_suc_b1: natLe(a, Suc(b1)) = Nat_natLe_greater(IH)
+                    let suc_b1_is_b: Eq(Suc(b1), b) = Eq_symmetric(b_case)
+                    match suc_b1_is_b
+                        case refl
+                            le_suc_b1
 
 fun Nat_natLe_from_exists2[a: Nat, b: Nat, x: Nat](h: natAdd(a, x) = b): natLe(a, b)
     match x_case: x
@@ -216,13 +220,17 @@ fun Nat_natLe_from_exists2[a: Nat, b: Nat, x: Nat](h: natAdd(a, x) = b): natLe(a
             axiom
 
 fun Nat_natLe_not[a: Nat, b: Nat](h: (natLe(a, b) = False)): natLt(b, a)
-    match Nat_natLe_to_exists(h)
-        case MakeExists(x, prop)
-            // if a is not less than or equal to b, then there must be some x such that a + x = b, which means that b is less than a
-            let h2: (natAdd(a, x) = b) = eq
-            let h3: (natAdd(a, x) = b) = subst(Eq_symmetric(h2), refl)
-            let h4: (natLt(b, a)) = axiom
-            h4
+    // from h, we know that there exists no x, so that a+x=b
+    let h1: (NOT (exists x: Nat :: natAdd(a, x) = b)) = ???
+    // from that we get that forall x, a+x != b
+    let h2: (forall x: Nat :: NOT (natAdd(a, x) = b)) = ???
+//     match Nat_natLe_to_exists(h)
+//         case MakeExists(x, prop)
+//             // if a is not less than or equal to b, then there must be some x such that a + x = b, which means that b is less than a
+//             let h2: (natAdd(a, x) = b) = eq
+//             let h3: (natAdd(a, x) = b) = subst(Eq_symmetric(h2), refl)
+//             let h4: (natLt(b, a)) = axiom
+//             h4
 
 fun Nat_naLt_Suc[a: Nat, b: Nat](h: natLt(a, Suc(b))): natLe(a, b)
     match a_def: a

@@ -11,7 +11,6 @@ export function computeDefinition(source: string, uri: string, position: Positio
   }
   let u = definitionUri(uri, currentFile, definition.file)
   console.log(`definition uri`, u)
-  u = "minifumovirtual:/standard.minifumo"
   return Location.create(u, toRange(definition))
 }
 
@@ -35,6 +34,10 @@ function definitionUri(currentUri: string, currentFile: string, targetFile: stri
   }
   if (!currentUri.startsWith('file://')) {
     return currentUri
+  }
+  if (currentFile.endsWith('standard.minifumo')) {
+    // return special virtual file for standard library
+    return "minifumovirtual:/standard.minifumo"
   }
   try {
     if (targetFile.startsWith('/')) {
