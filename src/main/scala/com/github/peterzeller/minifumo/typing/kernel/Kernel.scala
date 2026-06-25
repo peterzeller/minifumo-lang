@@ -18,6 +18,15 @@ object Kernel {
     final case class Const(name: String) extends Term
   }
 
+  final case class InductiveConstructor(name: String, typ: Term)
+
+  final case class InductiveType(
+      name: String,
+      typ: Term,
+      constructors: List[InductiveConstructor],
+      paramCount: Int
+  )
+
   final case class ConstDecl(typ: Term, value: Option[Term], reducibility: Reducibility)
 
   final case class Env(constants: Map[String, ConstDecl]) {
@@ -47,6 +56,22 @@ object Kernel {
   }
 
   final case class KernelError(message: String) extends RuntimeException(message)
+
+  enum Polarity {
+    case Positive
+    case Negative
+
+    /** Flips polarity for negative positions. */
+    def flip: Polarity = this match {
+      case Positive => Negative
+      case Negative => Positive
+    }
+  }
+
+  enum CaseBinderKind {
+    case Arg
+    case InductionHypothesis
+  }
 
   /** Shifts de Bruijn indices in a term by the given amount above a cutoff. */
   def lift(term: Term, by: Int, cutoff: Int): Term = term match {
@@ -162,5 +187,215 @@ object Kernel {
   private def ensureSort(env: Env, ctx: Context, term: Term): Int = whnf(env, ctx, term) match {
     case Term.Sort(level) => level
     case other => throw KernelError(s"Expected a sort, found $other")
+  }
+
+  /** Collects nested Pi binders and returns their domains plus the final body. */
+  private def collectPis(term: Term): (List[Term], Term) = term match {
+    case Term.Pi(dom, cod) =>
+      val (rest, body) = collectPis(cod)
+      (dom :: rest, body)
+    case other => (Nil, other)
+  }
+
+  /** Builds a Pi chain from a list of binder types and a body. */
+  private def mkPi(binders: List[Term], body: Term): Term =
+    binders.foldRight(body)(Term.Pi.apply)
+
+  /** Collects applications into a head and argument list. */
+  private def collectApps(term: Term): (Term, List[Term]) = term match {
+    case Term.App(fn, arg) =>
+      val (head, args) = collectApps(fn)
+      (head, args :+ arg)
+    case other => (other, Nil)
+  }
+
+  /** Builds a nested application from a head term and arguments. */
+  private def mkApp(head: Term, args: List[Term]): Term =
+    args.foldLeft(head)(Term.App.apply)
+
+  /** Ensures that an inductive occurrence is strictly positive in a type. */
+  private def ensurePositive(inductiveName: String, term: Term): Unit = {
+    /** Checks whether the inductive constant appears anywhere in a term. */
+    def containsInductive(target: Term): Boolean = target match {
+      case Term.Const(name) => name == inductiveName
+      case Term.Var(_) => false
+      case Term.Sort(_) => false
+      case Term.Pi(dom, cod) => containsInductive(dom) || containsInductive(cod)
+      case Term.Lam(dom, body) => containsInductive(dom) || containsInductive(body)
+      case Term.App(fn, arg) => containsInductive(fn) || containsInductive(arg)
+      case Term.Let(value, valueTy, body) =>
+        containsInductive(value) || containsInductive(valueTy) || containsInductive(body)
+    }
+
+    /** Recursively checks polarity of inductive occurrences. */
+    def check(term: Term, polarity: Polarity): Unit = term match {
+      case _ if polarity == Polarity.Negative && containsInductive(term) =>
+        throw KernelError(s"Inductive $inductiveName occurs in a negative position.")
+      case Term.Pi(dom, cod) =>
+        check(dom, polarity.flip)
+        check(cod, polarity)
+      case Term.Lam(dom, body) =>
+        check(dom, polarity.flip)
+        check(body, polarity)
+      case Term.App(_, _) if polarity == Polarity.Positive =>
+        val (head, args) = collectApps(term)
+        head match {
+          case Term.Const(name) if name == inductiveName =>
+            if args.exists(containsInductive) then
+              throw KernelError(s"Inductive $inductiveName appears in constructor arguments.")
+          case _ =>
+            if containsInductive(term) then
+              throw KernelError(s"Inductive $inductiveName occurs under a non-positive type constructor.")
+        }
+      case Term.App(_, _) => ()
+      case Term.Let(value, valueTy, body) =>
+        check(value, polarity)
+        check(valueTy, polarity)
+        check(body, polarity)
+      case _ => ()
+    }
+
+    check(term, Polarity.Positive)
+  }
+
+  /** Adds an inductive type with constructors and a recursor after checks. */
+  def addInductive(env: Env, inductive: InductiveType): Env = {
+    val names = inductive.name :: inductive.constructors.map(_.name) ::: List(s"${inductive.name}.rec")
+    names.foreach { name =>
+      if env.lookup(name).isDefined then
+        throw KernelError(s"Constant $name already declared.")
+    }
+
+    val (binders, body) = collectPis(inductive.typ)
+    if inductive.paramCount > binders.length then
+      throw KernelError(s"Inductive ${inductive.name} has too many parameters.")
+    val ctxForInductive = binders.foldLeft(Context.empty)(_.extend(_))
+    val resultLevel = ensureSort(env, ctxForInductive, body)
+    ensureSort(env, Context.empty, infer(env, Context.empty, inductive.typ))
+
+    val params = binders.take(inductive.paramCount)
+    val indices = binders.drop(inductive.paramCount)
+
+    val envWithInductive =
+      env.addConstant(inductive.name, ConstDecl(inductive.typ, None, Reducibility.Opaque))
+
+    inductive.constructors.foreach { ctor =>
+      val (ctorBinders, ctorResult) = collectPis(ctor.typ)
+      if ctorBinders.length < inductive.paramCount then
+        throw KernelError(s"Constructor ${ctor.name} has too few parameters.")
+      var ctx = Context.empty
+      params.zip(ctorBinders.take(inductive.paramCount)).foreach { (expected, actual) =>
+        if !conv(envWithInductive, ctx, actual, expected) then
+          throw KernelError(s"Constructor ${ctor.name} parameter type mismatch.")
+        ctx = ctx.extend(actual)
+      }
+      val ctorArgs = ctorBinders.drop(inductive.paramCount)
+      ctorArgs.foreach { argType =>
+        ensurePositive(inductive.name, argType)
+      }
+      val (resultHead, resultArgs) = collectApps(ctorResult)
+      resultHead match {
+        case Term.Const(name) if name == inductive.name =>
+          val totalArgs = params.length + indices.length
+          if resultArgs.length != totalArgs then
+            throw KernelError(s"Constructor ${ctor.name} must return ${inductive.name} applied to $totalArgs arguments.")
+          val totalBinders = params.length + ctorArgs.length
+          params.indices.foreach { paramIndex =>
+            val expectedIndex = totalBinders - 1 - paramIndex
+            resultArgs(paramIndex) match {
+              case Term.Var(ix) if ix == expectedIndex => ()
+              case other =>
+                throw KernelError(s"Constructor ${ctor.name} must return ${inductive.name} applied to parameters, found $other.")
+            }
+          }
+        case _ =>
+          throw KernelError(s"Constructor ${ctor.name} must return ${inductive.name}.")
+      }
+      val ctorLevel = ensureSort(envWithInductive, Context.empty, infer(envWithInductive, Context.empty, ctor.typ))
+      if ctorLevel > resultLevel + 1 then
+        throw KernelError(s"Constructor ${ctor.name} lives in a higher universe than ${inductive.name}.")
+    }
+
+    val caseTypes = inductive.constructors.foldLeft(List.empty[Term]) { (acc, ctor) =>
+      val baseContextSize = params.length + indices.length + 1 + acc.length
+      val (ctorBinders, _) = collectPis(ctor.typ)
+      val ctorArgs = ctorBinders.drop(inductive.paramCount)
+      val extraBinders = indices.length + 1 + acc.length
+
+      var ihCount = 0
+      val caseBinders = ctorArgs.zipWithIndex.foldLeft(List.empty[(CaseBinderKind, Term, Int)]) {
+        case (binders, (argType, argIndex)) =>
+          val liftBy = extraBinders + ihCount
+          val liftedArgType = lift(argType, liftBy, 0)
+          val contextBeforeArg = baseContextSize + binders.length
+          val (head, args) = collectApps(liftedArgType)
+          val totalArgs = params.length + indices.length
+          val paramVars = params.indices.map { paramIndex =>
+            Term.Var(contextBeforeArg - 1 - paramIndex)
+          }.toList
+          val isRecursive =
+            head match {
+              case Term.Const(name) if name == inductive.name && args.length == totalArgs =>
+                args.take(params.length) == paramVars
+              case _ => false
+            }
+          val withArg = binders :+ (CaseBinderKind.Arg, liftedArgType, argIndex)
+          if isRecursive then
+            val contextWithArg = contextBeforeArg + 1
+            val motiveIndex = contextWithArg - 1 - (params.length + indices.length)
+            val ihType = Term.App(Term.Var(motiveIndex), Term.Var(0))
+            ihCount += 1
+            withArg :+ (CaseBinderKind.InductionHypothesis, ihType, argIndex)
+          else
+            withArg
+      }
+
+      val totalContextSize = baseContextSize + caseBinders.length
+      val paramVars = params.indices.map { paramIndex =>
+        Term.Var(totalContextSize - 1 - paramIndex)
+      }.toList
+      val argVars = ctorArgs.indices.map { argIndex =>
+        val binderPos = caseBinders.indexWhere { case (kind, _, idx) =>
+          kind == CaseBinderKind.Arg && idx == argIndex
+        }
+        if binderPos == -1 then
+          throw KernelError(s"Constructor ${ctor.name} argument bookkeeping failed.")
+        Term.Var(totalContextSize - 1 - binderPos)
+      }.toList
+      val ctorApp = mkApp(Term.Const(ctor.name), paramVars ++ argVars)
+      val motiveIndex = totalContextSize - 1 - (params.length + indices.length)
+      val body = Term.App(Term.Var(motiveIndex), ctorApp)
+      acc :+ mkPi(caseBinders.map(_._2), body)
+    }
+
+    val motiveContextSize = params.length + indices.length
+    val motiveParamVars = params.indices.map { paramIndex =>
+      Term.Var(motiveContextSize - 1 - paramIndex)
+    }
+    val motiveIndexVars = indices.indices.map { indexIndex =>
+      Term.Var(motiveContextSize - 1 - (params.length + indexIndex))
+    }
+    val motiveTarget = mkApp(Term.Const(inductive.name), (motiveParamVars ++ motiveIndexVars).toList)
+    val motiveType = Term.Pi(motiveTarget, Term.Sort(resultLevel))
+
+    val targetContextSize = params.length + indices.length + 1 + caseTypes.length
+    val targetParamVars = params.indices.map { paramIndex =>
+      Term.Var(targetContextSize - 1 - paramIndex)
+    }
+    val targetIndexVars = indices.indices.map { indexIndex =>
+      Term.Var(targetContextSize - 1 - (params.length + indexIndex))
+    }
+    val targetType = mkApp(Term.Const(inductive.name), (targetParamVars ++ targetIndexVars).toList)
+
+    val totalContextSize =
+      params.length + indices.length + 1 + caseTypes.length + 1
+    val motiveIndex = totalContextSize - 1 - (params.length + indices.length)
+    val recBody = Term.App(Term.Var(motiveIndex), Term.Var(0))
+    val recType = mkPi(params ++ indices ++ (motiveType :: caseTypes) :+ targetType, recBody)
+
+    val envWithConstructors = inductive.constructors.foldLeft(envWithInductive) { (acc, ctor) =>
+      acc.addConstant(ctor.name, ConstDecl(ctor.typ, None, Reducibility.Opaque))
+    }
+    envWithConstructors.addConstant(s"${inductive.name}.rec", ConstDecl(recType, None, Reducibility.Opaque))
   }
 }

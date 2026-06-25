@@ -1,5 +1,13 @@
 import com.github.peterzeller.minifumo.typing.kernel.Kernel
-import com.github.peterzeller.minifumo.typing.kernel.Kernel.{ConstDecl, Context, Env, Reducibility, Term}
+import com.github.peterzeller.minifumo.typing.kernel.Kernel.{
+  ConstDecl,
+  Context,
+  Env,
+  InductiveConstructor,
+  InductiveType,
+  Reducibility,
+  Term
+}
 
 class KernelSuite extends munit.FunSuite {
   import Term.*
@@ -78,6 +86,64 @@ class KernelSuite extends munit.FunSuite {
       .addConstant("K", kDecl)
       .addConstant("comp", ConstDecl(compType, Some(compValue), Reducibility.Reducible))
   }
+
+  /** Defines the Nat inductive type with zero and succ constructors. */
+  private def natInductive: InductiveType =
+    InductiveType(
+      "Nat",
+      Sort(0),
+      List(
+        InductiveConstructor("zero", Const("Nat")),
+        InductiveConstructor("succ", Pi(Const("Nat"), Const("Nat")))
+      ),
+      paramCount = 0
+    )
+
+  /** Defines the List inductive type with one parameter and two constructors. */
+  private def listInductive: InductiveType =
+    InductiveType(
+      "List",
+      Pi(Sort(0), Sort(0)),
+      List(
+        InductiveConstructor("nil", Pi(Sort(0), App(Const("List"), Var(0)))),
+        InductiveConstructor(
+          "cons",
+          Pi(
+            Sort(0),
+            Pi(
+              Var(0),
+              Pi(
+                App(Const("List"), Var(1)),
+                App(Const("List"), Var(2))
+              )
+            )
+          )
+        )
+      ),
+      paramCount = 1
+    )
+
+  /** Defines a non-positive inductive type that should be rejected. */
+  private def badInductive: InductiveType =
+    InductiveType(
+      "Bad",
+      Sort(0),
+      List(
+        InductiveConstructor("mk", Pi(Pi(Const("Bad"), Const("Nat")), Const("Bad")))
+      ),
+      paramCount = 0
+    )
+
+  /** Defines an inductive type with a constructor in a higher universe. */
+  private def highUniverseInductive: InductiveType =
+    InductiveType(
+      "High",
+      Sort(0),
+      List(
+        InductiveConstructor("mk", Pi(Sort(1), Const("High")))
+      ),
+      paramCount = 0
+    )
 
   test("lift by zero is identity") {
     val term = Lam(Sort(0), App(Var(0), Var(1)))
@@ -215,5 +281,33 @@ class KernelSuite extends munit.FunSuite {
     val term = Let(Const("three"), Const("Nat"), Var(0))
     val inferred = Kernel.infer(env, Context.empty, term)
     assert(Kernel.conv(env, Context.empty, inferred, Const("Nat")))
+  }
+
+  test("addInductive registers Nat constructors and recursor") {
+    val env = Kernel.addInductive(Env.empty, natInductive)
+    assert(env.lookup("Nat").isDefined)
+    assert(env.lookup("zero").isDefined)
+    assert(env.lookup("succ").isDefined)
+    assert(env.lookup("Nat.rec").isDefined)
+  }
+
+  test("addInductive registers parameterized List type") {
+    val env = Kernel.addInductive(Env.empty, listInductive)
+    assert(env.lookup("List").isDefined)
+    assert(env.lookup("nil").isDefined)
+    assert(env.lookup("cons").isDefined)
+    assert(env.lookup("List.rec").isDefined)
+  }
+
+  test("addInductive rejects negative occurrences") {
+    intercept[Kernel.KernelError] {
+      Kernel.addInductive(baseEnv, badInductive)
+    }
+  }
+
+  test("addInductive rejects constructors in higher universes") {
+    intercept[Kernel.KernelError] {
+      Kernel.addInductive(baseEnv, highUniverseInductive)
+    }
   }
 }
