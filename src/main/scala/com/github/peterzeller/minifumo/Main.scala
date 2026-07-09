@@ -2,6 +2,7 @@ package com.github.peterzeller.minifumo
 
 import com.github.peterzeller.minifumo.ast.{ProgramFile, SourcePos, SourceRange}
 import com.github.peterzeller.minifumo.backends.lean.LeanBackend
+import com.github.peterzeller.minifumo.backends.scala.ScalaBackend
 import com.github.peterzeller.minifumo.builtins.Standard
 import com.github.peterzeller.minifumo.common.{MinifumoError, MinifumoErrorWithPath}
 import com.github.peterzeller.minifumo.interpreter.Interpreter
@@ -45,6 +46,14 @@ object Main:
         compileToLean(path, outputDir)
       case "compileToLean" :: filename :: outputDir :: Nil =>
         compileToLean(Paths.get(filename), Paths.get(outputDir))
+      case "compileToScala" :: filename :: Nil =>
+        val path = Paths.get(filename)
+        val outputDir =
+          if Files.isDirectory(path) then path.resolve(".minifumo-scala")
+          else Option(path.getParent).getOrElse(Paths.get(".")).resolve(".minifumo-scala")
+        compileToScala(path, outputDir)
+      case "compileToScala" :: filename :: outputDir :: Nil =>
+        compileToScala(Paths.get(filename), Paths.get(outputDir))
       case _ =>
         println(s"Unknown command ${args.mkString(" ")}")
         printUsage()
@@ -56,7 +65,8 @@ object Main:
       """Usage:
         |  minifumo run <filename>
         |  minifumo check <filename-or-directory>
-        |  minifumo compileToLean <filename-or-directory> [output-directory]""".stripMargin
+        |  minifumo compileToLean <filename-or-directory> [output-directory]
+        |  minifumo compileToScala <filename-or-directory> [output-directory]""".stripMargin
     )
 
   // Compiles a Minifumo project to Lean and verifies generated files with Lean.
@@ -67,6 +77,15 @@ object Main:
         System.exit(1)
       case Right(result) =>
         println(s"Generated ${result.files.length} Lean files in ${outputDir}")
+
+  // Compiles a Minifumo project to Scala wrapper sources.
+  private def compileToScala(path: Path, outputDir: Path): Unit =
+    ScalaBackend.compile(path, outputDir) match
+      case Left(errors) =>
+        Console.err.println(renderTypeErrors(errors).mkString("\n\n"))
+        System.exit(1)
+      case Right(result) =>
+        println(s"Generated ${result.files.length} Scala files in ${outputDir}")
 
   // Runs a program file and returns either error messages or the evaluated value.
   def runFile(path: Path): Either[List[MinifumoErrorWithPath], Interpreter.Value] =
